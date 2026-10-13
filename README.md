@@ -120,6 +120,17 @@ Install only the ones a project needs. As a Claude Code plugin, every folder in
 `skills/` is available as `specadoc:<name>`; descriptions keep them from loading
 until a task matches.
 
+### Recommended external skill: `grilling`
+
+Install `grilling` separately if you want to stress-test an idea before running
+`specadoc propose`. It helps clarify requirements, challenge hidden assumptions
+and resolve design decisions before writing the specification. Invoke it
+explicitly before Specadoc; it is optional, not bundled with this plugin, and
+not required for any lifecycle gate.
+
+Install its Agent Skills folder using your host's normal skill installation
+method (for plain skills, link or copy it as shown above).
+
 ## Roles and overrides
 
 Specadoc resolves each role in this order (see
