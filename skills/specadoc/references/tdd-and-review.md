@@ -94,9 +94,10 @@ A missing convenient test harness is not automatically an exception. Prefer addi
 ## Final review
 
 Run one independent, read-only review only after the diff is stable and final
-verification evidence is collected. Root `AGENTS.md` authorizes this single
-review for an explicit invocation of this workflow; outside that carve-out,
-follow the repository's explicit review policy. Do not launch reviewers per task
+verification evidence is collected. Follow the host's explicit delegation and
+review policy; this skill does not grant an exception to it. If independent
+review cannot run, report the incomplete gate, never a self-reviewed PASS.
+Do not launch reviewers per task
 or change code while reviewing. Its recorded PASS is the input to `archive`, not
 a review to repeat during archival. A new reviewer is required only for a new
 executable diff — detected mechanically via `review_snapshot.py`, see

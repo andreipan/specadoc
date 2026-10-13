@@ -1,0 +1,20 @@
+{
+  "scout": {
+    "name": "scout",
+    "description": "Read-only repository scout for bounded engineering discovery. Use to locate relevant code, tests, conventions, interfaces, and constraints before specification or implementation.",
+    "tools": "Read, Grep, Glob, Bash",
+    "model": "haiku"
+  },
+  "worker": {
+    "name": "worker",
+    "description": "Implementation agent for one bounded, low-decision task with explicit requirements, known files, a test-first instruction, and objective completion criteria.",
+    "tools": "Read, Edit, Write, Grep, Glob, Bash",
+    "model": "sonnet"
+  },
+  "reviewer": {
+    "name": "reviewer",
+    "description": "Independent read-only reviewer that checks an implementation diff against explicit requirements, acceptance scenarios, the implementation plan, tests, and repository conventions.",
+    "tools": "Read, Grep, Glob, Bash",
+    "model": "opus"
+  }
+}

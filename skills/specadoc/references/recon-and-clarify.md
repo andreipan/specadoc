@@ -48,8 +48,8 @@ section defines only what a scout is given and what it returns.
 
 Give the scout one bounded question and the smallest useful scope. Require the
 standard scout report defined by the runtime's role profile (`model-routing.md`
-→ Role registry); if the runtime has no `scout` profile, paste that profile's
-response contract into the dispatch prompt.
+→ Role registry); if there is no registered profile but subagents are available,
+paste this skill's `roles/scout.md` contract into the dispatch prompt.
 
 When `explore.md` selected capability specifications, include their paths in
 the scout's `Read` list and require it to compare their relevant `C<n>`
@@ -60,8 +60,9 @@ matched, state that in the prompt and continue normally.
 
 The scout must not edit files, choose the final architecture, or produce a broad summary.
 
-After reconnaissance, stress-test the idea with a grilling skill when one is
-installed (see `interoperability.md` → Optional companion skills). Pass it the
+After reconnaissance, use the grilling conditions and skip-reason rule in
+`explore.md` step 7 (the single source of truth), including when an installed
+grilling skill is available. When those conditions hold, pass it the
 settled facts and material decisions; do not let it repeat repository
 discovery or persist `spec.md`/`plan.md` during explore mode.
 

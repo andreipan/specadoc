@@ -1,0 +1,37 @@
+[
+  {
+    "id": "direct",
+    "request": "Use specadoc to change a local diagnostic label with one exact existing test. No API, schema or permissions change. Follow normal checkpoints.",
+    "expected_behavior": "Select direct; model handoff and plan approvals happen in chat before implementation. Do not create lifecycle files or run artifact gates. Report the exact test result."
+  },
+  {
+    "id": "grilling-skip",
+    "request": "Use specadoc explore to confirm the known local label formatting path; the behavior and low-risk scope are settled. A grilling companion is installed.",
+    "expected_behavior": "Bounded no-file exploration, no archive reads; skip grilling with a reason because no material question or risk remains."
+  },
+  {
+    "id": "minor-re-review",
+    "request": "Continue specadoc apply: the reviewer returned only one confirmed MINOR finding. The approved scoped fix has been made and verified.",
+    "expected_behavior": "Run the one targeted independent re-review including that MINOR fix and changed snapshot files, not the full spec/plan again."
+  },
+  {
+    "id": "project-role",
+    "request": "Use specadoc explore with an existing project scout profile and available delegation. Investigate one entrypoint.",
+    "expected_behavior": "Project profile takes priority over bundled role behavior; honor host delegation policy and report capability drift when relevant. Do not change agent configuration."
+  },
+  {
+    "id": "embedded-role",
+    "request": "Use specadoc explore with no registered scout but an available subagent tool. The host permits this bounded delegation.",
+    "expected_behavior": "Load only the embedded scout contract and pass it with the bounded question. Do not invent a registered role, model binding or write project configs."
+  },
+  {
+    "id": "reviewer-unavailable",
+    "request": "Finish a specadoc apply change with completed implementation and passing verification. This host cannot run independent subagents and has no equivalent independent reviewer.",
+    "expected_behavior": "Report the incomplete independent-review gate; do not self-certify PASS, managed completion or normal archive."
+  },
+  {
+    "id": "managed-lifecycle",
+    "request": "Use specadoc to add a small new behavior in the isolated fixture. Complete normal proposal approvals and apply; archive only after an explicit archive request.",
+    "expected_behavior": "Accepted spec and plan, meaningful RED/GREEN evidence, final controller checks, independent PASS and snapshot, capability update, final gate and explicit archive produce one valid bounded record."
+  }
+]

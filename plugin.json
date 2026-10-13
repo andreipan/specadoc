@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "specadoc",
+  "version": "0.1.1",
+  "description": "Explicit engineering lifecycle (explore, propose, apply, archive) with bounded scout, worker, and reviewer roles and deterministic artifact gates.",
+  "author": { "name": "Andrei Paulovich" },
+  "license": "MIT",
+  "keywords": ["workflow", "spec", "planning", "tdd", "review", "subagents"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Specadoc",
+        "shortDescription": "Explicit engineering lifecycle and standalone engineering companions",
+        "longDescription": "Explore, propose, apply and compactly archive changes. Includes optional tidy, codebase-design and domain-modeling skills. Roles use project profiles or portable dispatch contracts; no automatic host configuration.",
+        "developerName": "Andrei Paulovich",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "defaultPrompt": ["Use specadoc explore to investigate a proposed change."]
+      }
+    }
+  }
+}

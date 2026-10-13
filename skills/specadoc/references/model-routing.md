@@ -83,15 +83,24 @@ Resolve each role in this order and use the first that exists:
 1. Project role: `.claude/agents/<role>.md` (Claude Code),
    `.codex/agents/<role>.toml` (Codex), or `.opencode/agents/<role>.md`
    (OpenCode).
-2. Plugin role shipped with Specadoc: `specadoc:<role>` in Claude Code, or the
-   copy of `agents/<role>.md` installed by the user for another runtime.
-3. No role: the controller performs the work itself and records
-   `Role registry: none` in the plan.
+2. A registered plugin role, such as `specadoc:<role>` in Claude Code.
+3. An available subagent without a registered role: pass this skill's
+   `references/roles/<role>.md` contract in its bounded dispatch prompt.
+   Record `Role registry: embedded contract` in the plan (or direct chat).
+   A bundled contract is not a registered agent or a model configuration.
+4. No subagent capability: record `Role registry: none`. The controller may
+   perform scout/worker work; it cannot supply an independent reviewer PASS.
+   Report the incomplete review gate and stop before claiming managed completion
+   or normal archive. Never silently substitute self-review.
+
+Do not install project agents or change runtime configuration automatically.
+All dispatches remain subject to the host's delegation policy and capabilities.
 
 Read the registry file for the runtime in use rather than assuming a model name.
 If the registry and the table disagree, the registry wins; report the mismatch
 instead of silently following either. If the runtime has no registry, state that
-the level could not be bound and ask which profile to use.
+the level could not be bound and ask which profile to use. Embedded contracts
+define behavior, not models; do not invent or silently override a host profile.
 
 ## Model Checkpoint
 
@@ -111,11 +120,19 @@ The checkpoint message must state:
 - choices to continue with the recommendation, choose another profile, or
   revise scope.
 
-Before stopping, fill the `## Model handoff` block that `plan.md` already contains
+On the managed path, before stopping, fill the `## Model handoff` block that `plan.md` already contains
 from `assets/plan-template.md`. Do not restate the block here. Set
 `**Model checkpoint:**` to `Awaiting user confirmation`, tick the phases completed
 so far, and under `### Read before continuing` list `spec.md`, `plan.md`, any
 `design.md` or `research.md` that exists, and at most five critical repository paths.
+
+On direct, put the same decision-relevant handoff in chat, without creating
+files: risk, execution level, known current profile, recommendation, reasons,
+and the next action. After model approval, present a short plan with the bounded
+edit and exact check, stop for plan approval, then implement and report evidence.
+Artifact initialization, file-based handoffs and artifact gates apply only to
+the managed path. An explicit uninterrupted request may waive both manual
+stops, but not the bounded plan or verification.
 
 Then output a concise recommendation and stop. Do not continue planning, write
 tests, or edit production code until the user confirms or changes the profile.

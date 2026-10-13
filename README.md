@@ -38,7 +38,57 @@ The skill is invoked as `/specadoc:specadoc`. The roles are available as
 `specadoc:scout`, `specadoc:worker` and `specadoc:reviewer`. For a single
 session from a checkout, run `claude --plugin-dir <path>`.
 
-### Codex CLI and OpenCode
+### Codex plugin (local marketplace)
+
+This checkout includes a portable root `plugin.json` and a repo marketplace at
+`.agents/plugins/marketplace.json`. The plugin is version **0.1.1** and installs
+all four skills. No MCP, authentication, lifecycle hooks, project agent files,
+or automatic host configuration is required. Python 3.9+ is needed to run the
+lifecycle helpers. Installing a plugin does not install Python.
+
+From an isolated test project, with a separate `CODEX_HOME` for a pilot:
+
+```bash
+codex plugin marketplace add /absolute/path/to/specadoc
+codex plugin add specadoc@specadoc
+codex plugin list
+```
+
+You can also select Specadoc in the desktop plugin directory after adding the
+marketplace. Start a new chat and explicitly select the installed
+`specadoc:specadoc` skill (`$specadoc:specadoc` when supported); plain skill
+installations use `specadoc`. Ask for `explore`, `propose`, `apply` or `archive`.
+Specadoc has `allow_implicit_invocation: false`; companion skills keep their
+own discovery rules and are optional within the lifecycle.
+
+Do not install alongside a symlink/copy of the same skills in a pilot project.
+The installed cache copy, not the source checkout, supplies runtime resources.
+An embedded role contract is not a registered agent or a model configuration:
+project profiles win; otherwise pass the contract to an available, permitted
+subagent. With no independent reviewer, managed review remains incomplete —
+the controller cannot claim an independent PASS.
+
+After changing the local source, remove and reinstall in the isolated pilot,
+then start a new chat and check the cache copy:
+
+```bash
+codex plugin remove specadoc@specadoc
+codex plugin add specadoc@specadoc
+```
+
+`codex plugin marketplace upgrade` refreshes Git-backed sources only; it does not
+refresh a local directory. After checking the reinstalled cache, clean up with:
+
+```bash
+codex plugin remove specadoc@specadoc
+codex plugin marketplace remove specadoc
+```
+
+CLI/plugin availability varies by host version. Apply your repository's command
+prefix to these examples when required; do not change global configuration just
+to perform a smoke test.
+
+### Plain skills (Codex CLI and OpenCode)
 
 Both read Agent Skills folders. Link or copy the skill folder:
 
@@ -49,11 +99,11 @@ ln -s <repo>/skills/specadoc <project>/.opencode/skills/specadoc   # OpenCode
 
 Link companion skills (below) the same way, one folder per skill.
 
-The roles in `agents/*.md` are written in Claude Code agent format. For Codex,
-convert each one into `.codex/agents/<role>.toml` (`name`, `description`,
-`model`, `developer_instructions` = the Markdown body). For OpenCode, copy it
-to `.opencode/agents/<role>.md` with `mode: subagent`. Without roles, Specadoc
-falls back to running every step in the controller.
+The portable role contracts are in `skills/specadoc/references/roles/`. Existing
+Codex/OpenCode project roles take precedence; otherwise include the relevant
+contract in a permitted subagent's prompt. Scout/worker work may fall back to
+the controller, but independent review cannot. No agent configuration is
+written automatically.
 
 ## Companion skills
 
@@ -77,8 +127,15 @@ Specadoc resolves each role in this order (see
 
 1. a project role: `.claude/agents/<role>.md`, `.codex/agents/<role>.toml`, or
    `.opencode/agents/<role>.md`;
-2. the role shipped with this plugin;
-3. no role: the controller does the work and records `Role registry: none`.
+2. a registered plugin role (for example Claude's `specadoc:<role>`);
+3. a permitted available subagent given the bundled portable contract;
+4. no subagents: bounded controller scout/worker work, incomplete independent
+   review gate (never a self-reviewed PASS).
+
+Portable contracts are canonical; the checkout's Claude `agents/*.md` files are
+generated adapters. Edit the contract, then run `python3 scripts/render_roles.py`.
+The checker refuses stale adapters. Claude-specific model/tool metadata lives
+separately in `scripts/claude-roles.json`; it does not bind Codex models.
 
 Each shipped role has a block between `<!-- specadoc:tooling:begin -->` and
 `<!-- specadoc:tooling:end -->`. That block holds neutral tool guidance. Hosts
@@ -96,11 +153,20 @@ instruction file, Specadoc treats it as a repository instruction (see
 
 ## Scripts
 
-All scripts use only the Python standard library (Python 3.9 or newer) and
-write only under the project's artifact root: `--root`, else `$SPECADOC_ROOT`,
+Lifecycle scripts use only the Python standard library (Python 3.9 or newer).
+They use the project's artifact root: `--root`, else `$SPECADOC_ROOT`,
 else `.specadoc.json` (`{"root": "<path>"}`), else `docs/specadoc` (legacy
 `docs/agent` is still picked up, with a warning, until moved by
 `migrate_root.py`):
+
+`init_change.py` preflights the whole set before writing, stages the rendered
+templates, and rolls back handled publication errors, including restoring
+original bytes with `--force`. It refuses non-regular artifact destinations.
+It is not crash-atomic across multiple files. If rollback itself fails, its
+error names retained recovery files; recover those before retrying.
+
+Direct changes keep both approvals, the short plan and verification in chat;
+they do not initialize artifacts or run file-based lifecycle gates.
 
 | Script | Purpose |
 |---|---|
@@ -119,7 +185,26 @@ else `.specadoc.json` (`{"root": "<path>"}`), else `docs/specadoc` (legacy
 ```bash
 scripts/check.sh            # unit tests + plugin manifest validation
 PYTHON=python3.14 scripts/check.sh
+python3 scripts/package_plugin.py --check
+python3 scripts/package_plugin.py   # dist/specadoc-0.1.1.zip + SHA-256
+python3 scripts/smoke_codex.py --report dist/codex-pilot.json # opt-in offline pilot
 ```
+
+The checkout-only build tools are not bundled in the release ZIP. The ZIP has a
+portable manifest, all four skill folders and their resources, this README,
+LICENSE and third-party notices. It excludes tests, marketplace catalogs,
+Claude adapters, caches and Git data. Sorted entries, fixed timestamps and modes
+make repeat builds byte-identical in the same Python/zlib environment. Unpack
+the ZIP and add a separate marketplace entry if testing it as a local source.
+
+Behavioral evaluation cases live in `tests/evals/specadoc.json`. Their presence
+and automatic package checks are not evidence of a model-run evaluation;
+record actual runs and skipped checks separately.
+
+This release prepares local distribution only. No OpenAI portal upload,
+submission, publisher verification or public publication is performed. Package
+readiness is not public directory approval. Official packaging reference:
+[Package your plugin](https://developers.openai.com/plugins/build/plugins).
 
 `tests/test_neutrality.py` keeps host-specific vocabulary out of the shipped
 skill and roles.

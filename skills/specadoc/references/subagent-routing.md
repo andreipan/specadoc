@@ -6,6 +6,11 @@
 - The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: a project role (`.claude/agents/*.md`, `.codex/agents/*.toml`, `.opencode/agents/*.md`) or the role shipped with this plugin. See `model-routing.md` → Role registry for the lookup order.
 - The dispatch prompt supplies the current task, files, requirements, commands, and completion condition.
 
+When the runtime has no registered role but can start subagents, include only
+the selected `roles/<role>.md` portable contract from this reference directory
+in the prompt. Project roles take precedence; follow `model-routing.md` for
+profile binding and the no-subagent fallback. Do not write host agent configs.
+
 Do not place task-specific paths, requirement IDs, or feature details in the role profiles.
 
 ## Role boundaries
@@ -153,7 +158,7 @@ Do not derive it from task `Files:`, which may contain symbols rather than
 literal paths.
 
 ```text
-Re-review the fixes for BLOCKER/IMPORTANT findings from Round 1 only.
+Re-review every confirmed finding fixed since Round 1, including MINOR.
 
 Changed since Round 1's snapshot (recomputed via review_snapshot.py):
 - src/billing/reminders/send-reminders.ts (content changed)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-SCANNED = [ROOT / "skills", ROOT / "agents"]
+SCANNED = [ROOT / "skills", ROOT / "agents", ROOT / "scripts"]
 FORBIDDEN = re.compile(
     r"\brtk\b|serena|\bCRG\b|code-review-graph|phpstorm|engram|\bmem_\w+|"
     r"src/Modules|artisan|phpstan|adraptor|composer|landscape\.json|\bgpt-|"

@@ -34,7 +34,14 @@ Without an explicit mode:
 3. Select `propose` when behavior is clear but the change is non-trivial.
 4. Use the internal direct path only when the change is local, reversible, free
    of contract/schema/permission/money/concurrency risk, and has one exact
-   check. Direct still stops for model and plan approval but creates no files.
+   check. Direct still stops for model and plan approval, unless an explicit
+   uninterrupted request waives those stops, but creates no files.
+
+For direct, read `references/model-routing.md`: keep the model handoff, short
+technical plan, both approvals, and exact verification evidence in chat. Do not
+initialize artifacts or run artifact gates. If new facts violate direct's risk
+conditions, stop and switch to `propose`, carrying forward accepted evidence
+and obtaining the approvals required for the revised scope.
 
 ## Shared invariants
 
@@ -78,6 +85,9 @@ contract or belongs to a different change.
 - Artifacts and deterministic gates: `references/artifacts.md`
 - Risk and model checkpoint: `references/model-routing.md`
 - Role dispatch and fallbacks: `references/subagent-routing.md`
+- Portable role contracts: `references/roles/scout.md`,
+  `references/roles/worker.md`, `references/roles/reviewer.md`; load only the
+  dispatched role, when no project or registered plugin role supplies it.
 - TDD and review: `references/tdd-and-review.md`
 - Token accounting: `references/measurement.md`
 - Conflicts, optional companion skills, and source-of-truth rules:
