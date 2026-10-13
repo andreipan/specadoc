@@ -10,8 +10,9 @@ Specadoc is the single lifecycle tool for this workflow. It does not install,
 invoke, mirror, or maintain an OpenSpec workflow beside its own artifacts.
 
 Repository instructions, explicit user decisions, and specialized domain skills
-remain authoritative. `code-writing-guideline` owns surgical implementation
-discipline; Specadoc owns lifecycle state, approvals, routing, and evidence.
+remain authoritative. An implementation-discipline skill, when installed, owns
+how code is written; Specadoc owns lifecycle state, approvals, routing, and
+evidence.
 
 ## Route the request
 
@@ -44,13 +45,16 @@ Without an explicit mode:
 - Keep one bounded `scout`, fully specified low-decision `worker` tasks, and one
   final read-only `reviewer` per stable executable diff in `apply`. The
   controller owns all final verification.
-- Treat role startup, Serena availability, and CRG availability as independent
-  capabilities. Failure of one never implies failure of the others. Distinguish
+- Treat role startup, symbol-aware tooling availability, and code-graph
+  availability as independent capabilities. Failure of one never implies failure of the others. Distinguish
   absence after tool discovery from a failed exposed call; cite the exact call
   and error only for a call that was actually attempted.
 - Keep contexts narrow: no repeated reads, raw successful logs, equivalent graph
   calls, or broad repository summaries.
-- Every shell command shown or run under repository policy starts with `rtk`.
+- Follow the host's command conventions (for example a required command prefix
+  in repository or harness instructions) for every shell command shown or run.
+- `<skill-root>` in references means this skill's directory
+  (`${CLAUDE_SKILL_DIR}` in Claude Code).
 
 ## Continuity of an active change
 
@@ -77,7 +81,8 @@ contract or belongs to a different change.
 - Role dispatch and fallbacks: `references/subagent-routing.md`
 - TDD and review: `references/tdd-and-review.md`
 - Token accounting: `references/measurement.md`
-- Conflicts and source-of-truth rules: `references/interoperability.md`
+- Conflicts, optional companion skills, and source-of-truth rules:
+  `references/interoperability.md`
 
 Load only the selected mode reference and the shared reference it explicitly
 requires.

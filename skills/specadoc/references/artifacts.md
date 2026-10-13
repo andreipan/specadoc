@@ -59,7 +59,7 @@ requirement id. `archive_change.py` then checks the other end: that each
 Create one by copying the template:
 
 ```bash
-rtk cp <skill-root>/assets/capability-template.md docs/agent/specs/<capability>.md
+cp <skill-root>/assets/capability-template.md docs/agent/specs/<capability>.md
 ```
 
 On a conflict between a capability file and the code, the code wins. Record the
@@ -69,23 +69,25 @@ touches it.
 ## Cross-service contract changes
 
 A change that crosses a service boundary has a fourth root, in the repository of
-the composer package that carries the contract:
+the shared package (library, SDK, or schema module) that carries the contract:
 
 - `docs/agent/contracts/<contract>.md` - the contract being changed, its consumers,
   and the version that delivers it.
 
 The package is the owner because it is where the contract is materialized and
-versioned; a consumer's reference to it is checkable from `composer.lock`. Do not
+versioned; a consumer's reference to it is checkable from its dependency lock
+file. Do not
 place this file in the producing service, and do not centralize it outside the
 package.
 
 Create one by copying the template:
 
 ```bash
-rtk cp <skill-root>/assets/contract-template.md docs/agent/contracts/<contract>.md
+cp <skill-root>/assets/contract-template.md docs/agent/contracts/<contract>.md
 ```
 
-Sequence: determine the consumer set from the landscape map before the first edit;
+Sequence: determine the consumer set (from a repository landscape map or
+dependency search) before the first edit;
 write the contract file in the package; implement in the producer under its own
 `docs/agent/<change-slug>/`; tag the package; then one session per consumer, each
 with its own `spec.md` referencing the contract file and the required version.
@@ -142,7 +144,7 @@ capability file that drifts from code.
 Prefer:
 
 ```bash
-rtk python3 <skill-root>/scripts/init_change.py <change-slug> --risk <low|medium|high>
+python3 <skill-root>/scripts/init_change.py <change-slug> --risk <low|medium|high>
 ```
 
 Optional flags:
@@ -222,7 +224,7 @@ Also reject:
 above:
 
 ```bash
-rtk python3 <skill-root>/scripts/validate_change.py <change-slug> --phase <spec|plan|pre-review|final>
+python3 <skill-root>/scripts/validate_change.py <change-slug> --phase <spec|plan|pre-review|final>
 ```
 
 Run `--phase spec` before the model checkpoint, `--phase plan` before the plan
@@ -253,8 +255,8 @@ A change is closed, not left in place:
 4. Fill `## Archive summary` with the durable outcome and decisions, then run:
 
 ```bash
-rtk python3 <skill-root>/scripts/archive_change.py <change-slug> --dry-run
-rtk python3 <skill-root>/scripts/archive_change.py <change-slug>
+python3 <skill-root>/scripts/archive_change.py <change-slug> --dry-run
+python3 <skill-root>/scripts/archive_change.py <change-slug>
 ```
 
 The script refuses to archive until the gates are checked, the review result is
@@ -270,8 +272,8 @@ unknown attachments, and hashes, but it never overwrites an archive target.
 Legacy archive compaction is separate:
 
 ```bash
-rtk python3 <skill-root>/scripts/migrate_archive.py --root docs/agent
-rtk python3 <skill-root>/scripts/migrate_archive.py --root docs/agent --apply
+python3 <skill-root>/scripts/migrate_archive.py --root docs/agent
+python3 <skill-root>/scripts/migrate_archive.py --root docs/agent --apply
 ```
 
 The first command is non-writing. Every legacy design, research, log, or other
@@ -284,8 +286,8 @@ creates a verified compressed backup outside `archive/`.
 Use the read-only doctor as the archive and capability corpus grows:
 
 ```bash
-rtk python3 <skill-root>/scripts/doctor.py --root docs/agent
-rtk python3 <skill-root>/scripts/doctor.py --root docs/agent --strict
+python3 <skill-root>/scripts/doctor.py --root docs/agent
+python3 <skill-root>/scripts/doctor.py --root docs/agent --strict
 ```
 
 It reports exact duplicate `C<n>` identifiers, repeated provenance rows, exact

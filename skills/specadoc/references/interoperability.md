@@ -17,6 +17,29 @@ This skill may wrap those operations in a broader explore-propose-apply-archive 
 It is standalone: OpenSpec may be consulted as external design inspiration, but
 must not be installed, invoked, or maintained as a parallel artifact engine.
 
+## Optional companion skills
+
+Specadoc works alone. When the host installs any of these, use them for the
+step they own and record which one ran:
+
+- **Grilling** — stress-tests a proposal after reconnaissance (explore, propose).
+  Without it, the controller asks the material questions itself.
+- **Review checklist** — a repository review skill the `reviewer` follows.
+  Without it, the reviewer role's own order applies.
+- **Implementation discipline** — rules for surgical, minimal diffs that the
+  `worker` and controller follow during apply.
+- **Tool router** — the host's policy for symbol-aware (IDE/LSP) and code-graph
+  tools, including fallbacks. Without it, use `rg`/file inspection and state the
+  limitation.
+
+## Host conventions
+
+Hosts often add rules Specadoc must honor without naming them: a required
+command prefix or proxy, a persistent memory protocol, a project landscape map,
+or a harness instruction file. Treat these as repository instructions under the
+conflict order below. Specadoc's examples show bare commands; apply the host's
+prefix or wrapper when one is required.
+
 ## Conflict resolution order
 
 When instructions conflict:

@@ -1,0 +1,14 @@
+{
+  "name": "specadoc",
+  "description": "Marketplace for the specadoc engineering-lifecycle plugin.",
+  "owner": {
+    "name": "Andrei Paulovich"
+  },
+  "plugins": [
+    {
+      "name": "specadoc",
+      "source": "./",
+      "description": "Explicit engineering lifecycle with bounded subagent roles."
+    }
+  ]
+}

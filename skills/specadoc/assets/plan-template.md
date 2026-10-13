@@ -11,7 +11,7 @@
 **Reconnaissance level:** Unknown  
 **Recommended execution level:** Pending  
 **Risk:** __RISK__  
-**Role registry:** <.claude/agents | .codex/agents | .opencode/agents>  
+**Role registry:** <.claude/agents | .codex/agents | .opencode/agents | specadoc plugin | none>  
 **Execution accounting:** Per-execution totals are recorded in Completion evidence.  
 **Owns next:** Pending  
 **Model checkpoint:** Awaiting user confirmation  

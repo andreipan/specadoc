@@ -56,29 +56,37 @@ Recommend and record an execution level, never a bare model name. Plans and
 checkpoints carry only `EASY`, `MEDIUM`, or `HIGH`. Bind the level to a concrete
 profile through the runtime in use, and state both values in the checkpoint.
 
-| Level | Claude Code | Codex | OpenCode |
+| Level | Model tier | Reasoning effort | Claude Code default |
 |---|---|---|---|
-| `EASY` | `model: haiku` + `effort: low` | `gpt-5.6-luna` + `low` | `openai/gpt-5.6-luna` + `low` |
-| `MEDIUM` | `model: sonnet` + `effort: medium` | `gpt-5.6-terra` + `medium` | `openai/gpt-5.6-terra` + `medium` |
-| `HIGH` | `model: opus` + `effort: high` | `gpt-5.6-sol` + `high` | `openai/gpt-5.6-sol` + `high` |
+| `EASY` | small, fast | low | `model: haiku` + `effort: low` |
+| `MEDIUM` | balanced | medium | `model: sonnet` + `effort: medium` |
+| `HIGH` | most capable | high | `model: opus` + `effort: high` |
+
+For other runtimes, bind each level to the equivalent tier of the provider in
+use through the role registry below; Specadoc does not name those models.
 
 Family and effort are both binding. A `HIGH` recommendation is not satisfied by
 the right family at a lower effort. A higher effort or a newer top-tier family is
 an upgrade above `HIGH`, not a substitute for user approval of the level.
 
 Fixed role levels are `scout` = `EASY`, `worker` = `MEDIUM`, and `reviewer` =
-`HIGH`, unless the user approves another mapping. The approved Codex worker
-override keeps the MEDIUM family (`gpt-5.6-terra`) with `high` reasoning; Claude
-and OpenCode workers retain `medium`. This is recorded as
-`codex_reasoning_effort` in the canonical worker role.
+`HIGH`, unless the user approves another mapping. A host may raise one
+runtime's reasoning effort inside a level (for example a worker at `MEDIUM`
+tier with `high` effort); record such an override in that host's role
+registry, not here.
 
 ## Role registry
 
-The runtime's role registry is the authoritative binding, not the table above:
+The runtime's role registry is the authoritative binding, not the table above.
+Resolve each role in this order and use the first that exists:
 
-- Claude Code: `.claude/agents/{scout,worker,reviewer}.md`
-- Codex: `.codex/agents/{scout,worker,reviewer}.toml`
-- OpenCode: `.opencode/agents/{scout,worker,reviewer}.md`
+1. Project role: `.claude/agents/<role>.md` (Claude Code),
+   `.codex/agents/<role>.toml` (Codex), or `.opencode/agents/<role>.md`
+   (OpenCode).
+2. Plugin role shipped with Specadoc: `specadoc:<role>` in Claude Code, or the
+   copy of `agents/<role>.md` installed by the user for another runtime.
+3. No role: the controller performs the work itself and records
+   `Role registry: none` in the plan.
 
 Read the registry file for the runtime in use rather than assuming a model name.
 If the registry and the table disagree, the registry wins; report the mismatch

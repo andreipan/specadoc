@@ -3,7 +3,7 @@
 ## Responsibility split
 
 - `SKILL.md` controls the workflow and decides which role to invoke.
-- The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: `.claude/agents/*.md`, `.codex/agents/*.toml`, or `.opencode/agents/*.md`. See `model-routing.md` → Role registry.
+- The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: a project role (`.claude/agents/*.md`, `.codex/agents/*.toml`, `.opencode/agents/*.md`) or the role shipped with this plugin. See `model-routing.md` → Role registry for the lookup order.
 - The dispatch prompt supplies the current task, files, requirements, commands, and completion condition.
 
 Do not place task-specific paths, requirement IDs, or feature details in the role profiles.
@@ -66,69 +66,68 @@ Keep work in the controller when:
 ## Scout dispatch example
 
 ```text
-Investigate how Accounts synchronizes Google customer clients today.
+Investigate how Billing sends overdue-invoice reminders today.
 
 Read:
-- AGENTS.md and src/Modules/AGENTS.md
-- src/Modules/Accounts/Application/Services/GoogleAccounts/
-- src/Modules/Accounts/Infrastructure/GoogleAccounts/
+- AGENTS.md and src/billing/AGENTS.md
+- src/billing/reminders/
+- src/billing/jobs/
 - tests and contracts discovered during the investigation
 
 Find:
-- the queue entry point and the identity carried in its payload;
-- where connector credentials are resolved for a center;
-- the nearest behavioral tests under src/Tests/Feature/Modules/Accounts/;
+- the scheduled entry point and the identity carried in its payload;
+- where the mail provider credentials are resolved for an account;
+- the nearest behavioral tests under tests/billing/;
 - the exact focused test command for that area.
 
-Use rtk for every shell command. Do not edit files.
+Follow the repository's command conventions. Do not edit files.
 Return the standard scout report.
 ```
 
 ## Worker dispatch example
 
 ```text
-Implement task T5 from docs/agent/sync-google-accounts-architecture/plan.md.
+Implement task T5 from docs/agent/overdue-invoice-reminders/plan.md.
 
 Requirements:
 - R4
 - Acceptance scenarios A3 and A4
 
 Read:
-- docs/agent/sync-google-accounts-architecture/spec.md
+- docs/agent/overdue-invoice-reminders/spec.md
 - the T5 section of plan.md
-- src/Modules/Accounts/Application/UseCases/SyncAccountsAgainstGoogle/Handler.php
-- src/Modules/Accounts/Infrastructure/Queue/Jobs/SyncGoogleAccountsJob.php
-- src/Tests/Unit/Modules/Accounts/Application/UseCases/SyncAccountsAgainstGoogle/HandlerTest.php
-- AGENTS.md and src/Modules/AGENTS.md
+- src/billing/reminders/send-reminders.ts
+- src/billing/jobs/send-reminders-job.ts
+- tests/billing/reminders/send-reminders.test.ts
+- AGENTS.md and src/billing/AGENTS.md
 
 Constraints:
-- Keep the queue job a transport-only wrapper (src/Modules/AGENTS.md §1.1).
-- Do not change the command signature or schedule.
+- Keep the job a transport-only wrapper (src/billing/AGENTS.md §1.1).
+- Do not change the job signature or schedule.
 - Do not edit spec.md or other plan tasks.
 
 Test first:
-Add a test proving the handler delegates stale cleanup to the repository.
+Add a test proving the handler skips invoices that were already reminded today.
 
 Verification:
-rtk php artisan test --compact src/Tests/Unit/Modules/Accounts/Application/UseCases/SyncAccountsAgainstGoogle/HandlerTest.php
-rtk vendor/bin/phpstan analyse --configuration=phpstan-modules.neon src/Modules/Accounts/Application src/Modules/Accounts/Infrastructure
+npm test -- tests/billing/reminders/send-reminders.test.ts
+npx tsc --noEmit -p src/billing
 
 Completion:
-A3 and A4 pass, existing Accounts UseCase tests pass, and no unrelated files change.
+A3 and A4 pass, existing billing reminder tests pass, and no unrelated files change.
 ```
 
 ## Reviewer dispatch example
 
 ```text
-Review the implementation of Google accounts synchronization.
-Follow the `review-changes` skill, which defers CRG staleness handling to
-`repo-mcp-router` → MCP and graph checks.
+Review the implementation of overdue-invoice reminders.
+Follow the repository's review skill or checklist when one is installed.
 
 Read:
-- docs/agent/sync-google-accounts-architecture/spec.md
-- docs/agent/sync-google-accounts-architecture/plan.md
+- docs/agent/overdue-invoice-reminders/spec.md
+- docs/agent/overdue-invoice-reminders/plan.md
 - the diff from the plan baseline to the current worktree
-- AGENTS.md and src/Modules/AGENTS.md
+- AGENTS.md and src/billing/AGENTS.md
 
 Review only:
 - R1, R2, R4
@@ -136,11 +135,11 @@ Review only:
 - tasks T1-T6
 
 Verification evidence:
-- rtk php artisan test --compact src/Tests/Feature/Modules/Accounts/Application/Services/GoogleAccounts: passed
-- affected production PHPStan over src/Modules/Accounts: passed; tests were not analysed
-- rtk git diff --check: passed
+- npm test -- tests/billing/reminders: passed
+- affected production type-check over src/billing: passed; tests were not analysed
+- git diff --check: passed
 
-Use rtk for every shell command. Do not edit files.
+Follow the repository's command conventions. Do not edit files.
 Use the standard reviewer response.
 ```
 
@@ -157,8 +156,8 @@ literal paths.
 Re-review the fixes for BLOCKER/IMPORTANT findings from Round 1 only.
 
 Changed since Round 1's snapshot (recomputed via review_snapshot.py):
-- src/Modules/Accounts/Application/UseCases/SyncAccountsAgainstGoogle/Handler.php (content changed)
-- src/Tests/Unit/Modules/Accounts/Application/UseCases/SyncAccountsAgainstGoogle/HandlerTest.php (content changed)
+- src/billing/reminders/send-reminders.ts (content changed)
+- tests/billing/reminders/send-reminders.test.ts (content changed)
 
 Read:
 - the Round 1 findings recorded in plan.md's Review result (### G1)
@@ -169,7 +168,7 @@ Do not re-read the full spec.md, full plan.md, or any file not listed above as
 changed. Confirm each Round 1 finding is resolved and that the fix introduced
 no new violation of the same requirement.
 
-Use rtk for every shell command. Do not edit files.
+Follow the repository's command conventions. Do not edit files.
 Use the standard reviewer response.
 ```
 

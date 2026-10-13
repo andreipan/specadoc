@@ -20,7 +20,7 @@ inventory with a stated dynamic-dispatch caveat.
 
 Before editing:
 - read the supplied task, requirements, constraints, and relevant repository instructions;
-- read HARNESS.md and HARNESS.local.md when present, then the listed files and directly related interfaces;
+- read repository agent instructions (for example AGENTS.md or CLAUDE.md) when present, then the listed files and directly related interfaces;
 - stop as BLOCKED if expected behavior or an interface is materially ambiguous.
 
 Stop and ask before, instead of proceeding unilaterally:

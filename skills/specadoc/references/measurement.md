@@ -16,7 +16,7 @@ raw output. It contains exactly:
   restate the matrix.
 - **Baseline** - which failures were already present before this change.
 - **Gaps** - every check that did not run, stated explicitly, such as
-  `tests were not analysed` for a production-only PHPStan run.
+  `tests were not analysed` for a production-only static-analysis run.
 
 Raw successful logs and repeated broad error output never enter the controller
 or reviewer context. A reviewer still inspects critical evidence itself; a
@@ -46,9 +46,9 @@ Collect every execution of a delivery change, controller included. A child-only
 sum is incomplete evidence.
 
 ```bash
-rtk python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|apply|archive> --harness claude   <session.jsonl|project-dir>...
-rtk python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|apply|archive> --harness codex    <rollout.jsonl|dir>...
-rtk python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|apply|archive> --harness opencode --directory <repo path>
+python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|apply|archive> --harness claude   <session.jsonl|project-dir>...
+python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|apply|archive> --harness codex    <rollout.jsonl|dir>...
+python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|apply|archive> --harness opencode --directory <repo path>
 ```
 
 Each backend reads what its harness records:

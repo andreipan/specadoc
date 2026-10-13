@@ -60,8 +60,9 @@ matched, state that in the prompt and continue normally.
 
 The scout must not edit files, choose the final architecture, or produce a broad summary.
 
-After reconnaissance, use the `grilling` skill to stress-test the idea. Pass it
-the settled facts and material decisions; do not let it repeat repository
+After reconnaissance, stress-test the idea with a grilling skill when one is
+installed (see `interoperability.md` → Optional companion skills). Pass it the
+settled facts and material decisions; do not let it repeat repository
 discovery or persist `spec.md`/`plan.md` during explore mode.
 
 ## Unknown classification
@@ -85,10 +86,10 @@ A user decision is material only when different answers change one or more of:
 
 ## Question protocol
 
-Ask no more than three material questions by default. Delivery follows the
-`grilling` skill: ask every question whose prerequisites are settled in one
-numbered round, and keep a dependent question for a later round. Ask one at a
-time only when the harness has no sub-agents, as `grilling` states.
+Ask no more than three material questions by default. Ask every question whose
+prerequisites are settled in one numbered round, and keep a dependent question
+for a later round. Ask one at a time only when the harness has no sub-agents. An
+installed grilling skill may refine this delivery; follow it when present.
 
 Each question must contain:
 

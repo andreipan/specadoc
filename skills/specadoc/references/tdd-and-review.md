@@ -64,13 +64,13 @@ A missing convenient test harness is not automatically an exception. Prefer addi
 - During implementation, run the smallest deterministic check for the current
   task. Do not repeatedly run the same broad suite after edits outside its
   scope.
-- Run one structural PHPStan/type-check after the first stable migration batch,
+- Run one structural static-analysis/type-check after the first stable migration batch,
   before broad regression tests. Scope it to changed production paths and
   separate migration errors from a confirmed baseline.
-- Run final affected production PHPStan/type-check immediately before review if
+- Run final affected production static-analysis/type-check immediately before review if
   production code changed since the structural run. Otherwise reuse the
   structural result and record that no relevant code changed.
-- Do not rerun a broad PHPStan command merely to reproduce known baseline
+- Do not rerun a broad static-analysis command merely to reproduce known baseline
   errors. Use a narrower command for files changed after the baseline was
   established.
 - Run stateful or database tests sequentially unless the repository explicitly

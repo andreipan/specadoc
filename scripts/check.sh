@@ -6,4 +6,5 @@ PYTHON="${PYTHON:-python3}"
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -m unittest discover -s tests -p 'test_*.py' -q
 if command -v claude >/dev/null 2>&1 && [ -f .claude-plugin/plugin.json ]; then
   claude plugin validate . --strict
+  claude plugin validate .claude-plugin/plugin.json --strict
 fi

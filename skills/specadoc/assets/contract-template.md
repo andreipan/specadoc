@@ -23,7 +23,8 @@ the change is additive.>
 
 ## Consumers
 
-Every repository requiring this package, from `shared/landscape.json`. Fill the
+Every repository requiring this package, from the landscape map or a dependency
+search. Fill the
 current constraint before deciding, not after.
 
 | Repository | Current constraint | Required version | Plan | Status |
@@ -38,4 +39,4 @@ change, and say which.
 
 - Producer: <the check proving the new behavior>.
 - Package: <test covering the new method or shape>, and the tag applied.
-- Per consumer: `composer.lock` shows the required version, and <the check>.
+- Per consumer: the dependency lock file shows the required version, and <the check>.
