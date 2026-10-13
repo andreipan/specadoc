@@ -31,7 +31,7 @@ class ArchiveChangeTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name)
-        self.root = self.repo / "docs" / "agent"
+        self.root = self.repo / "docs" / "specadoc"
         self.root.mkdir(parents=True)
 
     def tearDown(self) -> None:
@@ -162,7 +162,7 @@ class ArchiveChangeTest(unittest.TestCase):
         archive_module = load_module()
         change = self.change()
         change.joinpath("spec.md").write_text(
-            "## Goal\nShip compact history\n\n## Affected capabilities\n- `docs/agent/specs/x.md`\n",
+            "## Goal\nShip compact history\n\n## Affected capabilities\n- `docs/specadoc/specs/x.md`\n",
             encoding="utf-8",
         )
         change.joinpath("plan.md").write_text(

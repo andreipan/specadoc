@@ -30,7 +30,7 @@ class ReviewSnapshotTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name)
-        self.root = self.repo / "docs" / "agent"
+        self.root = self.repo / "docs" / "specadoc"
         self.change = self.root / "demo"
         self.change.mkdir(parents=True)
         self.handler = self.change / "Handler.php"

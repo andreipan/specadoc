@@ -23,7 +23,7 @@ def load_module():
 class ValidateChangeTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name) / "docs" / "agent"
+        self.root = Path(self.temp.name) / "docs" / "specadoc"
         self.change = self.root / "demo"
         self.change.mkdir(parents=True)
 
@@ -42,8 +42,8 @@ class ValidateChangeTest(unittest.TestCase):
         requirements = spec.blocks("Requirements", "R")
         scenarios = spec.blocks("Acceptance scenarios", "A")
         found = module.check_spec_content(spec, requirements, scenarios)
-        found += module.stray_delta_lines(spec, "docs/agent")
-        found += module.check_capability_deltas(spec, "docs/agent")
+        found += module.stray_delta_lines(spec, "docs/specadoc")
+        found += module.check_capability_deltas(spec, "docs/specadoc")
         return [item.message for item in found]
 
     def test_spec_content_rejects_empty_and_unfinished_goal(self) -> None:
@@ -81,14 +81,14 @@ class ValidateChangeTest(unittest.TestCase):
         messages = self.spec_messages(
             "## Affected capabilities\n\n"
             "  - ADDED C1 (R1) — before any path\n"
-            "- `docs/agent/specs/auth.md` (new capability)\n"
+            "- `docs/specadoc/specs/auth.md` (new capability)\n"
             "  - MODIFED C2 (R1) — typo\n"
             "- `docs/other/notes.md`\n"
             "  - ADDED C3 (R1) — outside specs\n"
         )
         self.assertIn("operation line before any capability path", messages)
         self.assertIn("unrecognized capability operation; use ADDED|MODIFIED|REMOVED|RENAMED C<n>", messages)
-        self.assertIn("docs/other/notes.md: operations are ignored outside docs/agent/specs/", messages)
+        self.assertIn("docs/other/notes.md: operations are ignored outside docs/specadoc/specs/", messages)
 
     def test_renamed_requires_new_heading(self) -> None:
         capability = self.root / "specs" / "auth.md"
@@ -101,16 +101,16 @@ class ValidateChangeTest(unittest.TestCase):
         try:
             spec = self.document(
                 "spec.md",
-                "## Affected capabilities\n\n- `docs/agent/specs/auth.md`\n"
+                "## Affected capabilities\n\n- `docs/specadoc/specs/auth.md`\n"
                 "  - RENAMED C2 (R1)\n",
             )
-            bare = [item.message for item in module.check_capability_deltas(spec, "docs/agent")]
+            bare = [item.message for item in module.check_capability_deltas(spec, "docs/specadoc")]
             spec = self.document(
                 "spec.md",
-                "## Affected capabilities\n\n- `docs/agent/specs/auth.md`\n"
+                "## Affected capabilities\n\n- `docs/specadoc/specs/auth.md`\n"
                 "  - RENAMED C2 (R1) — New heading\n",
             )
-            named = [item.message for item in module.check_capability_deltas(spec, "docs/agent")]
+            named = [item.message for item in module.check_capability_deltas(spec, "docs/specadoc")]
         finally:
             os.chdir(old_cwd)
         self.assertTrue(any("RENAMED C2 names no new heading" in message for message in bare), bare)

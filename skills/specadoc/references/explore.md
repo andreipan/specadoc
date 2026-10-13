@@ -4,11 +4,11 @@ Load this reference only for `specadoc explore` or when automatic routing select
 exploration. Explore produces conversation evidence, not repository artifacts.
 
 1. Read mandatory repository rules.
-2. Before dispatching the scout, search `docs/agent/specs/` for the current
+2. Before dispatching the scout, search `docs/specadoc/specs/` for the current
    capability of the request. Derive up to five distinctive domain terms from
    the request; use filenames, headings, and `C<n>` requirements to find
    candidates. Read at most three files with a clear semantic match. Do not
-   search or read `docs/agent/archive/`: archive records are immutable history,
+   search or read `docs/specadoc/archive/`: archive records are immutable history,
    not exploration context.
 
    If no file clearly matches, record `Relevant capability-specs: none found.`

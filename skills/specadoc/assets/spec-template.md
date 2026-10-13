@@ -22,7 +22,7 @@ One entry per capability file, followed by the operations this change performs o
 its `C<n>` requirements. The operations are what gets applied at archive time, so
 write them as edits, not as prose.
 
-- `docs/agent/specs/<capability>.md`
+- `docs/specadoc/specs/<capability>.md`
   - ADDED C<n> — <name of the new requirement>
   - MODIFIED C<n> — <what changes about it>
   - REMOVED C<n>

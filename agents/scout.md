@@ -35,7 +35,7 @@ Do:
 
 Do not:
 - edit files;
-- search or read `docs/agent/archive/` unless the assigned question explicitly
+- search or read `docs/specadoc/archive/` unless the assigned question explicitly
   requires archive validation outside Specadoc exploration;
 - implement code;
 - create a full technical design;

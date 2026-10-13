@@ -13,13 +13,13 @@ class SpecadocExploreTest(unittest.TestCase):
     def test_capability_context_precedes_scout_and_excludes_archives(self) -> None:
         text = EXPLORE.read_text(encoding="utf-8")
 
-        capability_search = text.index("search `docs/agent/specs/`")
+        capability_search = text.index("search `docs/specadoc/specs/`")
         scout_dispatch = text.index("Attempt exactly one bounded read-only `scout`")
 
         self.assertLess(capability_search, scout_dispatch)
         self.assertIn("Read at most three files", text)
         self.assertIn("Relevant capability-specs: none found.", text)
-        self.assertIn("Do not\n   search or read `docs/agent/archive/`", text)
+        self.assertIn("Do not\n   search or read `docs/specadoc/archive/`", text)
         self.assertIn("code is authoritative", text)
 
     def test_recon_requires_capability_drift_reporting(self) -> None:

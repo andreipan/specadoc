@@ -9,6 +9,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+
 VALID_RISKS = ("low", "medium", "high")
 
 
@@ -51,8 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("change_slug", help="Change name, normalized to kebab-case")
     parser.add_argument(
         "--root",
-        default="docs/agent",
-        help="Artifact root relative to the current repository (default: docs/agent)",
+        help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)",
     )
     parser.add_argument("--risk", choices=VALID_RISKS, default="medium")
     parser.add_argument("--with-design", action="store_true")
@@ -70,9 +73,17 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    try:
+        choice = resolve_root(args.root)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if warning := legacy_warning(choice):
+        print(warning, file=sys.stderr)
+
     skill_root = Path(__file__).resolve().parent.parent
     assets = skill_root / "assets"
-    target = Path(args.root).resolve() / slug
+    target = Path(choice.path).resolve() / slug
     target.mkdir(parents=True, exist_ok=True)
     title = title_from_slug(slug)
 
@@ -94,6 +105,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    print(f"root: {choice.path} ({choice.source})")
     print(f"created change artifacts in {target}")
     for _, destination in files:
         print(f"- {destination}")

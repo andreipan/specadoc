@@ -27,6 +27,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
 from validate_change import (  # noqa: E402
     Document,
     PENDING,
@@ -197,7 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("compute", "verify", "diff"))
     parser.add_argument("change_slug")
-    parser.add_argument("--root", default="docs/agent")
+    parser.add_argument("--root", help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)")
     parser.add_argument("--stored", help="Stored manifest: a JSON file path or inline JSON (for verify)")
     parser.add_argument("--previous", help="Previous-round manifest: a JSON file path or inline JSON (for diff)")
     return parser
@@ -205,7 +206,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    change = Path(args.root.rstrip("/")) / args.change_slug
+    try:
+        choice = resolve_root(args.root)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if warning := legacy_warning(choice):
+        print(warning, file=sys.stderr)
+    change = Path(choice.path) / args.change_slug
     try:
         current = compute(change, Path.cwd())
     except (ScopeError, SnapshotError) as exc:

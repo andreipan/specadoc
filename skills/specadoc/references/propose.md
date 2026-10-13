@@ -3,7 +3,7 @@
 Load this reference only for `specadoc propose`.
 
 1. Reuse accepted explore evidence; do not repeat reconnaissance.
-2. Initialize `docs/agent/<slug>/spec.md` and `plan.md` with
+2. Initialize `docs/specadoc/<slug>/spec.md` and `plan.md` with
    `scripts/init_change.py`. Add design/research only when the artifact rules
    require them.
 3. Resolve behavior-changing questions and fill observable requirements,

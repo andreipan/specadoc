@@ -16,6 +16,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
 from archive_change import (  # noqa: E402
     ArchiveError,
     render_record,
@@ -202,7 +203,7 @@ def migrate_archive(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path("docs/agent"))
+    parser.add_argument("--root", help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--backup-root", type=Path)
     return parser
@@ -211,7 +212,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        report = migrate_archive(args.root, apply=args.apply, backup_root=args.backup_root)
+        choice = resolve_root(args.root)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if warning := legacy_warning(choice):
+        print(warning, file=sys.stderr)
+    try:
+        report = migrate_archive(Path(choice.path), apply=args.apply, backup_root=args.backup_root)
     except MigrationError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

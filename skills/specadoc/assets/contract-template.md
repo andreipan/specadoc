@@ -29,7 +29,7 @@ current constraint before deciding, not after.
 
 | Repository | Current constraint | Required version | Plan | Status |
 |---|---|---|---|---|
-| `<path>` | `<^x.y>` | `<^x.y>` | `<repo>/docs/agent/<slug>/plan.md` | pending / done / not needed |
+| `<path>` | `<^x.y>` | `<^x.y>` | `<repo>/docs/specadoc/<slug>/plan.md` | pending / done / not needed |
 
 A consumer more than one major behind does not receive this change by upgrading
 the constraint alone. Decide here whether raising it is in scope or a separate

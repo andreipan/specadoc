@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+
 
 CAPABILITY = re.compile(r"^###\s+(?P<id>C\d+)\b\s*(?:—|-)?\s*(?P<title>.*)$")
 ARCHIVE_SLUG = re.compile(r"^slug:\s*(?P<slug>\S+)\s*$", re.MULTILINE)
-CAPABILITY_REF = re.compile(r"\bdocs/agent/specs/(?P<name>[\w./-]+\.md)")
 
 
 @dataclass(frozen=True)
@@ -91,9 +95,14 @@ def _provenance(path: Path) -> list[tuple[int, str]]:
     return result
 
 
-def _archive_capabilities(path: Path) -> list[str]:
+def _capability_ref(ref_root: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![\w./-]){re.escape(ref_root.rstrip('/'))}/specs/(?P<name>[\w./-]+\.md)")
+
+
+def _archive_capabilities(path: Path, ref_root: str) -> list[str]:
     text = path.read_text(encoding="utf-8")
-    return [match.group("name") for _, line in _section(text, "Affected capabilities") for match in CAPABILITY_REF.finditer(line)]
+    pattern = _capability_ref(ref_root)
+    return [match.group("name") for _, line in _section(text, "Affected capabilities") for match in pattern.finditer(line)]
 
 
 def _group_lines(rows: list[tuple[int, str]]) -> dict[str, list[int]]:
@@ -103,8 +112,10 @@ def _group_lines(rows: list[tuple[int, str]]) -> dict[str, list[int]]:
     return grouped
 
 
-def inspect(root: Path) -> DoctorReport:
+def inspect(root: Path, ref_root: str | None = None) -> DoctorReport:
+    """`ref_root` is the root as written inside artifacts; defaults to `root`."""
     root = Path(root)
+    ref_root = (ref_root or root.as_posix()).rstrip("/")
     specs = sorted((root / "specs").glob("**/*.md")) if (root / "specs").is_dir() else []
     records = sorted((root / "archive").glob("*/record.md")) if (root / "archive").is_dir() else []
     findings: list[Finding] = []
@@ -145,14 +156,14 @@ def inspect(root: Path) -> DoctorReport:
         slugs[slug].append(record)
         if slug != record.parent.name:
             findings.append(Finding("ERROR", str(record), f"slug `{slug}` does not match directory `{record.parent.name}`"))
-        for name in _archive_capabilities(record):
+        for name in _archive_capabilities(record, ref_root):
             capability = root / "specs" / name
             if not capability.is_file():
-                findings.append(Finding("WARN", str(record), f"references missing capability `docs/agent/specs/{name}`"))
+                findings.append(Finding("WARN", str(record), f"references missing capability `{ref_root}/specs/{name}`"))
                 continue
             known_changes = {change for _, change in provenance.get(capability, _provenance(capability))}
             if slug not in known_changes:
-                findings.append(Finding("WARN", str(record), f"capability `docs/agent/specs/{name}` has no provenance row for `{slug}`"))
+                findings.append(Finding("WARN", str(record), f"capability `{ref_root}/specs/{name}` has no provenance row for `{slug}`"))
     for slug, paths in slugs.items():
         if len(paths) > 1:
             findings.append(Finding("ERROR", slug, "duplicate archive slug: " + ", ".join(map(str, paths))))
@@ -162,16 +173,25 @@ def inspect(root: Path) -> DoctorReport:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path("docs/agent"))
+    parser.add_argument("--root", help="artifact root (default: resolved, see specadoc_root.py)")
     parser.add_argument("--strict", action="store_true", help="return non-zero for warnings too")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    report = inspect(args.root)
-    print(f"capability specs: {len(list((args.root / 'specs').glob('**/*.md')))}")
-    print(f"archive records: {len(list((args.root / 'archive').glob('*/record.md')))}")
+    try:
+        choice = resolve_root(args.root)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if warning := legacy_warning(choice):
+        print(warning, file=sys.stderr)
+    root = Path(choice.path)
+    report = inspect(root, choice.path)
+    print(f"root: {choice.path} ({choice.source})")
+    print(f"capability specs: {len(list((root / 'specs').glob('**/*.md')))}")
+    print(f"archive records: {len(list((root / 'archive').glob('*/record.md')))}")
     if not report.findings:
         print("Specadoc doctor: no findings.")
         return 0

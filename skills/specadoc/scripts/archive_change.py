@@ -16,6 +16,7 @@ from typing import NamedTuple, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
 from validate_change import (  # noqa: E402
     PENDING,
     Document,
@@ -396,9 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("change_slug")
     parser.add_argument(
         "--root",
-        type=Path,
-        default=Path("docs/agent"),
-        help="Artifact root relative to the current repository (default: docs/agent)",
+        help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)",
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true")
@@ -408,7 +407,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        result = archive_change(args.root, args.change_slug, force=args.force, dry_run=args.dry_run)
+        choice = resolve_root(args.root)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if warning := legacy_warning(choice):
+        print(warning, file=sys.stderr)
+    try:
+        result = archive_change(Path(choice.path), args.change_slug, force=args.force, dry_run=args.dry_run)
     except ArchiveError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

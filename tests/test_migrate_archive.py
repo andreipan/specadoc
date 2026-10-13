@@ -29,7 +29,7 @@ def load_module():
 class MigrateArchiveTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name) / "docs" / "agent"
+        self.root = Path(self.temp.name) / "docs" / "specadoc"
         self.archive = self.root / "archive"
         self.archive.mkdir(parents=True)
 

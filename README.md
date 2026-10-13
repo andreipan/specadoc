@@ -18,12 +18,12 @@ explicitly; it never takes over ordinary coding work.
 ## Modes
 
 - `specadoc explore <request>`: facts and stress-testing, no files.
-- `specadoc propose <request|slug>`: writes `docs/agent/<slug>/spec.md` and
+- `specadoc propose <request|slug>`: writes `docs/specadoc/<slug>/spec.md` and
   `plan.md` and stops at the model and plan checkpoints.
 - `specadoc apply <slug>`: TDD implementation, bounded workers, controller
   verification, final reviewer.
 - `specadoc archive <slug>`: compacts a finished change into
-  `docs/agent/archive/<slug>/record.md` (≤ 16 KiB).
+  `docs/specadoc/archive/<slug>/record.md` (≤ 16 KiB).
 
 ## Install
 
@@ -80,7 +80,10 @@ instruction file, Specadoc treats it as a repository instruction (see
 ## Scripts
 
 All scripts use only the Python standard library (Python 3.9 or newer) and
-write only under the project's `--root` (default `docs/agent`):
+write only under the project's artifact root: `--root`, else `$SPECADOC_ROOT`,
+else `.specadoc.json` (`{"root": "<path>"}`), else `docs/specadoc` (legacy
+`docs/agent` is still picked up, with a warning, until moved by
+`migrate_root.py`):
 
 | Script | Purpose |
 |---|---|
@@ -91,6 +94,8 @@ write only under the project's `--root` (default `docs/agent`):
 | `migrate_archive.py` | Migrate legacy archives, with a verified backup. |
 | `doctor.py` | Read-only health check of capability specs and archives. |
 | `collect_tokens.py` | Token accounting from Claude Code, Codex, or OpenCode logs. |
+| `migrate_root.py` | Move the artifact root (default `docs/agent` → `docs/specadoc`). |
+| `specadoc_root.py` | Shared artifact-root resolution used by the scripts. |
 
 ## Development
 

@@ -87,14 +87,14 @@ Return the standard scout report.
 ## Worker dispatch example
 
 ```text
-Implement task T5 from docs/agent/overdue-invoice-reminders/plan.md.
+Implement task T5 from docs/specadoc/overdue-invoice-reminders/plan.md.
 
 Requirements:
 - R4
 - Acceptance scenarios A3 and A4
 
 Read:
-- docs/agent/overdue-invoice-reminders/spec.md
+- docs/specadoc/overdue-invoice-reminders/spec.md
 - the T5 section of plan.md
 - src/billing/reminders/send-reminders.ts
 - src/billing/jobs/send-reminders-job.ts
@@ -124,8 +124,8 @@ Review the implementation of overdue-invoice reminders.
 Follow the repository's review skill or checklist when one is installed.
 
 Read:
-- docs/agent/overdue-invoice-reminders/spec.md
-- docs/agent/overdue-invoice-reminders/plan.md
+- docs/specadoc/overdue-invoice-reminders/spec.md
+- docs/specadoc/overdue-invoice-reminders/plan.md
 - the diff from the plan baseline to the current worktree
 - AGENTS.md and src/billing/AGENTS.md
 

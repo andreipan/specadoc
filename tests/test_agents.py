@@ -42,7 +42,7 @@ class AgentContractTest(unittest.TestCase):
     def test_scout_reports_capability_drift_and_skips_archives(self) -> None:
         scout = (AGENTS / "scout.md").read_text(encoding="utf-8")
         self.assertIn("report any drift, with code\n  authoritative", scout)
-        self.assertIn("search or read `docs/agent/archive/`", scout)
+        self.assertIn("search or read `docs/specadoc/archive/`", scout)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+
 PHASES = ("spec", "plan", "pre-review", "final")
 
 SPEC_SECTIONS = (
@@ -968,8 +972,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--phase", choices=PHASES)
     parser.add_argument(
         "--root",
-        default="docs/agent",
-        help="Artifact root relative to the current repository (default: docs/agent)",
+        help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)",
     )
     parser.add_argument("--json", action="store_true", help="Emit violations as JSON")
     parser.add_argument(
@@ -994,7 +997,14 @@ def main() -> int:
         print("error: change_slug and --phase are required unless --files-hash is used", file=sys.stderr)
         return 2
 
-    root = args.root.rstrip("/")
+    try:
+        choice = resolve_root(args.root)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if warning := legacy_warning(choice):
+        print(warning, file=sys.stderr)
+    root = choice.path
     change = Path(root) / args.change_slug
 
     if not change.is_dir():

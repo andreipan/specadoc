@@ -23,7 +23,7 @@ def load_module():
 class SpecadocDoctorTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name) / "docs/agent"
+        self.root = Path(self.temp.name) / "docs/specadoc"
         self.root.joinpath("specs").mkdir(parents=True)
         self.root.joinpath("archive").mkdir()
 
@@ -45,9 +45,9 @@ class SpecadocDoctorTest(unittest.TestCase):
     def test_clean_corpus_has_no_findings(self) -> None:
         doctor = load_module()
         self.capability("auth.md", "### C1 — Token revocation\n\nBehavior.\n\n## Provenance\n\n| Change |\n|---|\n| revoke |\n")
-        self.archive("revoke", "revoke", "- `docs/agent/specs/auth.md`\n")
+        self.archive("revoke", "revoke", "- `docs/specadoc/specs/auth.md`\n")
 
-        report = doctor.inspect(self.root)
+        report = doctor.inspect(self.root, "docs/specadoc")
 
         self.assertEqual((), report.findings)
         self.assertEqual(0, report.exit_code(strict=True))
@@ -56,10 +56,10 @@ class SpecadocDoctorTest(unittest.TestCase):
         doctor = load_module()
         self.capability("one.md", "### C1 — Shared behavior\n\nSame body.\n\n### C1 — Duplicate\n\nOther body.\n\n## Provenance\n\n| Change |\n|---|\n| one |\n| one |\n")
         self.capability("two.md", "### C2 — Shared behavior\n\nSame body.\n")
-        self.archive("wrong-directory", "same", "- `docs/agent/specs/missing.md`\n")
+        self.archive("wrong-directory", "same", "- `docs/specadoc/specs/missing.md`\n")
         self.archive("second", "same")
 
-        report = doctor.inspect(self.root)
+        report = doctor.inspect(self.root, "docs/specadoc")
         messages = "\n".join(finding.render() for finding in report.findings)
 
         self.assertIn("C1 duplicates", messages)
@@ -70,12 +70,22 @@ class SpecadocDoctorTest(unittest.TestCase):
         self.assertIn("duplicate archive slug", messages)
         self.assertEqual(1, report.exit_code(strict=False))
 
+    def test_capability_references_follow_the_configured_root(self) -> None:
+        doctor = load_module()
+        self.archive("revoke", "revoke", "- `custom/sd/specs/missing.md`\n- `docs/specadoc/specs/ignored.md`\n")
+
+        report = doctor.inspect(self.root, "custom/sd")
+        messages = "\n".join(finding.render() for finding in report.findings)
+
+        self.assertIn("references missing capability `custom/sd/specs/missing.md`", messages)
+        self.assertNotIn("ignored.md", messages)
+
     def test_missing_provenance_is_a_warning_and_strict_only_failure(self) -> None:
         doctor = load_module()
         self.capability("auth.md", "### C1 — Token revocation\n")
-        self.archive("revoke", "revoke", "- `docs/agent/specs/auth.md`\n")
+        self.archive("revoke", "revoke", "- `docs/specadoc/specs/auth.md`\n")
 
-        report = doctor.inspect(self.root)
+        report = doctor.inspect(self.root, "docs/specadoc")
 
         self.assertEqual((), report.errors)
         self.assertEqual(1, len(report.warnings))

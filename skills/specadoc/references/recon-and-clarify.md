@@ -8,9 +8,9 @@ Inspect the cheapest authoritative sources in this order:
 
 1. Repository instructions and local policy.
 2. Up to three capability specifications selected by `explore.md` from
-   `docs/agent/specs/`. They state intended current behavior in one place; the
+   `docs/specadoc/specs/`. They state intended current behavior in one place; the
    code remains authoritative where the two disagree. Do not search or read
-   `docs/agent/archive/` during reconnaissance.
+   `docs/specadoc/archive/` during reconnaissance.
 3. Current implementation and public interfaces.
 4. Existing tests and fixtures.
 5. Similar features or fixes in the same repository.

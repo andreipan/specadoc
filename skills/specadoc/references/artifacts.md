@@ -4,13 +4,21 @@ Load this reference only when creating, updating, or validating lifecycle artifa
 
 ## Artifact roots
 
+Paths below use the default root `docs/specadoc`. Scripts resolve the root in
+this order: `--root`, `$SPECADOC_ROOT`, `.specadoc.json` (`{"root": "<path>"}`)
+in the repository root, legacy `docs/agent` when it exists and
+`docs/specadoc` does not, then `docs/specadoc`. `doctor.py` and
+`init_change.py` print the resolved root; use that path wherever this
+reference says `docs/specadoc`. A legacy root triggers a warning; move it with
+`python3 <skill-root>/scripts/migrate_root.py` (dry run) and `--apply`.
+
 Three roots, one responsibility each:
 
-- `docs/agent/<change-slug>/` - the change currently being delivered.
-- `docs/agent/archive/<change-slug>/record.md` - a compact immutable history
+- `docs/specadoc/<change-slug>/` - the change currently being delivered.
+- `docs/specadoc/archive/<change-slug>/record.md` - a compact immutable history
   record produced by `scripts/archive_change.py`. Never reopen it; open a new
   change instead.
-- `docs/agent/specs/<capability>.md` - the cumulative description of behavior
+- `docs/specadoc/specs/<capability>.md` - the cumulative description of behavior
   that currently exists, one file per capability.
 
 A capability file states observable behavior only: `C<n>` SHALL statements,
@@ -26,7 +34,7 @@ the diff, and never while the change is still in flight.
 this change performs on that file's `C<n>` requirements:
 
 ```
-- `docs/agent/specs/platform-connection-storage.md`
+- `docs/specadoc/specs/platform-connection-storage.md`
   - RENAMED C2 (R3) — The identifier is a `cnx_` ULID
   - REMOVED C3 (R6)
   - MODIFIED C5 (R6) — deleting a bound application no longer detaches the connection
@@ -37,7 +45,7 @@ Operations are applied in the order `RENAMED, REMOVED, MODIFIED, ADDED`, and the
 list must be written in that order: a rename has to land before anything
 addresses the new heading, and an id freed by `REMOVED` must not collide with one
 `ADDED` in the same change. A capability this change establishes is marked
-`` `docs/agent/specs/<name>.md` (new capability) `` and admits only `ADDED`.
+`` `docs/specadoc/specs/<name>.md` (new capability) `` and admits only `ADDED`.
 
 Every operation must cite at least one requirement it implements, in
 parentheses right after the `C<n>` id — `ADDED C8 (R7) — <effect>`. This is what
@@ -59,7 +67,7 @@ requirement id. `archive_change.py` then checks the other end: that each
 Create one by copying the template:
 
 ```bash
-cp <skill-root>/assets/capability-template.md docs/agent/specs/<capability>.md
+cp <skill-root>/assets/capability-template.md docs/specadoc/specs/<capability>.md
 ```
 
 On a conflict between a capability file and the code, the code wins. Record the
@@ -71,7 +79,7 @@ touches it.
 A change that crosses a service boundary has a fourth root, in the repository of
 the shared package (library, SDK, or schema module) that carries the contract:
 
-- `docs/agent/contracts/<contract>.md` - the contract being changed, its consumers,
+- `docs/specadoc/contracts/<contract>.md` - the contract being changed, its consumers,
   and the version that delivers it.
 
 The package is the owner because it is where the contract is materialized and
@@ -83,13 +91,13 @@ package.
 Create one by copying the template:
 
 ```bash
-cp <skill-root>/assets/contract-template.md docs/agent/contracts/<contract>.md
+cp <skill-root>/assets/contract-template.md docs/specadoc/contracts/<contract>.md
 ```
 
 Sequence: determine the consumer set (from a repository landscape map or
 dependency search) before the first edit;
 write the contract file in the package; implement in the producer under its own
-`docs/agent/<change-slug>/`; tag the package; then one session per consumer, each
+`docs/specadoc/<change-slug>/`; tag the package; then one session per consumer, each
 with its own `spec.md` referencing the contract file and the required version.
 
 A consumer's spec cites `<package> <version>`, never the contract's prose. When a
@@ -98,7 +106,7 @@ the contract file states otherwise.
 
 ## Default artifact set
 
-Use `docs/agent/<change-slug>/` with:
+Use `docs/specadoc/<change-slug>/` with:
 
 - `spec.md`: behavioral contract; mostly stable after approval.
 - `plan.md`: mutable technical plan, tasks, handoff, progress, and evidence.
@@ -272,8 +280,8 @@ unknown attachments, and hashes, but it never overwrites an archive target.
 Legacy archive compaction is separate:
 
 ```bash
-python3 <skill-root>/scripts/migrate_archive.py --root docs/agent
-python3 <skill-root>/scripts/migrate_archive.py --root docs/agent --apply
+python3 <skill-root>/scripts/migrate_archive.py
+python3 <skill-root>/scripts/migrate_archive.py --apply
 ```
 
 The first command is non-writing. Every legacy design, research, log, or other
@@ -286,8 +294,8 @@ creates a verified compressed backup outside `archive/`.
 Use the read-only doctor as the archive and capability corpus grows:
 
 ```bash
-python3 <skill-root>/scripts/doctor.py --root docs/agent
-python3 <skill-root>/scripts/doctor.py --root docs/agent --strict
+python3 <skill-root>/scripts/doctor.py
+python3 <skill-root>/scripts/doctor.py --strict
 ```
 
 It reports exact duplicate `C<n>` identifiers, repeated provenance rows, exact

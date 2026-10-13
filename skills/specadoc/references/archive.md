@@ -2,7 +2,7 @@
 
 Load this reference only for explicit `specadoc archive`.
 
-The target is `docs/agent/archive/<slug>/record.md`, schema
+The target is `docs/specadoc/archive/<slug>/record.md`, schema
 `specadoc.archive/v1`, with a hard 16 KiB budget. It retains the durable outcome,
 capability delta, decisions, verification, review, measurement, forced
 exceptions, and a SHA-256 source manifest. It intentionally drops raw progress
@@ -56,7 +56,7 @@ without reading the full plan. Follow the host's memory conventions for tool
 names and keys.
 
 - The handoff summary covers goal, discoveries, accomplished work, next steps,
-  and files; next steps must name `docs/agent/archive/<slug>/record.md`.
+  and files; next steps must name `docs/specadoc/archive/<slug>/record.md`.
 - Durable cross-session facts go under a stable topic key, one fact per entry,
   stating what, why, where, and what was learned. Progress and logs stay out.
 - Scope is the current repository. Never write another repository's facts

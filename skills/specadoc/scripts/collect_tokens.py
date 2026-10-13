@@ -32,6 +32,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+
 CODEX_FILENAME_ID = re.compile(r"rollout-[\dT-]+-(?P<id>[0-9a-f-]{36})\.jsonl$")
 
 
@@ -297,7 +301,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="opencode: the repository path a session ran in")
     parser.add_argument("--db", type=Path, default=OPENCODE_DB,
                         help="opencode: database location")
-    parser.add_argument("--root", default="docs/agent")
+    parser.add_argument("--root", help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)")
     parser.add_argument("--project", default=str(Path.cwd()),
                         help="warn about executions recorded outside this directory")
     parser.add_argument("--append", action="store_true",
@@ -342,7 +346,14 @@ def main() -> int:
         print(row)
 
     if args.append:
-        plan = Path(args.root.rstrip("/")) / args.change_slug / "plan.md"
+        try:
+            choice = resolve_root(args.root)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if warning := legacy_warning(choice):
+            print(warning, file=sys.stderr)
+        plan = Path(choice.path) / args.change_slug / "plan.md"
         append_to_plan(plan, rows, args.mode)
         print(f"written to {plan}")
     return 0
