@@ -1,7 +1,6 @@
 ---
 name: specadoc
 description: Explicit engineering lifecycle with explore, propose, apply, and compact archive modes. Use only when the user names specadoc, invokes one of its modes, or requests this complete lifecycle; do not auto-apply it to ordinary coding work.
-user-invocable: true
 ---
 
 # Specadoc

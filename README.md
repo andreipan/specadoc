@@ -47,11 +47,28 @@ ln -s <repo>/skills/specadoc <project>/.agents/skills/specadoc     # Codex
 ln -s <repo>/skills/specadoc <project>/.opencode/skills/specadoc   # OpenCode
 ```
 
+Link companion skills (below) the same way, one folder per skill.
+
 The roles in `agents/*.md` are written in Claude Code agent format. For Codex,
 convert each one into `.codex/agents/<role>.toml` (`name`, `description`,
 `model`, `developer_instructions` = the Markdown body). For OpenCode, copy it
 to `.opencode/agents/<role>.md` with `mode: subagent`. Without roles, Specadoc
 falls back to running every step in the controller.
+
+## Companion skills
+
+Standalone, opt-in skills that Specadoc uses when installed and that also work
+without it:
+
+| Skill | Use |
+|---|---|
+| `tidy` | Behavior-preserving cleanup in REFACTOR, before final verification and review. |
+| `codebase-design` | Controller decision on an unresolved interface or seam. |
+| `domain-modeling` | Ambiguous terms, states and invariants during clarification. |
+
+Install only the ones a project needs. As a Claude Code plugin, every folder in
+`skills/` is available as `specadoc:<name>`; descriptions keep them from loading
+until a task matches.
 
 ## Roles and overrides
 
@@ -109,4 +126,4 @@ skill and roles.
 
 ## License
 
-MIT
+MIT. Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

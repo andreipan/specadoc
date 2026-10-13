@@ -23,9 +23,8 @@ exploration. Explore produces conversation evidence, not repository artifacts.
    bounded controller investigation. Do not report the primary MCP as the cause
    unless it itself failed.
 5. Use a symbol-aware tool (an IDE or language-server MCP, when the runtime
-   exposes one; a host may name it in `.agents/mcp-profile.json`) only for a
-   concrete symbol-aware question. If absent after available tool discovery,
-   state that limitation and use `rg`. If an exposed call errors, quote the
+   exposes one) only for a concrete symbol-aware question. If absent after
+   available tool discovery, state that limitation and use `rg`. If an exposed call errors, quote the
    exact call and error before falling back. State that DI bindings and dynamic
    dispatch may be incomplete.
 6. Use a code-graph tool, when available, only for unfamiliar entrypoints or

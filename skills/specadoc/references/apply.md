@@ -6,6 +6,8 @@ Load this reference only for `specadoc apply <slug>`.
    pass deterministic validation.
 2. Implement behavior with RED-GREEN-REFACTOR. Mechanical migrations use their
    accepted migration matrix rather than manufactured RED failures.
+   REFACTOR may include optional behavior-preserving cleanup; see
+   `interoperability.md` → Behavior-preserving cleanup.
 3. Delegate only one fully specified low-decision task at a time to `worker` when
    it reduces controller context. Architecture and ambiguous decisions remain in
    the controller.

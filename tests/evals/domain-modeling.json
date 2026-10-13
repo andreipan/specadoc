@@ -1,0 +1,29 @@
+{
+  "skill_name": "domain-modeling",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In no-file explore, clarify why moderated listings appear in Promo. Current code slices Latest into Promo; there is no persisted promotion flag. Paid promotion and publication must be independent. Propose terms and acceptance cases.",
+      "expected_output": "Distinguish moderation/publication/promotion and current versus desired behavior; do not invent existing flags, write glossary/ADR or run migrations; clarify material decisions in existing round.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Read the settled glossary to implement an approved label change. Should you reopen the entire domain model and record an ADR?",
+      "expected_output": "Near miss: consuming established terminology is not active modeling; no new questionnaire, ADR, or artifact tree.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Propose a change: hold a rental slot for 15 minutes while the customer pays. 'Booking' already exists in the catalog (a calendar slot) and in reservations (a paid commitment with cancellation rules). Hundreds of customers compete for popular slots. Clarify the model before planning.",
+      "expected_output": "Splits 'booking' into context-qualified terms with what each does not mean; asks whether no-double-booking must hold atomically or may be compensated; raises contention on one slot and hold expiry as a timeline (held, expired, paid) with triggers; leaves module shape to architecture design; no files written.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Add an admin CRUD page to edit office addresses shown in the footer. Clarify the domain model first.",
+      "expected_output": "Near miss: supporting CRUD needs only clear terms; no aggregates, events, context map or workshop-style discovery; at most a quick question if the meaning of 'office' is genuinely ambiguous.",
+      "files": []
+    }
+  ]
+}

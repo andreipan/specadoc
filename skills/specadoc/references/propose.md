@@ -13,6 +13,10 @@ Load this reference only for `specadoc propose`.
    risk and execution-level recommendation, then stop for model approval.
 5. Under the approved profile, complete three to eight independently verifiable
    tasks and the requirement-to-check matrix in `plan.md`.
+   Use an installed architecture-design companion only for unresolved interface
+   choices; use domain modeling when meanings or invariants need sharpening.
+   The controller decides; bounded workers do not choose architecture. Preserve
+   repository artifact locations and keep one source of truth per concern.
 6. Run `validate_change.py <slug> --phase plan`, present a compact plan preview,
    and stop for plan approval.
 

@@ -28,9 +28,29 @@ step they own and record which one ran:
   Without it, the reviewer role's own order applies.
 - **Implementation discipline** — rules for surgical, minimal diffs that the
   `worker` and controller follow during apply.
+- **Architecture design** — an optional controller companion for unresolved
+  interface/seam choices during technical planning. Scouts supply facts; workers
+  implement the accepted shape. Preserve repository layers and approval gates;
+  do not invoke parallel alternative designers by default.
+- **Domain modeling** — clarify ambiguous terms/states/invariants with concrete
+  scenarios during explore/propose. Reuse the existing clarification round,
+  not a second questionnaire. In no-file explore or read-only roles, return
+  proposed terms/decisions; do not write glossary or ADR files. Authorized design
+  may persist meanings in the project's glossary and significant trade-offs in
+  existing ADR locations, without duplicating behavior or task state.
+- **Behavior-preserving cleanup** — an optional worker/controller companion in
+  REFACTOR before final verification and review, never a substitute for independent review.
+  Use it when it has a concrete benefit or cleanup was requested; a trivial diff
+  needs no separate pass. Stay in the approved task/diff, no default helper
+  fan-out, and never a writing pass in the reviewer. Behavioral/security defects
+  and new architecture choices go to the controller and the specification/plan,
+  not silent cleanup. Executable edits after PASS invalidate the reviewed snapshot.
 - **Tool router** — the host's policy for symbol-aware (IDE/LSP) and code-graph
   tools, including fallbacks. Without it, use `rg`/file inspection and state the
   limitation.
+
+Specadoc bundles standalone, opt-in companions for cleanup, architecture design,
+and domain modeling (see the README); any equivalent host skill may take their place.
 
 ## Host conventions
 
@@ -97,5 +117,6 @@ For each concern, keep one source of truth:
 - Test policy: repository instructions.
 - Specialized operation: domain skill.
 - Final evidence: plan or repository-required report.
+- Domain terminology: the project's glossary; technical trade-off rationale: ADRs.
 
 Prefer adapting this skill to an existing source of truth over creating parallel documents.

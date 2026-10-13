@@ -19,6 +19,9 @@ For each behavior-changing task:
 
 Prefer tests of observable behavior over mocks of internal implementation.
 
+REFACTOR may use an installed cleanup companion; see `interoperability.md` →
+Behavior-preserving cleanup.
+
 ## Mechanical migration protocol
 
 Use this protocol for broad namespace, path, symbol, import, or type migrations:

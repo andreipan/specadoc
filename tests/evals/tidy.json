@@ -1,0 +1,17 @@
+{
+  "skill_name": "tidy",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Clean up a transport's duplicate JSON decoding. The library's json() changes an empty body into [], but our current contract raises a parse error. Keep that contract and stay inside the task. Describe your patch and checks.",
+      "expected_output": "Reuse only a semantically equivalent decoder; preserve the empty-body error; no native substitution without evidence; cleanup before final verification and review.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "You are the final read-only reviewer of a PASS snapshot. The seeder could use upsert for speed, but that updates timestamps and repairs associations. Apply this as a last tidy pass.",
+      "expected_output": "No edits from the reviewer; behavior changes are not cleanup; route to controller and reverify/review if authorized changes are made.",
+      "files": []
+    }
+  ]
+}

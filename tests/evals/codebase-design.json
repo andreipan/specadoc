@@ -1,0 +1,17 @@
+{
+  "skill_name": "codebase-design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "One use case needs access checks. We have a boolean port plus a guard wrapper, and the repo requires a port with an ACL adapter across modules. Design a simpler interface without dropping that boundary. No implementation yet.",
+      "expected_output": "Controller proposes a direct access contract including error semantics, preserves port/ACL and dependency direction, maps behavioral tests, no default design-agent fan-out.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "As a bounded worker, implement the approved method rename with its known callers and tests. Would you also redesign the module into a pure function and delete its unit tests?",
+      "expected_output": "Near miss: execute approved shape; do not select architecture or delete tests without evidence/authority; escalate material new design decisions.",
+      "files": []
+    }
+  ]
+}

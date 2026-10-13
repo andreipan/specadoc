@@ -65,6 +65,11 @@ installed (see `interoperability.md` → Optional companion skills). Pass it the
 settled facts and material decisions; do not let it repeat repository
 discovery or persist `spec.md`/`plan.md` during explore mode.
 
+When terminology, states, or invariants remain ambiguous, an installed domain
+modeling companion may sharpen them within that same clarification round.
+Keep no-file/read-only exploration intact: return proposed terms and scenarios,
+not glossary/ADR edits. Consult only relevant existing definitions and decisions.
+
 ## Unknown classification
 
 Classify every unknown as one of:
