@@ -1,0 +1,119 @@
+# Model routing and handoff
+
+Load this reference only when classifying risk, delegating work, or evaluating a model-switch checkpoint.
+
+## Risk classification
+
+### Low risk
+
+All or nearly all are true:
+
+- Existing implementation pattern is clear.
+- No public contract, schema, migration, permissions, sensitive data, money, concurrency, or distributed behavior changes.
+- Scope is local and reversible.
+- Deterministic tests exist.
+
+### Medium risk
+
+One or more are true:
+
+- Several modules are involved.
+- A new internal interface or integration is introduced.
+- Error handling is complex.
+- Some technical ambiguity remains, but the change is reversible.
+
+### High risk
+
+Any is true:
+
+- Authentication, authorization, payments, privacy, or sensitive data.
+- Persistent schema, migration, or irreversible data effects.
+- Concurrency or distributed behavior.
+- Public API or compatibility obligations.
+- Operationally dangerous changes.
+- Major architectural tradeoffs.
+
+## Execution levels
+
+Task risk and execution level are separate axes. Risk describes consequences;
+execution level describes the capability needed to make the remaining
+decisions. A medium-risk migration can still need `HIGH` execution when its
+architecture is ambiguous, while a bounded task inside a high-risk change can
+use `EASY` or `MEDIUM` after the decisions are fixed.
+
+Use three levels:
+
+- `EASY`: bounded read-only research, test discovery, or mechanical work with
+  no material decisions.
+- `MEDIUM`: normal implementation with clear requirements, known patterns, and
+  reversible technical decisions.
+- `HIGH`: architecture, migrations, public contracts, security, concurrency,
+  distributed systems, or unresolved high-impact ambiguity.
+
+## Profile binding
+
+Recommend and record an execution level, never a bare model name. Plans and
+checkpoints carry only `EASY`, `MEDIUM`, or `HIGH`. Bind the level to a concrete
+profile through the runtime in use, and state both values in the checkpoint.
+
+| Level | Claude Code | Codex | OpenCode |
+|---|---|---|---|
+| `EASY` | `model: haiku` + `effort: low` | `gpt-5.6-luna` + `low` | `openai/gpt-5.6-luna` + `low` |
+| `MEDIUM` | `model: sonnet` + `effort: medium` | `gpt-5.6-terra` + `medium` | `openai/gpt-5.6-terra` + `medium` |
+| `HIGH` | `model: opus` + `effort: high` | `gpt-5.6-sol` + `high` | `openai/gpt-5.6-sol` + `high` |
+
+Family and effort are both binding. A `HIGH` recommendation is not satisfied by
+the right family at a lower effort. A higher effort or a newer top-tier family is
+an upgrade above `HIGH`, not a substitute for user approval of the level.
+
+Fixed role levels are `scout` = `EASY`, `worker` = `MEDIUM`, and `reviewer` =
+`HIGH`, unless the user approves another mapping. The approved Codex worker
+override keeps the MEDIUM family (`gpt-5.6-terra`) with `high` reasoning; Claude
+and OpenCode workers retain `medium`. This is recorded as
+`codex_reasoning_effort` in the canonical worker role.
+
+## Role registry
+
+The runtime's role registry is the authoritative binding, not the table above:
+
+- Claude Code: `.claude/agents/{scout,worker,reviewer}.md`
+- Codex: `.codex/agents/{scout,worker,reviewer}.toml`
+- OpenCode: `.opencode/agents/{scout,worker,reviewer}.md`
+
+Read the registry file for the runtime in use rather than assuming a model name.
+If the registry and the table disagree, the registry wins; report the mismatch
+instead of silently following either. If the runtime has no registry, state that
+the level could not be bound and ask which profile to use.
+
+## Model Checkpoint
+
+After analysis (and behavioral specification on the managed path), but before
+technical planning, always stop for the user to confirm or change the execution
+profile. Do this on both direct and managed paths, even when the current profile
+exactly matches the recommendation. Skip the stop only when the user explicitly
+requested uninterrupted execution or disabled the model checkpoint.
+
+The checkpoint message must state:
+
+- task risk and execution level as separate values;
+- current model/reasoning profile when known;
+- recommended model/reasoning profile and concise reasons;
+- what the recommended profile will decide and produce next;
+- fixed subagent profiles expected later;
+- choices to continue with the recommendation, choose another profile, or
+  revise scope.
+
+Before stopping, fill the `## Model handoff` block that `plan.md` already contains
+from `assets/plan-template.md`. Do not restate the block here. Set
+`**Model checkpoint:**` to `Awaiting user confirmation`, tick the phases completed
+so far, and under `### Read before continuing` list `spec.md`, `plan.md`, any
+`design.md` or `research.md` that exists, and at most five critical repository paths.
+
+Then output a concise recommendation and stop. Do not continue planning, write
+tests, or edit production code until the user confirms or changes the profile.
+
+Record the user's selection as approved, not merely "satisfied" or "waived".
+Do not ask again for the same model checkpoint unless scope changes materially.
+
+Role boundaries, routing policy, dispatch contracts, and escalation live in
+`subagent-routing.md`. This file owns risk, execution level, and profile binding only.

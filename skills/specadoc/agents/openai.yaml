@@ -1,0 +1,5 @@
+interface:
+  display_name: "Specadoc"
+  short_description: "Explore, propose, apply, and compactly archive changes"
+policy:
+  allow_implicit_invocation: false
