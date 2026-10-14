@@ -19,10 +19,9 @@ Before editing:
   needs a decision.
 
 Stop and ask before, instead of proceeding unilaterally:
-- running a destructive database command (`migrate:fresh`, `db:wipe`,
-  `migrate:refresh`, or an equivalent that drops or replaces persisted data) —
-  confirm the target `DB_CONNECTION`/`DB_DATABASE` and get explicit
-  confirmation first;
+- running a command that drops, resets, or replaces persisted data (a schema
+  rebuild, database wipe, or storage reset) — confirm the target environment
+  and data store and get explicit confirmation first;
 - downgrading the major version of a compiler, framework, runtime, or other
   load-bearing dependency to unblock the task — report the conflict and
   proposed options instead of downgrading unilaterally.

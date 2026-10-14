@@ -68,9 +68,8 @@ Before reporting BLOCKER or IMPORTANT:
 - establish that the scenario is reachable;
 - distinguish the reviewed diff from pre-existing dirty-worktree behavior;
 - run the smallest read-only check that can confirm or disprove the consequence;
-- check whether the diff or session log ran a destructive database command
-  (`migrate:fresh`, `db:wipe`, `migrate:refresh`, or equivalent) without prior
-  explicit confirmation;
+- check whether the diff or session log ran a command that drops, resets, or
+  replaces persisted data without prior explicit confirmation;
 - check whether the diff downgrades the major version of a compiler,
   framework, runtime, or other load-bearing dependency without it being an
   explicit, agreed part of the task.
