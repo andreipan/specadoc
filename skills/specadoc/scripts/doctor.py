@@ -175,6 +175,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="artifact root (default: resolved, see specadoc_root.py)")
     parser.add_argument("--strict", action="store_true", help="return non-zero for warnings too")
+    parser.add_argument("--controller-runtime", choices=("claude", "codex", "opencode"), help="also inspect role routing, CLI presence and independence")
+    parser.add_argument("--plan", type=Path, help="approved per-change routing overrides")
     return parser
 
 
@@ -189,6 +191,11 @@ def main() -> int:
         print(warning, file=sys.stderr)
     root = Path(choice.path)
     report = inspect(root, choice.path)
+    if args.controller_runtime:
+        from role_routing import inspect_routing
+
+        routing = inspect_routing(Path.cwd(), args.controller_runtime, args.plan)
+        report = DoctorReport(report.findings + tuple(Finding(row["level"], f"routing/{row['role']}", row["message"]) for row in routing))
     print(f"root: {choice.path} ({choice.source})")
     print(f"capability specs: {len(list((root / 'specs').glob('**/*.md')))}")
     print(f"archive records: {len(list((root / 'archive').glob('*/record.md')))}")

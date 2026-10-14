@@ -77,6 +77,12 @@ registry, not here.
 
 ## Role registry
 
+If `.specadoc.json` contains `roles`, first read `project-config.md` and resolve
+the selected runtime using `scripts/role_routing.py`. Its target-runtime project
+registry supplies model/effort; the controller's host wrapper frontmatter does
+not. Record and approve the resolved binding snapshot before dispatch. The
+lookup below remains the fallback for projects without routing configuration.
+
 The runtime's role registry is the authoritative binding, not the table above.
 Resolve each role in this order and use the first that exists:
 

@@ -1,5 +1,19 @@
 # Specadoc
 
+## Project-owned routing
+
+Optional `.specadoc.json` can select `claude`, `codex` or `opencode` per role
+without embedding personal models in the plugin or installer configuration.
+Existing root-only configurations remain compatible. Model/effort come from
+the target runtime's installed registry; approved `plan.md` overrides win.
+The controller runtime is checked, never automatically switched. Routing
+scripts require Python 3.11+.
+
+See [project configuration](skills/specadoc/references/project-config.md) for
+the schema, read-only resolver, approval snapshots, external runner and migration
+contract. Updating Specadoc does not rewrite the project JSON or personal role
+settings. Non-migrated projects retain their existing registry/wrapper behavior.
+
 An explicit engineering lifecycle for coding agents: **explore → propose →
 apply → archive**. Specadoc keeps a stable behavioral contract (`spec.md`) apart
 from mutable execution state (`plan.md`), gates each phase with deterministic

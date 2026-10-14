@@ -8,10 +8,13 @@ exists and ``docs/specadoc`` does not → ``docs/specadoc``.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
+import sys
 from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from specadoc_config import load_config
 
 DEFAULT_ROOT = "docs/specadoc"
 LEGACY_ROOT = "docs/agent"
@@ -35,15 +38,8 @@ def resolve_root(cli_value: str | os.PathLike[str] | None = None, cwd: Path | No
     if env_value.strip():
         return RootChoice(_clean(env_value), "env")
     base = cwd or Path.cwd()
-    config = base / CONFIG_FILE
-    if config.is_file():
-        try:
-            data = json.loads(config.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"{config}: cannot read Specadoc config: {exc}") from exc
-        root = data.get("root") if isinstance(data, dict) else None
-        if not isinstance(root, str) or not root.strip():
-            raise ValueError(f'{config}: expected {{"root": "<path>"}}')
+    data = load_config(base)
+    if root := data.get("root"):
         return RootChoice(_clean(root), "config")
     if not (base / DEFAULT_ROOT).exists() and (base / LEGACY_ROOT).is_dir():
         return RootChoice(LEGACY_ROOT, "legacy")

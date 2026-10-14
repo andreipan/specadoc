@@ -124,19 +124,50 @@ def _paths(out_dir: Path, name: str, role: str) -> dict[str, Path]:
 
 
 def start(args: argparse.Namespace) -> int:
-    prompt = Path(args.prompt_file).read_text(encoding="utf-8")
     cwd = Path(args.cwd).resolve()
-    out_dir = Path(args.out_dir) if args.out_dir else Path(args.prompt_file).parent
-    out_dir.mkdir(parents=True, exist_ok=True)
+    from specadoc_config import load_config
+
+    config = load_config(cwd)
+    controller = getattr(args, "controller_runtime", None)
+    binding_file = getattr(args, "binding_file", None)
+    plan_file = getattr(args, "plan", None)
+    route = None
+    if "roles" in config or controller or binding_file or plan_file:
+        if not controller:
+            raise RunError("project routing requires --controller-runtime; do not infer the controller from the worker")
+        from role_routing import resolve_role
+
+        route = resolve_role(cwd, args.role, controller, cwd / plan_file if plan_file else None)
+        if not args.dry_run and not binding_file:
+            raise RunError("resolved dispatch requires --binding-file from the approved model checkpoint")
+        if binding_file:
+            frozen = json.loads((cwd / binding_file).read_text(encoding="utf-8"))
+            routes = frozen.get("routes", []) if isinstance(frozen, dict) else None
+            if not isinstance(routes, list) or not all(isinstance(row, dict) for row in routes):
+                raise RunError("invalid approved binding file; expected resolver JSON")
+            match = [row for row in routes if row.get("role") == args.role]
+            if len(match) != 1 or match[0].get("fingerprint") != route["fingerprint"]:
+                raise RunError("approved binding changed; resolve again and obtain model approval")
+        for flag, selected in (("runtime", route["runtime"]), ("model", route["model"]), ("effort", route["effort"])):
+            explicit = getattr(args, flag)
+            if explicit is not None and explicit != selected:
+                raise RunError(f"--{flag} conflicts with the resolved binding")
+            setattr(args, flag, selected)
+    if not args.runtime or not args.model:
+        raise RunError("provide --runtime and --model, or --controller-runtime to resolve the role")
+    prompt_path = cwd / args.prompt_file
+    prompt = prompt_path.read_text(encoding="utf-8")
+    out_dir = cwd / args.out_dir if args.out_dir else prompt_path.parent
     paths = _paths(out_dir, args.name, args.role)
-    for key in ("result", "exit"):
-        paths[key].unlink(missing_ok=True)
     command = build_command(args.runtime, args.role, args.model, args.effort, cwd, paths["result"].resolve())
     if args.dry_run:
         print(json.dumps(command))
         return 0
     if shutil.which(command[0]) is None:
         raise RunError(f"{command[0]} is not on PATH")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for key in ("result", "exit"):
+        paths[key].unlink(missing_ok=True)
 
     # A small supervisor shell records the exit code, so `wait` works after the
     # caller's own process is gone. The prompt goes on stdin.
@@ -168,6 +199,7 @@ def start(args: argparse.Namespace) -> int:
         "runtime": args.runtime,
         "model": args.model,
         "effort": args.effort,
+        "binding": route,
         "pid": process.pid,
         "started": time.time(),
         "cwd": str(cwd),
@@ -296,9 +328,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="action", required=True)
     begin = sub.add_parser("start")
     begin.add_argument("--role", choices=ROLES, required=True)
-    begin.add_argument("--runtime", choices=RUNTIMES, required=True)
-    begin.add_argument("--model", required=True)
+    begin.add_argument("--runtime", choices=RUNTIMES)
+    begin.add_argument("--model")
     begin.add_argument("--effort")
+    begin.add_argument("--controller-runtime", choices=RUNTIMES, help="resolve project routing and target model registry")
+    begin.add_argument("--plan", type=Path, help="plan with approved Model handoff overrides")
+    begin.add_argument("--binding-file", type=Path, help="saved role_routing.py JSON approved at model checkpoint")
     begin.add_argument("--prompt-file", required=True, help="Brief or full dispatch prompt")
     begin.add_argument("--name", required=True, help="Run name, usually the task id")
     begin.add_argument("--cwd", default=".", help="Repository root the role works in")
@@ -317,7 +352,7 @@ def main() -> int:
     handler = {"start": start, "wait": wait, "result": result, "stop": stop}[args.action]
     try:
         return handler(args)
-    except (RunError, OSError, json.JSONDecodeError) as exc:
+    except (RunError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

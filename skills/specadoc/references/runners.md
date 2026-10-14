@@ -15,14 +15,20 @@ Resolve each role's runtime and model in this order, first match wins:
 
 1. The plan's `## Model handoff` → `Scout runtime`, `Worker runtime`,
    `Reviewer runtime` (`<runtime>/<model>`), approved at the model checkpoint.
-2. The role registry (`model-routing.md` → Role registry). A host may install a
+2. Project `.specadoc.json` routing, resolved by `scripts/role_routing.py`.
+   Read `project-config.md` when `roles` is present. Model and effort come from
+   the selected runtime's registry, not the current harness's wrapper model.
+3. The role registry (`model-routing.md` → Role registry). A host may install a
    thin wrapper role that already calls `run_role.py` for its configured
    runtime; a `Runtime:` line in the dispatch prompt overrides the wrapper's
    default.
-3. The controller's own runtime.
+4. The controller's own runtime.
 
 Record the resolved values in `## Model handoff` before the first dispatch.
 Specadoc names no models: the registry or the user supplies them.
+With project routing, approve and freeze the resolver output and use
+`run_role.py --controller-runtime ... --binding-file ...` as described in
+`project-config.md`; legacy explicit flags below remain for non-migrated projects.
 
 ## Independence
 

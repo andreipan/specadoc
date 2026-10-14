@@ -72,6 +72,72 @@ class RunRoleTest(unittest.TestCase):
         self.assertIn('model_reasoning_effort="low"', command)
         self.assertEqual(command[-1], "-")
 
+    def test_dry_run_preserves_results_and_creates_no_output_directory(self):
+        result_path = self.runs / "T1.worker.result.json"
+        result_path.write_text("previous result")
+        args = ("start", "--role", "worker", "--runtime", "codex", "--model", "m1",
+                "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
+        result = self.run_cli(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result_path.read_text(), "previous result")
+        target = self.repo / "not-created"
+        result = self.run_cli(*args, "--out-dir", str(target))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(target.exists())
+
+    def test_project_routing_uses_executor_model_and_rejects_stale_approval(self):
+        (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {"worker": {"runtime": "codex"}}}))
+        role = self.repo / ".codex/agents/worker.toml"
+        role.parent.mkdir(parents=True)
+        role.write_text('model = "executor"\nmodel_reasoning_effort = "low"\n')
+        args = ("start", "--role", "worker", "--controller-runtime", "claude",
+                "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
+        result = self.run_cli(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("executor", json.loads(result.stdout))
+        sys.path.insert(0, str(SCRIPT.parent))
+        from role_routing import resolve_role
+        snapshot = self.repo / "binding.json"
+        snapshot.write_text(json.dumps({"routes": [resolve_role(self.repo, "worker", "claude")]}))
+        role.write_text(role.read_text().replace("executor", "changed"))
+        result = self.run_cli(*args, "--binding-file", str(snapshot))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("binding changed", result.stderr)
+
+    def test_routing_requires_explicit_controller_and_snapshot_for_launch(self):
+        (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {}}))
+        result = self.run_cli("start", "--role", "worker", "--runtime", "codex", "--model", "m1",
+                              "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("controller-runtime", result.stderr)
+        role = self.repo / ".codex/agents/worker.toml"
+        role.parent.mkdir(parents=True)
+        role.write_text('model = "m1"\nmodel_reasoning_effort = "low"\n')
+        result = self.run_cli("start", "--role", "worker", "--controller-runtime", "codex",
+                              "--prompt-file", str(self.brief), "--name", "T1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("binding-file", result.stderr)
+
+    def test_approved_routed_launch_records_provenance_and_validates_result(self):
+        (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {"worker": {"runtime": "codex"}}}))
+        role = self.repo / ".codex/agents/worker.toml"
+        role.parent.mkdir(parents=True)
+        role.write_text('model = "m1"\nmodel_reasoning_effort = "low"\n')
+        sys.path.insert(0, str(SCRIPT.parent))
+        from role_routing import resolve_role
+        route = resolve_role(self.repo, "worker", "claude")
+        bindings = self.repo / "binding.json"
+        bindings.write_text(json.dumps({"routes": [route]}))
+        payload = {"status": "DONE", "summary": "smoke", "files_changed": [],
+                   "tests": {"red": "N/A", "green": "transport"}, "concerns": [], "report": "smoke.md"}
+        started = self.run_cli("start", "--role", "worker", "--controller-runtime", "claude",
+                               "--binding-file", str(bindings), "--prompt-file", str(self.brief), "--name", "T1", result=payload)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        run_file = started.stdout.strip()
+        self.assertEqual(self.run_cli("wait", run_file, "--timeout", "20").returncode, 0)
+        self.assertEqual(self.run_cli("result", run_file).returncode, 0)
+        self.assertEqual(json.loads(Path(run_file).read_text())["binding"], route)
+
     def test_codex_reviewer_and_claude_commands_are_read_only(self) -> None:
         codex = json.loads(self.run_cli(
             "start", "--role", "reviewer", "--runtime", "codex", "--model", "m1",

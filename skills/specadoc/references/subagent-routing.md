@@ -3,7 +3,7 @@
 ## Responsibility split
 
 - `SKILL.md` controls the workflow and decides which role to invoke.
-- The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: a project role (`.claude/agents/*.md`, `.codex/agents/*.toml`, `.opencode/agents/*.md`) or the role shipped with this plugin. See `model-routing.md` → Role registry for the lookup order.
+- The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: a project role (`.claude/agents/*.md`, `.codex/agents/*.toml`, `.opencode/agents/*.md`) or the role shipped with this plugin. See `model-routing.md` → Role registry for the lookup order. Project `.specadoc.json` selects the runtime, not the model; use its approved binding snapshot and target registry (`project-config.md`).
 - The dispatch prompt supplies the current task, files, requirements, commands, and completion condition.
 
 When the runtime has no registered role but can start subagents, include only

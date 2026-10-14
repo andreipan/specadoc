@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Specadoc project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "version": {"const": 1, "type": "integer"},
+    "root": {"type": "string", "pattern": "\\S"},
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "controller": {"$ref": "#/$defs/route"},
+        "scout": {"$ref": "#/$defs/route"},
+        "worker": {"$ref": "#/$defs/route"},
+        "reviewer": {"$ref": "#/$defs/route"}
+      }
+    }
+  },
+  "dependentRequired": {"roles": ["version"]},
+  "$defs": {
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime"],
+      "properties": {"runtime": {"enum": ["claude", "codex", "opencode"]}}
+    }
+  }
+}

@@ -86,6 +86,7 @@ contract or belongs to a different change.
 - Risk and model checkpoint: `references/model-routing.md`
 - Role dispatch and fallbacks: `references/subagent-routing.md`
 - Roles on another runtime (`run_role.py`): `references/runners.md`
+- Project-owned routing (`.specadoc.json`): `references/project-config.md`
 - Portable role contracts: `references/roles/scout.md`,
   `references/roles/worker.md`, `references/roles/reviewer.md`; load only the
   dispatched role, when no project or registered plugin role supplies it.
