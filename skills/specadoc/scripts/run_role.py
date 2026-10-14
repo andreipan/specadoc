@@ -35,6 +35,10 @@ RUNTIMES = ("codex", "claude", "opencode")
 WRITERS = {"worker"}
 READ_TOOLS = "Read,Grep,Glob,Bash"
 WRITE_TOOLS = "Read,Edit,Write,Grep,Glob,Bash"
+# OpenCode checks every command of a shell line separately against its full text.
+READ_SHELL = ("git diff", "git log", "git show", "git status")
+# Later rules win: these re-deny writes a read-only git command could still make.
+SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*")
 STILL_RUNNING = 3
 
 
@@ -80,7 +84,33 @@ def build_command(runtime: str, role: str, model: str, effort: str | None, cwd: 
         if effort:
             command += ["--effort", effort]
         return command
-    raise RunError(f"runtime {runtime!r} is not supported by run_role.py yet; run that role natively")
+    if runtime == "opencode":
+        # A dedicated primary agent avoids recursively invoking installed wrappers.
+        base, separator, variant = model.partition("#")
+        if effort and separator and variant != effort:
+            raise RunError("model variant conflicts with --effort")
+        selected = f"{base}#{effort or variant}" if effort or variant else base
+        return ["opencode", "run", "--standalone", "--format", "json", "--auto",
+                "--agent", "specadoc-external", "--model", selected]
+    raise RunError(f"unsupported runtime {runtime!r}")
+
+
+def opencode_config(role: str) -> str:
+    config = json.loads(os.environ.get("OPENCODE_CONFIG_CONTENT") or "{}")
+    actions = ["read", "glob", "grep", "webfetch", "websearch", "skill"]
+    if role in WRITERS:
+        actions += ["edit", "shell"]
+    rules = [{"action": "*", "resource": "*", "effect": "deny"}]
+    rules += [{"action": action, "resource": "*", "effect": "allow"} for action in actions]
+    if role not in WRITERS:
+        rules += [{"action": "shell", "resource": pattern, "effect": "allow"}
+                  for command in READ_SHELL for pattern in (command, f"{command} *")]
+        rules += [{"action": "shell", "resource": pattern, "effect": "deny"} for pattern in SHELL_WRITES]
+    config.setdefault("agents", {})["specadoc-external"] = {
+        "mode": "primary", "system": f"Execute only the Specadoc {role} dispatch. No nested agents or git mutations.",
+        "permissions": rules,
+    }
+    return json.dumps(config)
 
 
 def _paths(out_dir: Path, name: str, role: str) -> dict[str, Path]:
@@ -114,6 +144,11 @@ def start(args: argparse.Namespace) -> int:
     prompt_file = out_dir / f"{args.name}.{args.role}.prompt.md"
     prompt_file.write_text(prompt, encoding="utf-8")
     env = dict(os.environ)
+    if args.runtime == "opencode":
+        env["OPENCODE_CONFIG_CONTENT"] = opencode_config(args.role)
+        prompt += "\nReturn only a JSON object matching this schema as your final message:\n"
+        prompt += schema_path(args.role).read_text(encoding="utf-8")
+        prompt_file.write_text(prompt, encoding="utf-8")
     env.update(
         SPECADOC_PROMPT=str(prompt_file.resolve()),
         SPECADOC_LOG=str(paths["log"].resolve()),
@@ -192,6 +227,22 @@ def _final_json(record: dict[str, Any]) -> Any:
     if result.is_file() and result.read_text(encoding="utf-8").strip():
         return json.loads(result.read_text(encoding="utf-8"))
     log = Path(record["log"])
+    if record["runtime"] == "opencode" and log.is_file():
+        messages: dict[str, list[str]] = {}
+        for line in log.read_text(encoding="utf-8").splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # CLI diagnostics are not result data.
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "error":
+                raise RunError(f"OpenCode error; inspect {record['log']}")
+            part = event.get("part", {})
+            if event.get("type") == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
+                messages.setdefault(part.get("messageID", "final"), []).append(part["text"])
+        if messages:
+            return json.loads("".join(list(messages.values())[-1]))
     if record["runtime"] == "claude" and log.is_file():
         envelope = json.loads(log.read_text(encoding="utf-8"))
         if isinstance(envelope, dict) and "structured_output" in envelope:

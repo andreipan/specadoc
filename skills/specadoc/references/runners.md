@@ -77,8 +77,14 @@ For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
   scout and reviewer; `--output-schema` enforces the result shape.
 - `claude`: `claude -p` with `--json-schema`; the worker gets edit tools with
   `acceptEdits`, read-only roles get `Read, Grep, Glob, Bash` with `dontAsk`.
-- `opencode`: not supported by `run_role.py` yet; run that role natively in
-  OpenCode or choose another runtime.
+- `opencode`: V2 `opencode run --standalone --format json --auto`, with
+  `provider/model#effort` and a dedicated primary agent (not the installed role
+  wrapper). Scout/reviewer permit only read/search/web/skill tools and the shell
+  commands `git diff|log|show|status`, without redirection, `--output` or
+  `--ext-diff`; edits, other commands, MCP tools and nested agents are denied.
+  Worker additionally permits edit and any shell command.
+  These are tool permissions, not an OS sandbox. The schema is appended to the
+  prompt and the final text JSON is validated locally, not by the provider.
 
 An external role does not share the controller's MCP servers or its context.
 Name exact files in the brief; it falls back to its own tools and `rg`.
