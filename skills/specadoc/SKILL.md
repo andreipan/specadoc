@@ -85,6 +85,7 @@ contract or belongs to a different change.
 - Artifacts and deterministic gates: `references/artifacts.md`
 - Risk and model checkpoint: `references/model-routing.md`
 - Role dispatch and fallbacks: `references/subagent-routing.md`
+- Roles on another runtime (`run_role.py`): `references/runners.md`
 - Portable role contracts: `references/roles/scout.md`,
   `references/roles/worker.md`, `references/roles/reviewer.md`; load only the
   dispatched role, when no project or registered plugin role supplies it.

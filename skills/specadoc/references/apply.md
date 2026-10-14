@@ -10,7 +10,11 @@ Load this reference only for `specadoc apply <slug>`.
    `interoperability.md` → Behavior-preserving cleanup.
 3. Delegate only one fully specified low-decision task at a time to `worker` when
    it reduces controller context. Architecture and ambiguous decisions remain in
-   the controller.
+   the controller. Wrap each dispatch in the file-based handoff
+   (`subagent-routing.md`): `review_snapshot.py baseline`, `task_brief.py`,
+   dispatch, `review_snapshot.py check-scope`, then your own Verification. When
+   the worker's runtime is not the controller's, dispatch through
+   `run_role.py` (`runners.md`).
 4. Record exact commands and one-line results in `plan.md`; never paste raw
    successful logs.
 5. The controller runs the final affected-only verification and populates
@@ -60,6 +64,7 @@ session.
 |---|---|---|
 | `spec.md`, the current task's `plan.md` section, its `Files:` targets, and the relevant `AGENTS.md` scope | Before writing the failing test (RED) for that task | — |
 | `subagent-routing.md` | Immediately before dispatching a worker or reviewer subagent | Not for a task the controller implements directly |
+| `runners.md` | Before the first dispatch of a role whose runtime is not the controller's | Not when every role runs natively |
 | `measurement.md` | Immediately before recording final evidence/tokens for a task | Not during RED/GREEN/REFACTOR |
 | `tdd-and-review.md` | Immediately before initiating a review round | Not during implementation |
 | `artifacts.md` | Only when authoring/updating spec.md/plan.md structure | Not needed during apply's TDD loop |

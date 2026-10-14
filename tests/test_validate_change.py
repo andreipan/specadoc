@@ -182,6 +182,102 @@ class ValidateChangeTest(unittest.TestCase):
 
         self.assertIn("T1: Surface must be one of code, ui, mixed", messages)
 
+    def task_plan(self, *, owner: str, risk: str, files: str, mark: str = " ", extra: str = "") -> str:
+        return (
+            f"## Tasks\n\n### T1 — Task\n\n- [{mark}] Complete\n"
+            f"- **Requirements:** R1\n- **Risk:** Low\n- **Decision risk:** {risk}\n"
+            f"- **Owner:** {owner}\n- **Owner level:** EASY\n{extra}"
+            f"- **Verification owner:** controller\n- **Files:** {files}\n"
+            "- **Test first:** test\n- **Expected RED:** failure\n"
+            "- **Implementation:** work\n- **Verification:** `rtk test`\n"
+            "- **Surface:** code\n- **Delivery verification:** N/A\n"
+            "- **Done when:** done\n- **Evidence:** Pending\n"
+        )
+
+    def plan_messages(self, content: str) -> list[str]:
+        module = load_module()
+        return [item.message for item in module.check_plan(self.document("plan.md", content), ["R1"])]
+
+    def test_worker_files_must_be_checkable_paths(self) -> None:
+        messages = self.plan_messages(
+            self.task_plan(owner="worker", risk="low", files="`src/A.php`, matching repositories")
+        )
+        self.assertTrue(
+            any("worker task's Files" in message and "matching repositories" in message for message in messages),
+            messages,
+        )
+
+    def test_worker_files_accept_paths_dirs_globs_and_annotations(self) -> None:
+        messages = self.plan_messages(
+            self.task_plan(
+                owner="worker",
+                risk="low",
+                files="`src/A.php` (`handle`), `src/Support/`, `tests/{Unit,Feature}/*Test.php`; `config/app.php`",
+            )
+        )
+        self.assertFalse(any("worker task's Files" in message for message in messages), messages)
+
+    def test_worker_files_rule_skips_completed_tasks_and_controller(self) -> None:
+        done = self.plan_messages(self.task_plan(owner="worker", risk="low", files="the module", mark="x"))
+        controller = self.plan_messages(
+            self.task_plan(
+                owner="controller",
+                risk="medium",
+                files="the module",
+            )
+        )
+        self.assertFalse(any("worker task's Files" in message for message in done + controller))
+
+    def test_controller_low_risk_requires_justification(self) -> None:
+        bare = self.plan_messages(self.task_plan(owner="controller", risk="low", files="`a.php`"))
+        justified = self.plan_messages(
+            self.task_plan(
+                owner="controller",
+                risk="low",
+                files="`a.php`",
+                extra="- **Controller justification:** one-file, one-cycle fix\n",
+            )
+        )
+        self.assertTrue(any("Controller justification" in message for message in bare), bare)
+        self.assertFalse(any("Controller justification" in message for message in justified), justified)
+
+    def test_files_patterns_split_paths_symbols_and_prose(self) -> None:
+        module = load_module()
+        patterns, uncheckable = module.files_patterns(
+            "`app/A.php` (`A::run`), `pkg/{x,y}/b.json`, `Foo::bar`, prose here"
+        )
+        self.assertEqual(patterns, ["app/A.php", "pkg/x/b.json", "pkg/y/b.json"])
+        self.assertEqual(uncheckable, ["`Foo::bar`", "prose here"])
+
+    def independence_messages(self, *, worker: str, reviewer: str, round_extra: str = "", owner: str = "worker") -> list[str]:
+        module = load_module()
+        plan = self.document(
+            "plan.md",
+            "## Model handoff\n\n"
+            f"**Worker runtime:** {worker}  \n**Reviewer runtime:** {reviewer}  \n\n"
+            f"## Tasks\n\n### T1 — One\n\n- [x] Complete\n- **Owner:** {owner}\n\n"
+            "## Review result\n\n### G1\n\n- **Type:** initial\n" + round_extra,
+        )
+        return [item.message for item in module.check_reviewer_independence(plan)]
+
+    def test_reviewer_on_worker_runtime_needs_waiver(self) -> None:
+        same = self.independence_messages(worker="codex/m1", reviewer="codex/m2")
+        waived = self.independence_messages(
+            worker="codex/m1", reviewer="codex/m2", round_extra="- **Independence waiver:** only Codex is licensed\n"
+        )
+        other = self.independence_messages(worker="codex/m1", reviewer="claude/m3")
+        round_override = self.independence_messages(
+            worker="codex/m1", reviewer="claude/m3", round_extra="- **Reviewer runtime:** codex/m2\n"
+        )
+        self.assertTrue(any("Independence waiver" in message for message in same), same)
+        self.assertEqual([], waived)
+        self.assertEqual([], other)
+        self.assertTrue(any("G1: reviewer runs on the worker's runtime" in message for message in round_override))
+
+    def test_independence_is_silent_without_recorded_runtimes_or_worker_tasks(self) -> None:
+        self.assertEqual([], self.independence_messages(worker="<runtime/model>", reviewer="codex/m"))
+        self.assertEqual([], self.independence_messages(worker="codex/m", reviewer="codex/m", owner="controller"))
+
     def test_final_rejects_review_that_omits_current_requirement(self) -> None:
         module = load_module()
         spec = self.document("spec.md", "## Requirements\n\n### R1 — One\n\ntext\n")

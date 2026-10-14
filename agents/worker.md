@@ -23,7 +23,9 @@ inventory with a stated dynamic-dispatch caveat.
 Before editing:
 - read the supplied task, requirements, constraints, and relevant repository instructions;
 - read repository agent instructions (for example AGENTS.md or CLAUDE.md) when present, then the listed files and directly related interfaces;
-- stop as BLOCKED if expected behavior or an interface is materially ambiguous.
+- stop as NEEDS_CONTEXT if a file, interface, or fact you need is missing from
+  the task, or as BLOCKED if expected behavior is materially ambiguous and
+  needs a decision.
 
 Stop and ask before, instead of proceeding unilaterally:
 - running a destructive database command (`migrate:fresh`, `db:wipe`,
@@ -70,7 +72,13 @@ Keep the complete report at or below 600 words. Report each successful command
 as one line with its result; never paste successful log bodies.
 
 ## Status
-COMPLETE or BLOCKED.
+One of:
+- DONE — the task is complete and every listed check passed;
+- DONE_WITH_CONCERNS — complete, but something deserves the controller's
+  attention before acceptance (list it under Remaining risks);
+- NEEDS_CONTEXT — not started or stopped early; name the missing file, fact, or
+  interface;
+- BLOCKED — a decision is needed that the task does not make.
 
 ## Summary
 Maximum 5 concise bullets.
@@ -96,7 +104,11 @@ later session does not lose it. Write "None" when nothing is outstanding.
 ## Remaining risks
 Write "None" when no known risks remain.
 
-When BLOCKED, also include:
+When the dispatch names a report file, write this report there and return only
+the status line, the changed files, and the RED/GREEN commands. When a result
+schema is supplied, the final message must be JSON matching it.
+
+When NEEDS_CONTEXT or BLOCKED, also include:
 - the precise blocker;
 - evidence;
 - the smallest decision or missing input needed.

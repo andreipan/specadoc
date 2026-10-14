@@ -12,6 +12,9 @@
 **Recommended execution level:** Pending  
 **Risk:** __RISK__  
 **Role registry:** <.claude/agents | .codex/agents | .opencode/agents | specadoc plugin | embedded contract | none>  
+**Scout runtime:** <runtime/model from the role registry, or the approved per-change override>  
+**Worker runtime:** <runtime/model>  
+**Reviewer runtime:** <runtime/model>  
 **Execution accounting:** Per-execution totals are recorded in Completion evidence.  
 **Owns next:** Pending  
 **Model checkpoint:** Awaiting user confirmation  
@@ -93,7 +96,7 @@ section otherwise.>
   risk is low — name the subagent-routing.md exception that applies (e.g. the
   one-file, one-cycle fix exception). Delete this field for any other
   Owner/Decision-risk combination.>
-- **Files:** <paths or symbols>
+- **Files:** <backticked paths, directories, or globs; symbols in parentheses after a path>
 - **Test first:** <specific behavioral test>
 - **Expected RED:** <why it initially fails>
 - **Implementation:** <minimum technical direction>
@@ -168,6 +171,8 @@ un-indent it to four spaces less when you add the first real entry:
     - **Type:** initial|re-review
     - **Snapshot:** sha256:... (the `hash` from `review_snapshot.py compute`)
     - **Previous:** none|G<n-1>
+    - **Reviewer runtime:** <runtime/model>
+    - **Independence waiver:** Pending (required only when the reviewer runs on the worker's runtime)
     - **Outcome:** PASS|FAIL
     - **Reason:** <one line, required on FAIL>
     - **Round cap override:** Pending

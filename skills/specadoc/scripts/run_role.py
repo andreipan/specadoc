@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Run a Specadoc role on another runtime's CLI and collect its result.
+
+The controller (or a thin role wrapper) uses this when a role's runtime is not
+the harness it runs in, for example a Claude controller delegating a worker
+task to Codex. See `references/runners.md` for the contract.
+
+    run_role.py start  --role worker --runtime codex --model M --effort E \\
+                       --prompt-file runs/T1-brief.md --name T1
+    run_role.py wait   runs/T1.worker.run.json --timeout 540
+    run_role.py result runs/T1.worker.run.json
+
+`start` launches the CLI in the background and returns at once; `wait` blocks
+for at most `--timeout` seconds (exit 3 while still running), so a caller with
+a per-command time limit can wait in slices; `result` validates the final JSON
+against the role's schema. No model names live here: the caller passes them.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+ASSETS = Path(__file__).resolve().parent.parent / "assets"
+ROLES = ("scout", "worker", "reviewer")
+RUNTIMES = ("codex", "claude", "opencode")
+WRITERS = {"worker"}
+READ_TOOLS = "Read,Grep,Glob,Bash"
+WRITE_TOOLS = "Read,Edit,Write,Grep,Glob,Bash"
+STILL_RUNNING = 3
+
+
+class RunError(RuntimeError):
+    pass
+
+
+def schema_path(role: str) -> Path:
+    return ASSETS / f"{role}-result.schema.json"
+
+
+def build_command(runtime: str, role: str, model: str, effort: str | None, cwd: Path, result: Path) -> list[str]:
+    schema = schema_path(role)
+    writes = role in WRITERS
+    if runtime == "codex":
+        command = [
+            "codex", "exec", "--json", "--ephemeral",
+            "-C", str(cwd),
+            "-s", "workspace-write" if writes else "read-only",
+            "-m", model,
+            "--output-schema", str(schema),
+            "-o", str(result),
+        ]
+        if effort:
+            command += ["-c", f'model_reasoning_effort="{effort}"']
+        if writes:
+            # Tests against a local database or service need loopback network.
+            command += ["-c", "sandbox_workspace_write.network_access=true"]
+        return command + ["-"]
+    if runtime == "claude":
+        tools = WRITE_TOOLS if writes else READ_TOOLS
+        command = [
+            "claude", "-p",
+            "--model", model,
+            "--output-format", "json",
+            "--json-schema", schema.read_text(encoding="utf-8"),
+            "--tools", tools,
+            "--allowedTools", *tools.split(","),
+            "--permission-mode", "acceptEdits" if writes else "dontAsk",
+            "--strict-mcp-config",
+            "--no-session-persistence",
+        ]
+        if effort:
+            command += ["--effort", effort]
+        return command
+    raise RunError(f"runtime {runtime!r} is not supported by run_role.py yet; run that role natively")
+
+
+def _paths(out_dir: Path, name: str, role: str) -> dict[str, Path]:
+    stem = f"{name}.{role}"
+    return {
+        "run": out_dir / f"{stem}.run.json",
+        "log": out_dir / f"{stem}.log",
+        "result": out_dir / f"{stem}.result.json",
+        "exit": out_dir / f"{stem}.exit",
+    }
+
+
+def start(args: argparse.Namespace) -> int:
+    prompt = Path(args.prompt_file).read_text(encoding="utf-8")
+    cwd = Path(args.cwd).resolve()
+    out_dir = Path(args.out_dir) if args.out_dir else Path(args.prompt_file).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = _paths(out_dir, args.name, args.role)
+    for key in ("result", "exit"):
+        paths[key].unlink(missing_ok=True)
+    command = build_command(args.runtime, args.role, args.model, args.effort, cwd, paths["result"].resolve())
+    if args.dry_run:
+        print(json.dumps(command))
+        return 0
+    if shutil.which(command[0]) is None:
+        raise RunError(f"{command[0]} is not on PATH")
+
+    # A small supervisor shell records the exit code, so `wait` works after the
+    # caller's own process is gone. The prompt goes on stdin.
+    script = '"$@" < "$SPECADOC_PROMPT" > "$SPECADOC_LOG" 2>&1; echo $? > "$SPECADOC_EXIT"'
+    prompt_file = out_dir / f"{args.name}.{args.role}.prompt.md"
+    prompt_file.write_text(prompt, encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        SPECADOC_PROMPT=str(prompt_file.resolve()),
+        SPECADOC_LOG=str(paths["log"].resolve()),
+        SPECADOC_EXIT=str(paths["exit"].resolve()),
+    )
+    process = subprocess.Popen(
+        ["sh", "-c", script, "specadoc-run", *command],
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    record = {
+        "role": args.role,
+        "runtime": args.runtime,
+        "model": args.model,
+        "effort": args.effort,
+        "pid": process.pid,
+        "started": time.time(),
+        "cwd": str(cwd),
+        "command": [part if len(part) < 200 else part[:40] + "…" for part in command],
+        **{key: str(path.resolve()) for key, path in paths.items() if key != "run"},
+    }
+    paths["run"].write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
+    print(paths["run"])
+    return 0
+
+
+def _load(run_file: str) -> dict[str, Any]:
+    path = Path(run_file)
+    if not path.is_file():
+        raise RunError(f"no run record at {path}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait(args: argparse.Namespace) -> int:
+    record = _load(args.run_file)
+    exit_file = Path(record["exit"])
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        if exit_file.is_file():
+            print(f"finished: exit {exit_file.read_text().strip()}")
+            return 0
+        if not _alive(record["pid"]):
+            print("finished: supervisor exited without an exit code")
+            return 0
+        time.sleep(min(1.0, max(0.1, deadline - time.monotonic())))
+    print(f"running: pid {record['pid']}; call wait again")
+    return STILL_RUNNING
+
+
+def stop(args: argparse.Namespace) -> int:
+    record = _load(args.run_file)
+    try:
+        os.killpg(record["pid"], signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    print("stopped")
+    return 0
+
+
+def _final_json(record: dict[str, Any]) -> Any:
+    result = Path(record["result"])
+    if result.is_file() and result.read_text(encoding="utf-8").strip():
+        return json.loads(result.read_text(encoding="utf-8"))
+    log = Path(record["log"])
+    if record["runtime"] == "claude" and log.is_file():
+        envelope = json.loads(log.read_text(encoding="utf-8"))
+        if isinstance(envelope, dict) and "structured_output" in envelope:
+            return envelope["structured_output"]
+        if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
+            return json.loads(envelope["result"])
+    raise RunError(f"no final result; inspect {record['log']}")
+
+
+def schema_errors(value: Any, schema: dict[str, Any], where: str = "$") -> list[str]:
+    """A minimal validator for the bundled result schemas (object/array/string/enum)."""
+    kind = schema.get("type")
+    if kind == "object":
+        if not isinstance(value, dict):
+            return [f"{where}: expected object"]
+        errors = [f"{where}.{key}: missing" for key in schema.get("required", []) if key not in value]
+        properties = schema.get("properties", {})
+        if schema.get("additionalProperties") is False:
+            errors += [f"{where}.{key}: unexpected" for key in value if key not in properties]
+        for key, child in properties.items():
+            if key in value:
+                errors += schema_errors(value[key], child, f"{where}.{key}")
+        return errors
+    if kind == "array":
+        if not isinstance(value, list):
+            return [f"{where}: expected array"]
+        return [error for index, item in enumerate(value) for error in schema_errors(item, schema["items"], f"{where}[{index}]")]
+    if kind == "string":
+        if not isinstance(value, str):
+            return [f"{where}: expected string"]
+        if "enum" in schema and value not in schema["enum"]:
+            return [f"{where}: {value!r} not in {schema['enum']}"]
+    return []
+
+
+def result(args: argparse.Namespace) -> int:
+    record = _load(args.run_file)
+    exit_file = Path(record["exit"])
+    if not exit_file.is_file():
+        raise RunError("run has not finished; call wait first")
+    payload = _final_json(record)
+    schema = json.loads(schema_path(record["role"]).read_text(encoding="utf-8"))
+    errors = schema_errors(payload, schema)
+    output = {"exit": int(exit_file.read_text().strip() or 1), "result": payload, "schema_errors": errors}
+    print(json.dumps(output, indent=2, ensure_ascii=False))
+    return 0 if not errors and output["exit"] == 0 else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="action", required=True)
+    begin = sub.add_parser("start")
+    begin.add_argument("--role", choices=ROLES, required=True)
+    begin.add_argument("--runtime", choices=RUNTIMES, required=True)
+    begin.add_argument("--model", required=True)
+    begin.add_argument("--effort")
+    begin.add_argument("--prompt-file", required=True, help="Brief or full dispatch prompt")
+    begin.add_argument("--name", required=True, help="Run name, usually the task id")
+    begin.add_argument("--cwd", default=".", help="Repository root the role works in")
+    begin.add_argument("--out-dir", help="Where run files go (default: the prompt file's directory)")
+    begin.add_argument("--dry-run", action="store_true", help="Print the command instead of running it")
+    for name in ("wait", "result", "stop"):
+        child = sub.add_parser(name)
+        child.add_argument("run_file")
+        if name == "wait":
+            child.add_argument("--timeout", type=float, default=540.0)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    handler = {"start": start, "wait": wait, "result": result, "stop": stop}[args.action]
+    try:
+        return handler(args)
+    except (RunError, OSError, json.JSONDecodeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

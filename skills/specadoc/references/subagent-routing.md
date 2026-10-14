@@ -53,7 +53,8 @@ Keep work in the controller when:
 - architecture must be selected;
 - the task itself requires a material authorization, money, sensitive-data,
   migration, concurrency, public-compatibility, or irreversible decision;
-- a worker has already returned BLOCKED;
+- a worker has already returned BLOCKED (a decision is missing; NEEDS_CONTEXT
+  only means add the named context and dispatch again);
 - reviewer findings conflict with the specification.
 
 ## Execution safety
@@ -176,6 +177,38 @@ no new violation of the same requirement.
 Follow the repository's command conventions. Do not edit files.
 Use the standard reviewer response.
 ```
+
+## File-based worker handoff
+
+Use this for every worker dispatch when the scripts are available, and always
+for a worker on another runtime (see `runners.md`):
+
+1. `python3 <skill-root>/scripts/review_snapshot.py baseline <slug> --task T<n>`
+   records the whole working tree before dispatch. It also lists `Files:` items
+   that are not paths; fix them in the plan before dispatching.
+2. `python3 <skill-root>/scripts/task_brief.py <slug> T<n>` writes
+   `runs/T<n>-brief.md`. The dispatch prompt is then only: the brief path, the
+   report path `runs/T<n>-report.md`, and any context added after a previous
+   NEEDS_CONTEXT.
+3. After the worker returns, run
+   `python3 <skill-root>/scripts/review_snapshot.py check-scope <slug> --task T<n>`
+   before reading its report. Exit 1 lists every change outside the task's
+   `Files:` or under the artifact root: revert or justify each before
+   acceptance; never widen `Files:` after the fact to make the check pass.
+4. Run the task's Verification command yourself; the worker's report is a
+   claim, not evidence.
+
+One writer at a time: the baseline belongs to one task; do not edit the working
+tree while a worker runs.
+
+## Worker status handling
+
+- `DONE` — run check-scope and Verification, then accept.
+- `DONE_WITH_CONCERNS` — resolve or record each concern before acceptance.
+- `NEEDS_CONTEXT` — add exactly the named context and dispatch again; this is
+  not a failed attempt.
+- `BLOCKED` — the controller makes the missing decision (or asks the user),
+  updates the plan, and only then dispatches again; see Escalation.
 
 ## Escalation
 

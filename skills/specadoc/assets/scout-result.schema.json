@@ -1,0 +1,25 @@
+{
+  "description": "Specadoc scout result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "summary",
+    "report"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "BLOCKED"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "report": {
+      "type": "string"
+    }
+  }
+}

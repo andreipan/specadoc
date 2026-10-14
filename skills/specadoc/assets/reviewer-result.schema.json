@@ -1,0 +1,50 @@
+{
+  "description": "Specadoc reviewer result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "findings",
+    "report"
+  ],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "location",
+          "summary"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "BLOCKER",
+              "IMPORTANT",
+              "MINOR"
+            ]
+          },
+          "location": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "report": {
+      "type": "string"
+    }
+  }
+}

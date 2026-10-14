@@ -527,6 +527,51 @@ def task_fields(plan: Document, start: int, end: int) -> dict[str, str]:
     return fields
 
 
+FILES_PATH = re.compile(r"`(?P<pattern>[^`]+)`")
+FILES_SPLIT = re.compile(r"[,;](?![^{]*\})")
+FILES_BRACES = re.compile(r"\{([^{}]*)\}")
+
+
+def _expand_braces(pattern: str) -> list[str]:
+    match = FILES_BRACES.search(pattern)
+    if match is None:
+        return [pattern]
+    head, tail = pattern[: match.start()], pattern[match.end() :]
+    return [
+        expanded
+        for option in match.group(1).split(",")
+        for expanded in _expand_braces(head + option.strip() + tail)
+    ]
+
+
+def files_patterns(files_field: str) -> tuple[list[str], list[str]]:
+    """Split a task's `Files:` into (path patterns, uncheckable items).
+
+    A pattern is every backticked entry that is a path: a literal file, a
+    directory (it covers everything below it), or a glob with `*`, `**`, `?`
+    and `{a,b}`. Backticked symbols (`Foo::bar`, `run()`) are not paths. A
+    comma- or semicolon-separated item without any path is prose that no
+    scope check can verify.
+    """
+    patterns: list[str] = []
+    uncheckable: list[str] = []
+    for item in FILES_SPLIT.split(files_field):
+        item = item.strip()
+        if not item:
+            continue
+        found = [
+            match.group("pattern").strip().strip("/")
+            for match in FILES_PATH.finditer(item)
+        ]
+        found = [entry for entry in found if entry and "::" not in entry and "(" not in entry]
+        if not found:
+            uncheckable.append(item)
+            continue
+        for entry in found:
+            patterns.extend(_expand_braces(entry))
+    return patterns, uncheckable
+
+
 def files_field_hash(files_field: str) -> str | None:
     """Content and presence hash of paths named in a task's `Files:` field.
 
@@ -570,10 +615,12 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
     task_requirements: set[str] = set()
     for identifier, start, end in tasks:
         has_checkbox = False
+        complete = False
         for index in range(start, end):
             line = plan.lines[index]
-            if TASK_CHECKBOX.match(line):
+            if match := TASK_CHECKBOX.match(line):
                 has_checkbox = True
+                complete = match.group("mark") in "xX"
         fields = task_fields(plan, start, end)
         if not has_checkbox:
             violations.append(
@@ -617,6 +664,18 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                         "tools and fixing what they find is worker's job (subagent-routing.md's "
                         "Routing policy). Add a **Controller justification:** line naming the "
                         "specific exception, or change Owner to worker.",
+                    )
+                )
+        if owner == "worker" and not complete and "Files" in fields:
+            _, uncheckable = files_patterns(fields["Files"])
+            if uncheckable:
+                violations.append(
+                    Violation(
+                        plan.display,
+                        start + 1,
+                        f"{identifier}: a worker task's Files must name backticked paths, "
+                        "directories, or globs that check-scope can verify; not a path: "
+                        + "; ".join(uncheckable),
                     )
                 )
         verification_owner = fields.get("Verification owner", "").strip().lower()
@@ -814,12 +873,64 @@ def check_review_readiness(plan: Document) -> list[Violation]:
     return violations
 
 
+RUNTIMES = ("claude", "codex", "opencode")
+HANDOFF_FIELD = re.compile(r"^\*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*?)\s*$")
+
+
+def _runtime(value: str) -> str | None:
+    runtime = value.split("/", 1)[0].strip().strip("`").lower()
+    return runtime if runtime in RUNTIMES else None
+
+
+def handoff_fields(plan: Document) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for _, line in plan.body("Model handoff"):
+        if match := HANDOFF_FIELD.match(line):
+            fields[match.group("name").strip()] = match.group("value")
+    return fields
+
+
+def check_reviewer_independence(plan: Document) -> list[Violation]:
+    """A reviewer on the worker's runtime needs a recorded Independence waiver.
+
+    Applies only when the plan delegates at least one task to a worker and both
+    runtimes are recorded (`runners.md`). A round's own `Reviewer runtime`
+    overrides the one in `## Model handoff`.
+    """
+    has_worker = any(
+        task_fields(plan, start, end).get("Owner", "").strip().lower() == "worker"
+        for _, start, end in plan.blocks("Tasks", "T")
+    )
+    handoff = handoff_fields(plan)
+    worker = _runtime(handoff.get("Worker runtime", ""))
+    if not has_worker or worker is None:
+        return []
+    violations: list[Violation] = []
+    for identifier, start, end in plan.blocks("Review result", "G"):
+        fields = task_fields(plan, start, end)
+        reviewer = _runtime(fields.get("Reviewer runtime", "")) or _runtime(handoff.get("Reviewer runtime", ""))
+        if reviewer != worker:
+            continue
+        waiver = fields.get("Independence waiver", "").strip()
+        if not waiver or PENDING.search(waiver):
+            violations.append(
+                Violation(
+                    plan.display,
+                    start + 1,
+                    f"{identifier}: reviewer runs on the worker's runtime ({worker}); record "
+                    "**Independence waiver:** <reason> or review on another runtime (runners.md)",
+                )
+            )
+    return violations
+
+
 def check_pre_review(plan: Document) -> list[Violation]:
     """Validate readiness and refuse only a new reviewer dispatch past the cap."""
     return (
         check_review_readiness(plan)
         + check_review_round_structure(plan)
         + check_review_round_cap(plan)
+        + check_reviewer_independence(plan)
     )
 
 

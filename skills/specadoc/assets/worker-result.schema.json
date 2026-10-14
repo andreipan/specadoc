@@ -1,0 +1,58 @@
+{
+  "description": "Specadoc worker result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "summary",
+    "files_changed",
+    "tests",
+    "concerns",
+    "report"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "DONE_WITH_CONCERNS",
+        "NEEDS_CONTEXT",
+        "BLOCKED"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "red",
+        "green"
+      ],
+      "properties": {
+        "red": {
+          "type": "string"
+        },
+        "green": {
+          "type": "string"
+        }
+      }
+    },
+    "concerns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "report": {
+      "type": "string"
+    }
+  }
+}

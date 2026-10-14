@@ -93,6 +93,11 @@ Resolve each role in this order and use the first that exists:
    Report the incomplete review gate and stop before claiming managed completion
    or normal archive. Never silently substitute self-review.
 
+A role's runtime (which agent CLI executes it) is part of its binding. A
+per-change runtime in the plan's `## Model handoff` takes precedence over the
+registry; a role whose runtime is not the controller's runs through
+`run_role.py`. See `runners.md`.
+
 Do not install project agents or change runtime configuration automatically.
 All dispatches remain subject to the host's delegation policy and capabilities.
 
