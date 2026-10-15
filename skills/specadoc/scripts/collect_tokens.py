@@ -35,8 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+from validate_change import PLACEHOLDER  # noqa: E402
 
-PLACEHOLDER_LINE = re.compile(r"<[A-Za-z][^>\n]{2,}>")  # validate_change.PLACEHOLDER
 CODEX_FILENAME_ID = re.compile(r"rollout-[\dT-]+-(?P<id>[0-9a-f-]{36})\.jsonl$")
 
 
@@ -281,7 +281,7 @@ def append_to_plan(plan: Path, rows: list[str], mode: str) -> None:
         for line in lines[label + 1 : end]
         if not line.startswith(f"mode={mode} ")
         and not line.startswith(f"total mode={mode} ")
-        and not PLACEHOLDER_LINE.fullmatch(line.strip())
+        and not PLACEHOLDER.fullmatch(line.strip())
     ]
     plan.write_text(
         "\n".join(lines[: label + 1] + existing + rows + lines[end:]) + "\n",

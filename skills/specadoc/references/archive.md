@@ -33,6 +33,10 @@ Normal archive:
    violation without dispatching a reviewer.
 4. Run the same command without `--dry-run`.
 
+Files under the change's `runs/` are transient role handoff: archive never
+reports them as unknown attachments, collapses them into one source-manifest
+row, and removes them with the source; clean nothing by hand.
+
 Forced archive:
 
 1. Always show `--force --dry-run` first.
