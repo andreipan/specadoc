@@ -78,6 +78,10 @@ MAX_TASKS = 8
 
 PLACEHOLDER = re.compile(r"<[A-Za-z][^>\n]{2,}>")
 INLINE_CODE = re.compile(r"`[^`\n]*`")
+DISCLOSURE_TAG = re.compile(
+    r"""<(?:details|summary)(?:\s+(?:open|[\w-]+=(?:"[^"]*"|'[^']*')))*\s*>""",
+    re.IGNORECASE,
+)
 FIELD = re.compile(r"^-\s+\*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*)$")
 CHECKBOX = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+(?P<label>.+)$")
 TASK_CHECKBOX = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+Complete\s*$")
@@ -172,7 +176,7 @@ class Document:
         for number, line in self.body(section):
             if "specadoc:ignore-placeholder" in line:
                 continue
-            bare = INLINE_CODE.sub("", line)
+            bare = DISCLOSURE_TAG.sub("", INLINE_CODE.sub("", line))
             match = PLACEHOLDER.search(bare)
             if match:
                 found.append((number, match.group(0)))

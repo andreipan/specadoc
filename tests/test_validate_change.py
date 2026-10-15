@@ -638,6 +638,31 @@ class ValidateChangeTest(unittest.TestCase):
         self.assertTrue(any("marked `(new capability)`" in message for message in before))
         self.assertEqual([], after)
 
+    def test_placeholders_ignore_disclosure_tags(self) -> None:
+        plan = self.document(
+            "plan.md",
+            "## Round log\n"
+            "<details><summary>Manifest</summary>\n"
+            "<per-change placeholder text>\n"
+            "<details open>\n"
+            '<summary class="x">Both</summary> <another placeholder>\n',
+        )
+        found = plan.placeholders("Round log")
+        self.assertEqual(
+            [(3, "<per-change placeholder text>"), (5, "<another placeholder>")],
+            found,
+        )
+
+    def test_placeholders_still_report_prose_starting_with_tag_names(self) -> None:
+        plan = self.document(
+            "plan.md",
+            "## Round log\n<summary of the outcome>\n<details about the risk>\n",
+        )
+        self.assertEqual(
+            [(2, "<summary of the outcome>"), (3, "<details about the risk>")],
+            plan.placeholders("Round log"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

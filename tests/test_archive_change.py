@@ -97,6 +97,42 @@ class ArchiveChangeTest(unittest.TestCase):
 
         self.assertTrue(change.exists())
 
+    def test_normal_archive_collapses_runs_into_one_manifest_row(self) -> None:
+        archive_module = load_module()
+        change = self.change()
+        change.joinpath("spec.md").write_text("## Goal\nGoal", encoding="utf-8")
+        change.joinpath("plan.md").write_text("## Archive summary\nDone", encoding="utf-8")
+        runs = change / "runs"
+        runs.mkdir()
+        runs.joinpath("T1-brief.md").write_bytes(b"brief")
+        runs.joinpath("T1-baseline.json").write_bytes(b"{}")
+
+        with patch.object(archive_module, "validate_change_gates", return_value=[]):
+            archive_module.archive_change(self.root, "demo", force=False, dry_run=False)
+
+        content = (self.root / "archive" / "demo" / "record.md").read_text(encoding="utf-8")
+        self.assertFalse(change.exists())
+        self.assertEqual(1, content.count("`runs/`"))
+        self.assertIn("| `runs/` (2 files) | 7 | — |", content)
+        self.assertNotIn("T1-brief.md", content)
+
+    def test_unknown_root_file_blocks_archive_without_naming_runs(self) -> None:
+        archive_module = load_module()
+        change = self.change()
+        change.joinpath("spec.md").write_text("## Goal\nGoal", encoding="utf-8")
+        change.joinpath("plan.md").write_text("## Archive summary\nDone", encoding="utf-8")
+        change.joinpath("raw.log").write_text("details", encoding="utf-8")
+        (change / "runs").mkdir()
+        change.joinpath("runs", "T1-brief.md").write_text("brief", encoding="utf-8")
+
+        with patch.object(archive_module, "validate_change_gates", return_value=[]):
+            with self.assertRaises(archive_module.ArchiveError) as caught:
+                archive_module.archive_change(self.root, "demo", force=False, dry_run=False)
+
+        self.assertIn("raw.log", str(caught.exception))
+        self.assertNotIn("T1-brief.md", str(caught.exception))
+        self.assertTrue(change.exists())
+
     def test_normal_mode_rejects_incomplete_review_coverage(self) -> None:
         archive_module = load_module()
         change = self.change()

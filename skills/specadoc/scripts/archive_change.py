@@ -130,6 +130,9 @@ def _snapshot_messages(
     ]
 
 
+RUNS_PREFIX = "runs/"
+
+
 def source_manifest(change: Path) -> list[SourceFile]:
     paths = [
         path
@@ -152,7 +155,11 @@ def source_manifest(change: Path) -> list[SourceFile]:
 
 
 def unknown_attachments(manifest: Sequence[SourceFile]) -> list[str]:
-    return [item.name for item in manifest if item.name not in KNOWN_ARTIFACTS]
+    return [
+        item.name
+        for item in manifest
+        if item.name not in KNOWN_ARTIFACTS and not item.name.startswith(RUNS_PREFIX)
+    ]
 
 
 def oversized_artifacts(manifest: Sequence[SourceFile]) -> list[str]:
@@ -223,7 +230,18 @@ def _truncate(text: str, byte_limit: int) -> str:
 
 def _manifest_markdown(manifest: Sequence[SourceFile]) -> str:
     rows = ["| File | Bytes | SHA-256 |", "|---|---:|---|"]
-    rows.extend(f"| `{item.name}` | {item.size} | `{item.sha256}` |" for item in manifest)
+    entries = [
+        (item.name, f"| `{item.name}` | {item.size} | `{item.sha256}` |")
+        for item in manifest
+        if not item.name.startswith(RUNS_PREFIX)
+    ]
+    runs = [item for item in manifest if item.name.startswith(RUNS_PREFIX)]
+    if runs:
+        total = sum(item.size for item in runs)
+        entries.append(
+            (RUNS_PREFIX, f"| `{RUNS_PREFIX}` ({len(runs)} files) | {total} | — |")
+        )
+    rows.extend(row for _, row in sorted(entries, key=lambda entry: entry[0].split("/")))
     return "\n".join(rows)
 
 

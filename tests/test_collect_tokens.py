@@ -41,6 +41,26 @@ class CollectTokensTest(unittest.TestCase):
             self.assertIn("mode=explore replacement", content)
             self.assertNotIn("mode=explore old", content)
 
+    def test_append_drops_template_placeholder(self) -> None:
+        collect = load_module()
+        placeholder = "<per-execution totals collected by collect_tokens.py>"
+        with tempfile.TemporaryDirectory() as directory:
+            plan = Path(directory) / "plan.md"
+            plan.write_text(
+                f"## Completion evidence\n\nExecution tokens:\n{placeholder}\n"
+                "<!-- note -->\nmode=explore keep\n\nReview rounds:\nPending\n",
+                encoding="utf-8",
+            )
+
+            collect.append_to_plan(plan, ["mode=apply new", "total mode=apply codex"], "apply")
+
+            content = plan.read_text(encoding="utf-8")
+            self.assertNotIn(placeholder, content)
+            self.assertIn("mode=explore keep", content)
+            self.assertIn("<!-- note -->", content)
+            self.assertIn("mode=apply new", content)
+            self.assertIn("total mode=apply codex", content)
+
 
 if __name__ == "__main__":
     unittest.main()
