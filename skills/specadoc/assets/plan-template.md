@@ -104,6 +104,8 @@ section otherwise.>
 - **Surface:** <code|ui|mixed>
 - **Delivery verification:** <For ui/mixed: final build, typecheck, and Browser URL/state check; for code: N/A>
 - **Done when:** <objective condition>
+- **Checkpoint:** None; optional — name an intermediate commit point after this
+  task. It adds no review round; one final review still covers the diff.
 - **Evidence:** Pending; keep final evidence to one or two lines.
 - **Evidence hash:** Pending; optional — `validate_change.py --files-hash "<Files: value>"`
   computed when Evidence is recorded, so a later change to the same files before

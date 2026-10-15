@@ -604,12 +604,11 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
 
     tasks = plan.blocks("Tasks", "T")
     if not MIN_TASKS <= len(tasks) <= MAX_TASKS:
+        message = f"{len(tasks)} tasks; a normal change carries {MIN_TASKS} to {MAX_TASKS}"
+        if len(tasks) > MAX_TASKS:
+            message += "; split the extra work into a separate change"
         violations.append(
-            Violation(
-                plan.display,
-                plan.sections.get("Tasks", (0, 0))[0] + 1,
-                f"{len(tasks)} tasks; a normal change carries {MIN_TASKS} to {MAX_TASKS}",
-            )
+            Violation(plan.display, plan.sections.get("Tasks", (0, 0))[0] + 1, message)
         )
 
     task_requirements: set[str] = set()

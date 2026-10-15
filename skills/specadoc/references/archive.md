@@ -59,5 +59,6 @@ names and keys.
   and files; next steps must name `docs/specadoc/archive/<slug>/record.md`.
 - Durable cross-session facts go under a stable topic key, one fact per entry,
   stating what, why, where, and what was learned. Progress and logs stay out.
+- Never record secrets; the host's memory conventions own the full rule.
 - Scope is the current repository. Never write another repository's facts
   into this scope; cross-repo impact notes belong to the consumer's session.

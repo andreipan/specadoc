@@ -198,6 +198,25 @@ class ValidateChangeTest(unittest.TestCase):
         module = load_module()
         return [item.message for item in module.check_plan(self.document("plan.md", content), ["R1"])]
 
+    def numbered_plan(self, count: int, extra: str = "") -> str:
+        single = self.task_plan(owner="worker", risk="low", files="`src/A.php`", extra=extra)
+        body = single.split("### T1", 1)[1]
+        plain = self.task_plan(owner="worker", risk="low", files="`src/A.php`").split("### T1", 1)[1]
+        parts = [f"### T{number}{plain}" for number in range(2, count + 1)]
+        return "## Tasks\n\n" + "\n".join([f"### T1{body}"] + parts)
+
+    def test_plan_over_max_tasks_suggests_separate_change(self) -> None:
+        messages = self.plan_messages(self.numbered_plan(9))
+        self.assertTrue(any("separate change" in message for message in messages), messages)
+
+    def test_plan_under_min_tasks_keeps_count_only_message(self) -> None:
+        messages = [m for m in self.plan_messages(self.numbered_plan(2)) if "tasks; a normal change" in m]
+        self.assertEqual(["2 tasks; a normal change carries 3 to 8"], messages)
+
+    def test_plan_optional_checkpoint_field_is_accepted(self) -> None:
+        messages = self.plan_messages(self.numbered_plan(3, extra="- **Checkpoint:** commit after schema\n"))
+        self.assertFalse(any("Checkpoint" in message for message in messages), messages)
+
     def test_worker_files_must_be_checkable_paths(self) -> None:
         messages = self.plan_messages(
             self.task_plan(owner="worker", risk="low", files="`src/A.php`, matching repositories")

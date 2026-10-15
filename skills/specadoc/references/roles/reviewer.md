@@ -97,7 +97,9 @@ PASS or FAIL.
 For every supplied requirement:
 - implementation evidence;
 - test evidence;
-- status: PASS, PARTIAL, or FAIL.
+- status: PASS, PARTIAL, FAIL, or UNVERIFIABLE when the diff and supplied
+  verification can neither confirm nor refute it; name the check that would
+  settle it. UNVERIFIABLE alone does not fail the verdict.
 
 ## Findings
 Order by severity. For every finding include:
@@ -114,6 +116,7 @@ Write "None" when no findings exist.
 State which commands and results were provided, and whether they are sufficient.
 
 ## Residual risks
-Risks that remain even when the verdict is PASS.
+Risks that remain even when the verdict is PASS. Do not speculate here about
+unproven requirements; mark them UNVERIFIABLE in the matrix.
 
 Verdict is FAIL when any BLOCKER or IMPORTANT finding exists.
