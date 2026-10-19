@@ -15,7 +15,9 @@ exploration. Explore produces conversation evidence, not repository artifacts.
    and continue. Otherwise record each selected path and one sentence on how it
    affects the investigation. Capability specifications describe intended
    behavior; where they conflict with the current code, code is authoritative
-   and the drift must be reported.
+   and the drift must be reported. Run `python3 <skill-root>/scripts/doctor.py`
+   once and report each missing key-path warning for a selected file as drift;
+   do not edit the capability file.
 3. Attempt exactly one bounded read-only `scout` with one concrete question.
    Pass the selected capability-spec paths and the conflict rule in its prompt.
    Continue independent controller work while it runs.

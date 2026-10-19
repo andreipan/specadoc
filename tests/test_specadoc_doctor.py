@@ -70,6 +70,76 @@ class SpecadocDoctorTest(unittest.TestCase):
         self.assertIn("duplicate archive slug", messages)
         self.assertEqual(1, report.exit_code(strict=False))
 
+    def key_path_capability(self, entries: str) -> Path:
+        return self.capability("kp.md", f"### C1 — Thing\n\nBehavior.\n\n## Key paths\n\n{entries}\n\n## Provenance\n")
+
+    def key_path_findings(self, report) -> list:
+        return [finding for finding in report.findings if "key path" in finding.message]
+
+    def test_missing_key_path_warns_with_file_line_and_entry(self) -> None:
+        doctor = load_module()
+        path = self.key_path_capability("- `src/Gone.php`")
+
+        report = doctor.inspect(self.root, "docs/specadoc", repo_root=Path(self.temp.name))
+
+        found = self.key_path_findings(report)
+        self.assertEqual(1, len(found))
+        self.assertEqual("WARN", found[0].level)
+        self.assertEqual(f"{path}:7", found[0].subject)
+        self.assertEqual("key path `src/Gone.php` does not exist", found[0].message)
+        self.assertEqual(0, report.exit_code(strict=False))
+
+    def test_strict_fails_on_missing_key_path(self) -> None:
+        doctor = load_module()
+        self.key_path_capability("- `src/Gone.php`")
+
+        report = doctor.inspect(self.root, "docs/specadoc", repo_root=Path(self.temp.name))
+
+        self.assertEqual(1, report.exit_code(strict=True))
+
+    def test_non_path_tokens_are_ignored(self) -> None:
+        doctor = load_module()
+        self.key_path_capability("- `GET /companies`\n- `~/.cache/x.json`\n- `/categories`\n- `companies()`\n- `README.md`")
+
+        report = doctor.inspect(self.root, "docs/specadoc", repo_root=Path(self.temp.name))
+
+        self.assertEqual([], self.key_path_findings(report))
+
+    def test_suffixes_and_patterns_resolve_before_checking(self) -> None:
+        doctor = load_module()
+        base = Path(self.temp.name)
+        (base / "src").mkdir()
+        (base / "src/A.php").write_text("", encoding="utf-8")
+        (base / "ui").mkdir()
+        (base / "ui/b.tsx").write_text("", encoding="utf-8")
+        self.key_path_capability("- `src/A.php::handle`\n- `src/A.php:12`\n- `src/A.php#top`\n- `ui/*.tsx`\n- `ui/{b,c}.tsx`\n- `ui/*.vue`")
+
+        report = doctor.inspect(self.root, "docs/specadoc", repo_root=base)
+
+        found = self.key_path_findings(report)
+        self.assertEqual(["key path `ui/*.vue` does not exist"], [finding.message for finding in found])
+
+    def test_invalid_glob_pattern_is_a_warning_not_a_crash(self) -> None:
+        doctor = load_module()
+        self.key_path_capability("- `src/**.php`")
+
+        report = doctor.inspect(self.root, "docs/specadoc", repo_root=Path(self.temp.name))
+
+        self.assertEqual(["key path `src/**.php` does not exist"], [finding.message for finding in self.key_path_findings(report)])
+
+    def test_existing_key_paths_are_silent_and_file_is_untouched(self) -> None:
+        doctor = load_module()
+        base = Path(self.temp.name)
+        (base / "src").mkdir()
+        (base / "src/A.php").write_text("", encoding="utf-8")
+        path = self.key_path_capability("- `src/A.php`")
+        before = path.read_bytes()
+
+        report = doctor.inspect(self.root, "docs/specadoc", repo_root=base)
+
+        self.assertEqual([], self.key_path_findings(report))
+        self.assertEqual(before, path.read_bytes())
+
     def test_capability_references_follow_the_configured_root(self) -> None:
         doctor = load_module()
         self.archive("revoke", "revoke", "- `custom/sd/specs/missing.md`\n- `docs/specadoc/specs/ignored.md`\n")

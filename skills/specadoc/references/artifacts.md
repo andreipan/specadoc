@@ -300,7 +300,8 @@ python3 <skill-root>/scripts/doctor.py --strict
 
 It reports exact duplicate `C<n>` identifiers, repeated provenance rows, exact
 duplicate requirement text across capability files, duplicate archive slugs, and
-archive references that no longer resolve to a capability or its provenance.
+archive references that no longer resolve to a capability or its provenance,
+and capability key paths missing from the repository.
 It never deletes, rewrites, merges, or otherwise fixes artifacts. Warnings need
 human ownership decisions; errors always return non-zero, and `--strict` also
 returns non-zero for warnings.

@@ -20,6 +20,9 @@ from specadoc_root import legacy_warning, resolve_root  # noqa: E402
 
 
 CAPABILITY = re.compile(r"^###\s+(?P<id>C\d+)\b\s*(?:—|-)?\s*(?P<title>.*)$")
+BACKTICKED = re.compile(r"`([^`]+)`")
+BRACE_SET = re.compile(r"\{([^{}]*)\}")
+PATH_SUFFIX = re.compile(r"(?:::.*|#.*|:\d+)$")
 ARCHIVE_SLUG = re.compile(r"^slug:\s*(?P<slug>\S+)\s*$", re.MULTILINE)
 
 
@@ -112,8 +115,42 @@ def _group_lines(rows: list[tuple[int, str]]) -> dict[str, list[int]]:
     return grouped
 
 
-def inspect(root: Path, ref_root: str | None = None) -> DoctorReport:
-    """`ref_root` is the root as written inside artifacts; defaults to `root`."""
+def _expand_braces(entry: str) -> list[str]:
+    match = BRACE_SET.search(entry)
+    if not match:
+        return [entry]
+    return [item for option in match.group(1).split(",") for item in _expand_braces(entry[:match.start()] + option + entry[match.end():])]
+
+
+def _key_path_exists(entry: str, repo_root: Path) -> bool:
+    for candidate in _expand_braces(entry):
+        if "*" in candidate:
+            try:
+                if any(repo_root.glob(candidate)):
+                    return True
+            except (ValueError, NotImplementedError):
+                # older Path.glob rejects patterns such as `src/**.php`
+                continue
+        elif (repo_root / candidate).exists():
+            return True
+    return False
+
+
+def _key_path_findings(path: Path, repo_root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for line, row in _section(path.read_text(encoding="utf-8"), "Key paths"):
+        for token in BACKTICKED.findall(row):
+            if "/" not in token or re.search(r"[\s<]", token) or token[0] in "~/$":
+                continue
+            entry = PATH_SUFFIX.sub("", token)
+            if entry and not _key_path_exists(entry, repo_root):
+                findings.append(Finding("WARN", f"{path}:{line}", f"key path `{token}` does not exist"))
+    return findings
+
+
+def inspect(root: Path, ref_root: str | None = None, repo_root: Path | None = None) -> DoctorReport:
+    """`ref_root` is the root as written inside artifacts; defaults to `root`. `repo_root` anchors key paths; defaults to the current directory."""
+    repo_root = Path(repo_root) if repo_root else Path.cwd()
     root = Path(root)
     ref_root = (ref_root or root.as_posix()).rstrip("/")
     specs = sorted((root / "specs").glob("**/*.md")) if (root / "specs").is_dir() else []
@@ -131,6 +168,7 @@ def inspect(root: Path, ref_root: str | None = None) -> DoctorReport:
                 continue
             seen[requirement.identifier] = requirement
             requirements.append(requirement)
+        findings.extend(_key_path_findings(path, repo_root))
         provenance[path] = _provenance(path)
         for change, lines in _group_lines(provenance[path]).items():
             if len(lines) > 1:
@@ -190,7 +228,7 @@ def main() -> int:
     if warning := legacy_warning(choice):
         print(warning, file=sys.stderr)
     root = Path(choice.path)
-    report = inspect(root, choice.path)
+    report = inspect(root, choice.path, Path.cwd())
     if args.controller_runtime:
         from role_routing import inspect_routing
 

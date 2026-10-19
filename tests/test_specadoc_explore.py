@@ -22,6 +22,16 @@ class SpecadocExploreTest(unittest.TestCase):
         self.assertIn("Do not\n   search or read `docs/specadoc/archive/`", text)
         self.assertIn("code is authoritative", text)
 
+    def test_explore_runs_doctor_for_missing_key_paths(self) -> None:
+        text = EXPLORE.read_text(encoding="utf-8")
+        step2 = text[text.index("2. Before dispatching") : text.index("3. Attempt")]
+        step2 = " ".join(step2.split())
+
+        self.assertIn("<skill-root>/scripts/doctor.py", step2)
+        self.assertIn("once", step2)
+        self.assertIn("missing key-path", step2)
+        self.assertIn("do not edit the capability file", step2)
+
     def test_recon_requires_capability_drift_reporting(self) -> None:
         recon = RECON.read_text(encoding="utf-8")
 
