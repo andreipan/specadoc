@@ -1,0 +1,34 @@
+{
+  "limits": {"skill": 5632, "reference": 15360},
+  "modes": {
+    "explore": {
+      "limit": 14336,
+      "always": ["explore.md", "recon-and-clarify.md"],
+      "conditional": ["interoperability.md", "roles/scout.md"]
+    },
+    "propose": {
+      "limit": 31744,
+      "always": ["propose.md", "artifacts.md", "model-routing.md"],
+      "conditional": []
+    },
+    "apply": {
+      "limit": 11264,
+      "always": ["apply.md"],
+      "conditional": [
+        "interoperability.md",
+        "subagent-routing.md",
+        "runners.md",
+        "measurement.md",
+        "tdd-and-review.md",
+        "artifacts.md",
+        "roles/worker.md",
+        "roles/reviewer.md"
+      ]
+    },
+    "archive": {
+      "limit": 10240,
+      "always": ["archive.md"],
+      "conditional": []
+    }
+  }
+}
