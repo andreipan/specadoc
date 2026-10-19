@@ -245,6 +245,23 @@ def _manifest_markdown(manifest: Sequence[SourceFile]) -> str:
     return "\n".join(rows)
 
 
+_EXECUTION_ROW = re.compile(r"^mode=\S+ \S+ \S+ role=")
+_EVIDENCE_LABEL = re.compile(r"^[A-Z][\w ]*:\s*$")
+
+
+def _token_totals_only(text: str) -> str:
+    """Drop per-execution rows from the `Execution tokens:` block only."""
+    kept: list[str] = []
+    in_tokens = False
+    for line in text.split("\n"):
+        if _EVIDENCE_LABEL.match(line):
+            in_tokens = line.strip() == "Execution tokens:"
+        elif in_tokens and _EXECUTION_ROW.match(line):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def render_record(
     change: Path,
     change_slug: str,
@@ -261,7 +278,6 @@ def render_record(
         "capabilities": 1800,
         "decisions": 1600,
         "summary": 2200,
-        "verification": 1400,
         "review": 700,
         "measurement": 900,
     }
@@ -270,11 +286,11 @@ def render_record(
         "capabilities": section(spec, "Affected capabilities"),
         "decisions": section(plan, "Confirmed decisions"),
         "summary": section(plan, "Archive summary"),
-        "verification": section(plan, "Final verification"),
         "review": section(plan, "Review result"),
         "measurement": section(plan, "Completion evidence"),
     }
     values["review"] = _strip_round_manifests(values["review"])
+    values["measurement"] = _token_totals_only(values["measurement"])
     if migration_summary.strip():
         values["summary"] = "\n\n".join(
             value for value in (values["summary"], migration_summary.strip()) if value
@@ -311,10 +327,6 @@ status: {status}
 ## Decisions
 
 {values['decisions']}
-
-## Verification
-
-{values['verification']}
 
 ## Review
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import shutil
 import sys
 import tempfile
 import unittest
@@ -304,6 +305,64 @@ class ArchiveChangeTest(unittest.TestCase):
 
         content = (self.root / "archive" / "demo" / "record.md").read_text(encoding="utf-8")
         self.assertIn("status: archived", content)
+
+    def test_record_omits_verification_section(self) -> None:
+        archive_module = load_module()
+        for force in (False, True):
+            with self.subTest(force=force):
+                change = self.coverage_change("Covers R1 and R2")
+                change.joinpath("plan.md").write_text(
+                    "## Archive summary\nDone\n\n## Final verification\n- [x] checklist item\n\n"
+                    "## Review result\nReviewed\n\n## Completion evidence\nMeasured\n",
+                    encoding="utf-8",
+                )
+                with patch.object(archive_module, "validate_change_gates", return_value=[]):
+                    archive_module.archive_change(self.root, "demo", force=force, dry_run=False)
+                archive = self.root / "archive" / "demo"
+                content = (archive / "record.md").read_text(encoding="utf-8")
+                self.assertNotIn("## Verification", content)
+                self.assertNotIn("checklist item", content)
+                self.assertIn("## Review", content)
+                self.assertIn("## Measurement", content)
+                shutil.rmtree(archive)
+
+    def test_measurement_keeps_totals_and_other_evidence_only(self) -> None:
+        archive_module = load_module()
+        rows = [
+            f"mode=apply claude d0839ff{i} role=controller parent=- unique={i}00 read=1 in=2"
+            for i in range(3)
+        ]
+        total = "total mode=apply claude 3 run(s) unique=900 read=3 controller=45%"
+        commands = "- `python3 -m unittest` -> OK (R1, R2)"
+        mapping = "- R2 -> archive_change.py, test_archive_change.py"
+        change = self.coverage_change("Covers R1 and R2")
+        change.joinpath("plan.md").write_text(
+            "## Archive summary\nDone\n\n## Completion evidence\n"
+            f"Commands:\n{commands}\nRequirement mapping:\n{mapping}\n"
+            "Execution tokens:\n" + "\n".join(rows) + f"\n{total}\n"
+            "Review rounds:\n- G1 PASS\n",
+            encoding="utf-8",
+        )
+
+        with patch.object(archive_module, "validate_change_gates", return_value=[]):
+            archive_module.archive_change(self.root, "demo", force=False, dry_run=False)
+
+        content = (self.root / "archive" / "demo" / "record.md").read_text(encoding="utf-8")
+        for line in (total, commands, mapping, "Review rounds:", "- G1 PASS"):
+            self.assertIn(line, content)
+        for row in rows:
+            self.assertNotIn(row, content)
+        self.assertNotIn("role=controller", content)
+
+    def test_execution_rows_outside_token_block_are_kept(self) -> None:
+        archive_module = load_module()
+        stray = "mode=apply claude abc role=worker quoted as a residual risk"
+        text = f"Residual risks or waivers:\n{stray}\nExecution tokens:\n{stray}\n"
+
+        self.assertEqual(
+            f"Residual risks or waivers:\n{stray}\nExecution tokens:\n",
+            archive_module._token_totals_only(text),
+        )
 
     def test_record_coverage_matches_whole_words_only(self) -> None:
         archive_module = load_module()

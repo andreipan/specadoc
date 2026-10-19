@@ -4,9 +4,8 @@ Load this reference only for explicit `specadoc archive`.
 
 The target is `docs/specadoc/archive/<slug>/record.md`, schema
 `specadoc.archive/v1`, with a hard 16 KiB budget. It retains the durable outcome,
-capability delta, decisions, verification, review, measurement, forced
-exceptions, and a SHA-256 source manifest. It intentionally drops raw progress
-and logs.
+capability delta, decisions, review, token totals, forced exceptions, and a
+SHA-256 source manifest. It intentionally drops raw progress and logs.
 
 Archive consumes the PASS recorded by `apply`; it never dispatches a `reviewer`,
 invokes a review skill, or rebuilds a code graph. Confirm that the recorded PASS applies
