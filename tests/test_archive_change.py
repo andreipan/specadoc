@@ -249,6 +249,93 @@ class ArchiveChangeTest(unittest.TestCase):
 
         self.assertTrue(change.exists())
 
+    def coverage_change(self, goal: str, ids: tuple[str, ...] = ("R1", "R2")) -> Path:
+        change = self.change()
+        requirements = "\n".join(f"### {identifier} — Needed\n\nText.\n" for identifier in ids)
+        change.joinpath("spec.md").write_text(
+            f"## Goal\n{goal}\n\n## Requirements\n\n{requirements}",
+            encoding="utf-8",
+        )
+        change.joinpath("plan.md").write_text("## Archive summary\nDone", encoding="utf-8")
+        return change
+
+    def test_normal_archive_and_dry_run_refuse_record_missing_requirement_id(self) -> None:
+        archive_module = load_module()
+        change = self.coverage_change("Covers R1 only")
+
+        with patch.object(archive_module, "validate_change_gates", return_value=[]):
+            for dry_run in (False, True):
+                with self.subTest(dry_run=dry_run):
+                    with self.assertRaisesRegex(archive_module.ArchiveError, "R2") as caught:
+                        archive_module.archive_change(self.root, "demo", force=False, dry_run=dry_run)
+                    self.assertNotIn("does not mention R1", str(caught.exception))
+                    self.assertTrue(change.is_dir())
+                    self.assertFalse((self.root / "archive").exists())
+
+    def test_force_archive_lists_missing_id_under_forced_exceptions(self) -> None:
+        archive_module = load_module()
+        self.coverage_change("Covers R1 only")
+
+        with patch.object(archive_module, "validate_change_gates", return_value=[]):
+            result = archive_module.archive_change(self.root, "demo", force=True, dry_run=False)
+
+        content = (self.root / "archive" / "demo" / "record.md").read_text(encoding="utf-8")
+        exceptions = content.split("## Forced exceptions")[1].split("## Source manifest")[0]
+        self.assertIn("R2", exceptions)
+        self.assertNotIn("R1", exceptions)
+        self.assertTrue(any("R2" in message for message in result.violations))
+
+    def test_force_coverage_ignores_ids_named_only_by_gate_messages(self) -> None:
+        archive_module = load_module()
+        self.coverage_change("Covers R1 only")
+        gate = ["R2 has no task in plan.md"]
+
+        with patch.object(archive_module, "validate_change_gates", return_value=gate):
+            result = archive_module.archive_change(self.root, "demo", force=True, dry_run=False)
+
+        self.assertIn("record.md does not mention R2", result.violations)
+
+    def test_complete_record_archives_normally(self) -> None:
+        archive_module = load_module()
+        self.coverage_change("Covers R1 and R2")
+
+        with patch.object(archive_module, "validate_change_gates", return_value=[]):
+            archive_module.archive_change(self.root, "demo", force=False, dry_run=False)
+
+        content = (self.root / "archive" / "demo" / "record.md").read_text(encoding="utf-8")
+        self.assertIn("status: archived", content)
+
+    def test_record_coverage_matches_whole_words_only(self) -> None:
+        archive_module = load_module()
+        change = self.coverage_change("Covers R10 only", ids=("R1", "R10"))
+
+        messages = archive_module.record_coverage(
+            change / "spec.md", "Covers R10 only", self.root.as_posix()
+        )
+
+        self.assertEqual(1, len(messages))
+        self.assertIn("R1", messages[0])
+        self.assertNotIn("R10", messages[0])
+
+    def test_record_coverage_includes_capability_ids(self) -> None:
+        archive_module = load_module()
+        change = self.change()
+        capability = self.root / "specs" / "demo.md"
+        change.joinpath("spec.md").write_text(
+            "## Affected capabilities\n"
+            f"- `{capability}`\n"
+            "  - ADDED C7 — Delivered\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(
+            ["record.md does not mention C7"],
+            archive_module.record_coverage(change / "spec.md", "nothing", self.root.as_posix()),
+        )
+        self.assertEqual(
+            [], archive_module.record_coverage(change / "spec.md", "has C7.", self.root.as_posix())
+        )
+
     def test_snapshot_messages_is_a_noop_without_a_round_log(self) -> None:
         archive_module = load_module()
         change = self.change()

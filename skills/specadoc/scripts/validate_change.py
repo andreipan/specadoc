@@ -221,6 +221,52 @@ def capability_deltas(spec: "Document", root: str) -> list[tuple[int, str, bool,
     return entries
 
 
+def cross_change_findings(
+    spec: "Document", root: str, change_slug: str
+) -> tuple[list[Violation], list[str]]:
+    """Compare this change's capability operations with other active changes.
+
+    Active changes are directories directly under the artifact root, other than
+    `archive`, `specs`, and `contracts`, that contain `spec.md`. Returns
+    (violations, warnings).
+    """
+    violations: list[Violation] = []
+    warnings: list[str] = []
+    mine = capability_deltas(spec, root)
+    skipped = {change_slug, "archive", "specs", "contracts"}
+    for sibling in sorted(Path(root).iterdir()):
+        if sibling.name in skipped or not sibling.is_dir():
+            continue
+        sibling_spec = sibling / "spec.md"
+        if not sibling_spec.is_file():
+            continue
+        theirs = capability_deltas(Document(sibling_spec, str(sibling_spec)), root)
+        added = set()
+        edits: dict[tuple[str, str], list[str]] = {}
+        for _, path, _, ops in theirs:
+            for _, op, identifier, _ in ops:
+                if op == "ADDED":
+                    added.add((path, identifier))
+                else:
+                    edits.setdefault((path, identifier), []).append(op)
+        for _, path, _, ops in mine:
+            for number, op, identifier, _ in ops:
+                if op == "ADDED" and (path, identifier) in added:
+                    violations.append(
+                        Violation(
+                            spec.display,
+                            number,
+                            f"{identifier} on {path} is also ADDED by active change {sibling.name}",
+                        )
+                    )
+                elif op != "ADDED":
+                    for their_op in edits.get((path, identifier), []):
+                        warnings.append(
+                            f"{identifier} on {path}: {op} here, {their_op} by active change {sibling.name}"
+                        )
+    return violations, warnings
+
+
 def stray_delta_lines(spec: "Document", root: str) -> list[Violation]:
     """Indented delta-like lines that `capability_deltas` would silently drop.
 
@@ -1159,7 +1205,13 @@ def main() -> int:
             for message in verify_latest(plan, change, Path.cwd())
         ]
 
+    cross_violations, cross_warnings = cross_change_findings(spec, root, args.change_slug)
+    violations += cross_violations
+
     violations.sort(key=lambda violation: (violation.file, violation.line))
+
+    for warning_text in cross_warnings:
+        print(f"warning: {warning_text}", file=sys.stderr)
 
     if args.json:
         print(
@@ -1170,6 +1222,7 @@ def main() -> int:
                     "violations": [
                         {"file": v.file, "line": v.line, "message": v.message} for v in violations
                     ],
+                    "warnings": cross_warnings,
                 },
                 indent=2,
             )

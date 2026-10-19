@@ -116,6 +116,157 @@ class ValidateChangeTest(unittest.TestCase):
         self.assertTrue(any("RENAMED C2 names no new heading" in message for message in bare), bare)
         self.assertFalse(any("names no new heading" in message for message in named), named)
 
+    def collision_change(self, slug: str, ops: str) -> None:
+        directory = self.root / slug
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "spec.md").write_text(
+            "## Affected capabilities\n\n" + ops, encoding="utf-8"
+        )
+        (directory / "plan.md").write_text("# Plan\n", encoding="utf-8")
+
+    def cross_findings(self, slug: str):
+        import os
+
+        module = load_module()
+        old_cwd = Path.cwd()
+        os.chdir(self.root.parents[1])
+        try:
+            spec = module.Document(self.root / slug / "spec.md", "spec.md")
+            return module.cross_change_findings(spec, "docs/specadoc", slug)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_cross_change_duplicate_added_is_violation(self) -> None:
+        ops = "- `docs/specadoc/specs/x.md`\n  - ADDED C4 (R1) — new\n"
+        self.collision_change("alpha", ops)
+        self.collision_change("beta", ops)
+        violations, warnings = self.cross_findings("alpha")
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(violations), 1)
+        message = violations[0].message
+        self.assertIn("beta", message)
+        self.assertIn("docs/specadoc/specs/x.md", message)
+        self.assertIn("C4", message)
+        self.assertEqual(violations[0].line, 4)
+
+    def test_cross_change_main_exits_nonzero_for_duplicate_added(self) -> None:
+        import contextlib
+        import io
+        import os
+
+        ops = "- `docs/specadoc/specs/x.md`\n  - ADDED C4 (R1) — new\n"
+        self.collision_change("alpha", ops)
+        self.collision_change("beta", ops)
+        module = load_module()
+        old_cwd = Path.cwd()
+        old_argv = sys.argv
+        os.chdir(self.root.parents[1])
+        sys.argv = ["validate_change.py", "alpha", "--phase", "spec", "--root", "docs/specadoc"]
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = module.main()
+        finally:
+            os.chdir(old_cwd)
+            sys.argv = old_argv
+        self.assertNotEqual(code, 0)
+        self.assertIn("also ADDED by active change beta", out.getvalue())
+
+    def test_cross_change_different_id_or_path_is_clean(self) -> None:
+        self.collision_change(
+            "alpha", "- `docs/specadoc/specs/x.md`\n  - ADDED C4 (R1) — new\n"
+        )
+        self.collision_change(
+            "beta", "- `docs/specadoc/specs/x.md`\n  - ADDED C5 (R1) — new\n"
+        )
+        self.collision_change(
+            "gamma", "- `docs/specadoc/specs/y.md`\n  - ADDED C4 (R1) — new\n"
+        )
+        self.assertEqual(self.cross_findings("alpha"), ([], []))
+
+    def test_cross_change_ignores_archive_and_specs_directories(self) -> None:
+        ops = "- `docs/specadoc/specs/x.md`\n  - ADDED C4 (R1) — new\n"
+        self.collision_change("alpha", ops)
+        for name in ("archive/old", "specs", "contracts"):
+            self.collision_change(name, ops)
+        (self.root / "archive" / "x").mkdir(parents=True)
+        (self.root / "archive" / "x" / "record.md").write_text(ops, encoding="utf-8")
+        self.assertEqual(self.cross_findings("alpha"), ([], []))
+
+    def run_main(self, *extra: str):
+        import contextlib
+        import io
+        import os
+
+        module = load_module()
+        old_cwd = Path.cwd()
+        old_argv = sys.argv
+        os.chdir(self.root.parents[1])
+        sys.argv = [
+            "validate_change.py", "alpha", "--phase", "spec", "--root", "docs/specadoc", *extra
+        ]
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = module.main()
+        finally:
+            os.chdir(old_cwd)
+            sys.argv = old_argv
+        return code, out.getvalue(), err.getvalue()
+
+    def test_cross_change_overlapping_modified_warns_in_json_without_exit_change(self) -> None:
+        import json
+        import shutil
+
+        ops = "- `docs/specadoc/specs/x.md`\n  - MODIFIED C2 (R1) — edit\n"
+        self.collision_change("alpha", ops)
+        self.collision_change("beta", ops)
+        code, out, err = self.run_main("--json")
+        payload = json.loads(out)
+        self.assertEqual(len(payload["warnings"]), 1)
+        warning = payload["warnings"][0]
+        for part in ("beta", "docs/specadoc/specs/x.md", "C2"):
+            self.assertIn(part, warning)
+        self.assertIn("warning: " + warning, err)
+        shutil.rmtree(self.root / "beta")
+        baseline_code, baseline_out, _ = self.run_main("--json")
+        self.assertEqual(code, baseline_code)
+        self.assertEqual(json.loads(baseline_out)["warnings"], [])
+
+    def test_cross_change_warning_prints_to_stderr_in_text_mode(self) -> None:
+        ops = "- `docs/specadoc/specs/x.md`\n  - MODIFIED C2 (R1) — edit\n"
+        self.collision_change("alpha", ops)
+        self.collision_change("beta", ops)
+        _, out, err = self.run_main()
+        self.assertIn("warning: ", err)
+        self.assertIn("beta", err)
+        self.assertNotIn("warning:", out)
+
+    def test_cross_change_modified_vs_renamed_warns(self) -> None:
+        self.collision_change("alpha", "- `docs/specadoc/specs/x.md`\n  - MODIFIED C2 (R1) — edit\n")
+        self.collision_change(
+            "beta", "- `docs/specadoc/specs/x.md`\n  - RENAMED C2 (R1) — New name\n"
+        )
+        violations, warnings = self.cross_findings("alpha")
+        self.assertEqual(violations, [])
+        self.assertEqual(
+            warnings,
+            [
+                "C2 on docs/specadoc/specs/x.md: MODIFIED here, RENAMED by active change beta"
+            ],
+        )
+
+    def test_cross_change_added_vs_modified_does_not_warn(self) -> None:
+        self.collision_change("alpha", "- `docs/specadoc/specs/x.md`\n  - ADDED C2 (R1) — new\n")
+        self.collision_change("beta", "- `docs/specadoc/specs/x.md`\n  - MODIFIED C2 (R1) — edit\n")
+        self.assertEqual(self.cross_findings("alpha"), ([], []))
+        self.assertEqual(self.cross_findings("beta"), ([], []))
+
+    def test_cross_change_edits_on_different_id_do_not_warn(self) -> None:
+        self.collision_change("alpha", "- `docs/specadoc/specs/x.md`\n  - MODIFIED C2 (R1) — edit\n")
+        self.collision_change("beta", "- `docs/specadoc/specs/x.md`\n  - REMOVED C3 (R1)\n")
+        self.assertEqual(self.cross_findings("alpha"), ([], []))
+
     def test_pre_review_rejects_ui_task_without_browser_evidence(self) -> None:
         module = load_module()
         plan = self.document(

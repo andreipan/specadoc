@@ -339,6 +339,21 @@ status: {status}
     return record
 
 
+def record_coverage(spec_path: Path, record: str, root: str) -> list[str]:
+    """Name every `R<n>` and `C<n>` of the spec that the record never mentions."""
+    spec = Document(spec_path, str(spec_path))
+    identifiers = [identifier for identifier, _, _ in spec.blocks("Requirements", "R")]
+    for _, _, _, operations in capability_deltas(spec, root):
+        for _, _, identifier, _ in operations:
+            if identifier not in identifiers:
+                identifiers.append(identifier)
+    return [
+        f"record.md does not mention {identifier}"
+        for identifier in identifiers
+        if not re.search(rf"(?<![\w]){re.escape(identifier)}(?![\w])", record)
+    ]
+
+
 def validate_record(record: str, change_slug: str) -> None:
     required = (
         "schema: specadoc.archive/v1",
@@ -382,6 +397,24 @@ def archive_change(
             )
 
     record = render_record(change, change_slug, forced=force, violations=violations)
+    spec_path = change / "spec.md"
+    # Gate messages must not count as coverage, so check a render without them.
+    content = (
+        render_record(change, change_slug, forced=force, violations=[]) if violations else record
+    )
+    uncovered = (
+        record_coverage(spec_path, content, root.as_posix().rstrip("/"))
+        if spec_path.is_file()
+        else []
+    )
+    if uncovered:
+        if not force:
+            raise ArchiveError(
+                f"refusing to archive {change_slug}: {len(uncovered)} unmet condition(s)\n"
+                + "\n".join(uncovered)
+            )
+        violations = violations + uncovered
+        record = render_record(change, change_slug, forced=force, violations=violations)
     validate_record(record, change_slug)
     result = ArchiveResult(
         source=change,
