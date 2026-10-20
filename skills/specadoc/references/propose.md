@@ -18,7 +18,9 @@ Load this reference only for `specadoc propose`.
    The controller decides; bounded workers do not choose architecture. Preserve
    repository artifact locations and keep one source of truth per concern.
 6. Run `validate_change.py <slug> --phase plan`, present a compact plan preview,
-   and stop for plan approval.
+   and stop for plan approval. If accumulated context warrants it, offer running
+   `apply <slug>` in a new controller session that starts from the plan's
+   `### Read before continuing` list (`model-routing.md` → Session boundaries).
 
 Model approval and plan approval are independent. An explicit uninterrupted
 execution request may waive the stops, but not specification or validation.

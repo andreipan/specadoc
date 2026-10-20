@@ -43,6 +43,11 @@ or static-analysis cleanup. Keeping such a task on `controller` requires a
 below (e.g. the one-file, one-cycle fix exception) — `validate_change.py`
 rejects `Owner: controller` + `Decision risk: low` without one.
 
+Size each worker task so its startup is worth it: merge adjacent mechanical
+tasks into one when they share files and one Verification command, and keep
+tasks with different risk areas separate. Never merge a task into the
+reviewer's work.
+
 Use `reviewer` after implementation when:
 - the complete diff and specification are available;
 - verification evidence has been collected;
@@ -183,20 +188,27 @@ Use the standard reviewer response.
 Use this for every worker dispatch when the scripts are available, and always
 for a worker on another runtime (see `runners.md`):
 
-1. `python3 <skill-root>/scripts/review_snapshot.py baseline <slug> --task T<n>`
-   records the whole working tree before dispatch. It also lists `Files:` items
-   that are not paths; fix them in the plan before dispatching.
-2. `python3 <skill-root>/scripts/task_brief.py <slug> T<n>` writes
-   `runs/T<n>-brief.md`. The dispatch prompt is then only: the brief path, the
-   report path `runs/T<n>-report.md`, and any context added after a previous
-   NEEDS_CONTEXT.
-3. After the worker returns, run
-   `python3 <skill-root>/scripts/review_snapshot.py check-scope <slug> --task T<n>`
-   before reading its report. Exit 1 lists every change outside the task's
-   `Files:` or under the artifact root: revert or justify each before
-   acceptance; never widen `Files:` after the fact to make the check pass.
-4. Run the task's Verification command yourself; the worker's report is a
-   claim, not evidence.
+1. `python3 <skill-root>/scripts/specadoc_step.py dispatch <slug> T<n>` runs
+   `review_snapshot.py baseline`, which records the whole working tree, and
+   `task_brief.py`, which writes `runs/T<n>-brief.md`. FAIL lists `Files:`
+   items that are not paths; fix them in the plan before dispatching. The
+   dispatch prompt is then only: the brief path, the report path
+   `runs/T<n>-report.md`, and any context added after a previous NEEDS_CONTEXT.
+2. After the worker returns and before reading its report, run
+   `python3 <skill-root>/scripts/specadoc_step.py accept <slug> T<n> --verify`.
+   It runs `review_snapshot.py check-scope`; FAIL lists every change outside
+   the task's `Files:` or under the artifact root: revert or justify each
+   before acceptance; never widen `Files:` after the fact to make the check
+   pass. Inspect Verification and obtain any host-required approvals first:
+   `--verify` executes shell commands with the caller's permissions. The field
+   must contain only exact backticked commands, separated by semicolons; prose
+   with inline code returns BLOCKED for manual verification. Scope is checked
+   again after verification. The worker's report is a claim, not evidence.
+   Without `--verify`, PASS covers scope only, not task acceptance.
+
+Every step prints the same five fields (`checked`, `result`, `changed files`,
+`blocking reason`, `next`) and only the tail of a failing command. The
+underlying scripts stay available for a single check.
 
 One writer at a time: the baseline belongs to one task; do not edit the working
 tree while a worker runs.

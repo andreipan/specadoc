@@ -11,17 +11,21 @@ Load this reference only for `specadoc apply <slug>`.
 3. Delegate only one fully specified low-decision task at a time to `worker` when
    it reduces controller context. Architecture and ambiguous decisions remain in
    the controller. Wrap each dispatch in the file-based handoff
-   (`subagent-routing.md`): `review_snapshot.py baseline`, `task_brief.py`,
-   dispatch, `review_snapshot.py check-scope`, then your own Verification. When
-   the worker's runtime is not the controller's, dispatch through
-   `run_role.py` (`runners.md`).
+   (`subagent-routing.md`): `specadoc_step.py dispatch <slug> T<n>`, dispatch,
+   then `specadoc_step.py accept <slug> T<n> --verify`. When the worker's
+   runtime is not the controller's, dispatch through `run_role.py`
+   (`runners.md`).
 4. Record exact commands and one-line results in `plan.md`; never paste raw
-   successful logs.
+   successful logs. When the controller context exceeds roughly 150k tokens,
+   stop at a task boundary and recommend resuming in a new session from
+   `plan.md`.
 5. The controller runs the final affected-only verification and populates
    `plan.md`'s `Review scope` from the actual executable diff. The scope is
    independent of task `Files:`: use repository-relative literal file paths,
    and prefix an intentional deletion with `!`. Then run
-   `validate_change.py <slug> --phase pre-review`.
+   `specadoc_step.py pre-review <slug>`: it runs
+   `validate_change.py <slug> --phase pre-review` and, on PASS, prints the
+   `review_snapshot.py compute` hash and manifest for the round block.
 6. On a stable executable diff, run one independent read-only `reviewer` and
    record its PASS as the archive input. Record the round as a `### G<n>`
    block under `plan.md`'s `Review result` → `Round log`

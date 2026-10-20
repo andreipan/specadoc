@@ -151,5 +151,20 @@ tests, or edit production code until the user confirms or changes the profile.
 Record the user's selection as approved, not merely "satisfied" or "waived".
 Do not ask again for the same model checkpoint unless scope changes materially.
 
+## Session boundaries
+
+Long histories increase later input, often cached. Keep one active change;
+use a compact handoff when switching tasks or when the history becomes large.
+A fresh session can lose useful cache, so it is not mandatory at every phase:
+
+- At plan approval, offer a fresh `apply <slug>` session if accumulated context
+  warrants it, starting from `### Read before continuing`, not discussion logs.
+- For another slug, archive, or branch work, prefer a bounded handoff from
+  `plan.md` or `record.md`; do not split short clarifications mechanically.
+- In `apply`, record each accepted task's result in `plan.md` before the next
+  task. When the controller context exceeds roughly 150k tokens, stop at a task
+  boundary and recommend resuming in a new session from `plan.md`.
+
 Role boundaries, routing policy, dispatch contracts, and escalation live in
-`subagent-routing.md`. This file owns risk, execution level, and profile binding only.
+`subagent-routing.md`. This file owns risk, execution level, profile binding,
+and session boundaries only.

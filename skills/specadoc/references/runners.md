@@ -73,8 +73,8 @@ in the run file before retrying, and never resend an unchanged prompt. Use
 `stop <run-file>` to abandon a run.
 
 For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
-`baseline` before `start`, `check-scope` and your own Verification after
-`result`. Status handling is the same as for a native worker.
+`specadoc_step.py dispatch` before `start`, `specadoc_step.py accept --verify`
+after `result`. Status handling is the same as for a native worker.
 
 ## Runtime notes
 

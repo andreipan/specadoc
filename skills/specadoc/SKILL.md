@@ -56,7 +56,8 @@ and obtaining the approvals required for the revised scope.
   absence after tool discovery from a failed exposed call; cite the exact call
   and error only for a call that was actually attempted.
 - Keep contexts narrow: no repeated reads, raw successful logs, equivalent graph
-  calls, or broad repository summaries.
+  calls, or broad repository summaries. Keep one active change;
+  see `references/model-routing.md` → Session boundaries.
 - Follow the host's command conventions (for example a required command prefix
   in repository or harness instructions) for every shell command shown or run.
 - `<skill-root>` in references means this skill's directory

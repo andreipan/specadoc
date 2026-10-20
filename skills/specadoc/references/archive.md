@@ -2,6 +2,9 @@
 
 Load this reference only for explicit `specadoc archive`.
 
+Archive needs `plan.md`, not implementation history. A fresh session is
+optional; avoid replaying logs when continuing in the current session.
+
 The target is `docs/specadoc/archive/<slug>/record.md`, schema
 `specadoc.archive/v1`, with a hard 16 KiB budget. It retains the durable outcome,
 capability delta, decisions, review, token totals, forced exceptions, and a
