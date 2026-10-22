@@ -38,7 +38,9 @@ Do:
 - follow existing repository patterns;
 - keep the diff scoped to the assigned task;
 - preserve compatibility unless the task explicitly changes it;
-- record commands and actual results;
+- record commands and actual results; run long test or build commands with their
+  output redirected to a file next to the report and read only the failing part
+  and the summary line, not the full log;
 - inspect the final diff before reporting completion;
 - for a change with user-visible frontend impact, exercise it with an
   available run/browser tool (including a mobile-width check when layout

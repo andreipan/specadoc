@@ -45,6 +45,7 @@ class RunRoleTest(unittest.TestCase):
         env = dict(os.environ)
         env["PATH"] = f"{self.bin}{os.pathsep}{env['PATH']}"
         env["FAKE_RESULT"] = result if isinstance(result, str) else json.dumps(result)
+        env.setdefault("XDG_DATA_HOME", str(self.repo / "xdg"))
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args], cwd=self.repo, capture_output=True, text=True, env=env
         )
@@ -219,8 +220,62 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
         with self.assertRaises(runner.RunError):
             runner._final_json(record)
         log.write_text(json.dumps({"type": "text", "part": {"text": "not JSON"}}))
-        with self.assertRaises(json.JSONDecodeError):
+        with self.assertRaises(ValueError):
             runner._final_json(record)
+
+    def test_final_message_may_be_fenced_or_surrounded_by_prose(self) -> None:
+        spec = importlib.util.spec_from_file_location("run_role", SCRIPT)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        payload = {"status": "DONE", "summary": "braces { } inside", "files_changed": []}
+        text = json.dumps(payload)
+        self.assertEqual(runner._parse_json_text(text), payload)
+        self.assertEqual(runner._parse_json_text(f"```json\n{text}\n```"), payload)
+        self.assertEqual(runner._parse_json_text(f"Done.\n{text}\nThanks"), payload)
+        self.assertEqual(runner._parse_json_text('{"a": 1}\n' + text), payload)  # last object wins
+        with self.assertRaises(ValueError):
+            runner._parse_json_text("no object here")
+        log = self.repo / "fenced.log"
+        record = {"runtime": "opencode", "log": str(log), "result": str(self.repo / "missing.json")}
+        log.write_text(json.dumps({"type": "text", "part": {"messageID": "m", "text": f"```json\n{text}\n```"}}))
+        self.assertEqual(runner._final_json(record), payload)
+
+    def test_wait_follow_prints_opencode_progress(self) -> None:
+        sleeper = subprocess.Popen(["sleep", "5"])
+        self.addCleanup(lambda: (sleeper.kill(), sleeper.wait()))
+        log = self.runs / "T1.worker.log"
+        events = [{"type": "tool_use", "part": {"tool": "read"}}, {"type": "step_finish"},
+                  {"type": "tool_use", "part": {"tool": "shell"}}]
+        log.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+        record = self.runs / "T1.worker.run.json"
+        record.write_text(json.dumps({
+            "role": "worker", "runtime": "opencode", "pid": sleeper.pid, "started": 0,
+            "exit": str(self.runs / "T1.worker.exit"), "log": str(log), "result": str(self.runs / "T1.worker.result.json"),
+        }))
+        waited = self.run_cli("wait", str(record), "--timeout", "2", "--follow", "--interval", "0.5")
+        self.assertEqual(waited.returncode, 3, waited.stdout + waited.stderr)
+        self.assertIn("2 tool calls, last: shell", waited.stdout)
+        plain = self.run_cli("wait", str(record), "--timeout", "1")
+        self.assertEqual(plain.returncode, 3)
+        self.assertIn("call wait again", plain.stdout)
+
+    def test_opencode_start_explains_unwritable_log(self) -> None:
+        fake = self.bin / "opencode"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        data = self.repo / "readonly"
+        (data / "opencode" / "log").mkdir(parents=True)
+        (data / "opencode" / "log").chmod(0o500)
+        os.environ["XDG_DATA_HOME"] = str(data)
+        try:
+            result = self.run_cli("start", "--role", "worker", "--runtime", "opencode", "--model", "openai/m",
+                                  "--prompt-file", str(self.brief), "--name", "T1")
+        finally:
+            os.environ.pop("XDG_DATA_HOME")
+            (data / "opencode" / "log").chmod(0o700)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cannot write its log", result.stderr)
+        self.assertFalse((self.runs / "T1.worker.run.json").exists())
 
     def test_full_run_passes_prompt_and_validates_result(self) -> None:
         payload = {

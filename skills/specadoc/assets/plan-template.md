@@ -15,6 +15,7 @@
 **Scout runtime:** <runtime/model from the role registry, or the approved per-change override>  
 **Worker runtime:** <runtime/model>  
 **Reviewer runtime:** <runtime/model>  
+**External code access:** <approved for <runtimes> | not needed>  
 **Execution accounting:** Per-execution totals are recorded in Completion evidence.  
 **Owns next:** Pending  
 **Model checkpoint:** Awaiting user confirmation  

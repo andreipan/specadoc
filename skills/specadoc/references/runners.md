@@ -62,7 +62,7 @@ writes its full report to `runs/T<n>-report.md`.
 ```text
 python3 <skill-root>/scripts/run_role.py start --role worker --runtime <runtime> \
   --model <model> --effort <effort> --prompt-file <root>/<slug>/runs/T<n>-brief.md --name T<n>
-python3 <skill-root>/scripts/run_role.py wait <run-file> --timeout 540   # exit 3: still running, wait again
+python3 <skill-root>/scripts/run_role.py wait <run-file> --timeout 540 --follow   # exit 3: still running, wait again
 python3 <skill-root>/scripts/run_role.py result <run-file>
 ```
 
@@ -71,6 +71,22 @@ timeout, so a shell tool with a per-command limit waits in slices. `result`
 exits 1 when the CLI failed or the JSON breaks the schema; read the log named
 in the run file before retrying, and never resend an unchanged prompt. Use
 `stop <run-file>` to abandon a run.
+
+Use `--follow` for every wait: it prints one progress line every `--interval`
+seconds (default 45): elapsed time, and for OpenCode the tool-call count and last
+tool; for the other runtimes the log size. Relay each line to the user as a short
+progress note, so a long run never looks stopped.
+
+A launched run is not a result. The controller stays in its turn and keeps calling
+`wait --follow` until the run finishes, or ends the turn only with a real blocker or
+a necessary user decision. Claude Code can run `wait --follow` with
+`run_in_background` and is woken when it exits; Codex and OpenCode have no such
+wake-up, so they must keep waiting in the foreground.
+
+Ask for permission to send code to an external runtime once per change: record it
+in `## Model handoff` as `**External code access:** approved for <runtimes>` at the
+model checkpoint, and do not ask again for each task. A confirmation prompt from the
+host itself (for example the Codex approval policy) is not controlled by Specadoc.
 
 For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
 `specadoc_step.py dispatch` before `start`, `specadoc_step.py accept --verify`
@@ -90,7 +106,14 @@ after `result`. Status handling is the same as for a native worker.
   `--ext-diff`; edits, other commands, MCP tools and nested agents are denied.
   Worker additionally permits edit and any shell command.
   These are tool permissions, not an OS sandbox. The schema is appended to the
-  prompt and the final text JSON is validated locally, not by the provider.
+  prompt and the final text JSON is validated locally, not by the provider. A reply
+  wrapped in a code fence or surrounded by prose is accepted: the last JSON object
+  is used. `start` fails at once with a clear error when OpenCode cannot write its log
+  (`~/.local/share/opencode/log`), which happens inside a sandboxed shell; start it
+  from a shell with write access to that path.
+  An OpenCode session title may be junk (result-like JSON or reasoning text), because a
+  title request runs on the same agent. Never read a status from a session title:
+  the run result is only the validated JSON from `run_role.py result`.
 
 An external role does not share the controller's MCP servers or its context.
 Name exact files in the brief; it falls back to its own tools and `rg`.

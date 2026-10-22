@@ -113,6 +113,20 @@ def opencode_config(role: str) -> str:
     return json.dumps(config)
 
 
+def _check_opencode_log() -> None:
+    """OpenCode exits at once when its log file is not writable (for example inside a sandbox)."""
+    base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    log = base / "opencode" / "log" / "opencode.log"
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.open("ab").close()
+    except OSError as exc:
+        raise RunError(
+            f"OpenCode cannot write its log {log} ({exc.strerror}); this shell is likely sandboxed. "
+            "Start the run from a shell with write access to that path, with the approved escalation"
+        ) from exc
+
+
 def _paths(out_dir: Path, name: str, role: str) -> dict[str, Path]:
     stem = f"{name}.{role}"
     return {
@@ -165,6 +179,8 @@ def start(args: argparse.Namespace) -> int:
         return 0
     if shutil.which(command[0]) is None:
         raise RunError(f"{command[0]} is not on PATH")
+    if args.runtime == "opencode":
+        _check_opencode_log()
     out_dir.mkdir(parents=True, exist_ok=True)
     for key in ("result", "exit"):
         paths[key].unlink(missing_ok=True)
@@ -228,10 +244,41 @@ def _alive(pid: int) -> bool:
     return True
 
 
+def _progress(record: dict[str, Any], state: dict[str, Any]) -> str:
+    """One status line from the run log; OpenCode logs add step and last-tool counts."""
+    elapsed = int(time.time() - record["started"])
+    line = f"{record['role']} {record['runtime']} running {elapsed // 60}m{elapsed % 60:02d}s"
+    log = Path(record["log"])
+    if not log.is_file():
+        return line
+    size = log.stat().st_size
+    if record["runtime"] == "opencode":
+        with log.open("rb") as handle:
+            handle.seek(state.get("offset", 0))
+            chunk = handle.read()
+        cut = chunk.rfind(b"\n") + 1  # keep a partially written last line for the next call
+        state["offset"] = state.get("offset", 0) + cut
+        for raw in chunk[:cut].splitlines():
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "tool_use":
+                state["tools"] = state.get("tools", 0) + 1
+                part = event.get("part")
+                state["last"] = part.get("tool", "?") if isinstance(part, dict) else "?"
+        return f"{line}, {state.get('tools', 0)} tool calls, last: {state.get('last', '-')}"
+    return f"{line}, log {size // 1024} KiB"
+
+
 def wait(args: argparse.Namespace) -> int:
     record = _load(args.run_file)
     exit_file = Path(record["exit"])
     deadline = time.monotonic() + args.timeout
+    follow = getattr(args, "follow", False)
+    interval = getattr(args, "interval", 45.0)
+    next_report = time.monotonic() + interval
+    state: dict[str, Any] = {}
     while time.monotonic() < deadline:
         if exit_file.is_file():
             print(f"finished: exit {exit_file.read_text().strip()}")
@@ -239,8 +286,11 @@ def wait(args: argparse.Namespace) -> int:
         if not _alive(record["pid"]):
             print("finished: supervisor exited without an exit code")
             return 0
+        if follow and time.monotonic() >= next_report:
+            print(_progress(record, state), flush=True)
+            next_report = time.monotonic() + interval
         time.sleep(min(1.0, max(0.1, deadline - time.monotonic())))
-    print(f"running: pid {record['pid']}; call wait again")
+    print(f"running: pid {record['pid']}; call wait again" if not follow else _progress(record, state) + "; call wait again")
     return STILL_RUNNING
 
 
@@ -254,10 +304,37 @@ def stop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_json_text(text: str) -> Any:
+    """Parse a final message that may wrap the JSON in a code fence or prose.
+
+    Strict JSON wins; otherwise the last top-level JSON object in the text is used.
+    """
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    found = None
+    index = 0
+    while (index := text.find("{", index)) != -1:
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            index += 1
+            continue
+        if isinstance(value, dict):
+            found = value
+        index = end
+    if found is None:
+        raise ValueError("no JSON object in the final message")
+    return found
+
+
 def _final_json(record: dict[str, Any]) -> Any:
     result = Path(record["result"])
     if result.is_file() and result.read_text(encoding="utf-8").strip():
-        return json.loads(result.read_text(encoding="utf-8"))
+        return _parse_json_text(result.read_text(encoding="utf-8"))
     log = Path(record["log"])
     if record["runtime"] == "opencode" and log.is_file():
         messages: dict[str, list[str]] = {}
@@ -274,13 +351,13 @@ def _final_json(record: dict[str, Any]) -> Any:
             if event.get("type") == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
                 messages.setdefault(part.get("messageID", "final"), []).append(part["text"])
         if messages:
-            return json.loads("".join(list(messages.values())[-1]))
+            return _parse_json_text("".join(list(messages.values())[-1]))
     if record["runtime"] == "claude" and log.is_file():
         envelope = json.loads(log.read_text(encoding="utf-8"))
         if isinstance(envelope, dict) and "structured_output" in envelope:
             return envelope["structured_output"]
         if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
-            return json.loads(envelope["result"])
+            return _parse_json_text(envelope["result"])
     raise RunError(f"no final result; inspect {record['log']}")
 
 
@@ -344,6 +421,8 @@ def build_parser() -> argparse.ArgumentParser:
         child.add_argument("run_file")
         if name == "wait":
             child.add_argument("--timeout", type=float, default=540.0)
+            child.add_argument("--follow", action="store_true", help="print a progress line every --interval seconds")
+            child.add_argument("--interval", type=float, default=45.0)
     return parser
 
 
