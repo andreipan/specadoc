@@ -118,11 +118,32 @@ def resolve_role(cwd: Path, role: str, controller: str, plan: Path | None = None
     return route
 
 
-def inspect_routing(cwd: Path, controller: str, plan: Path | None = None, which=shutil.which) -> list[dict]:
+def approved_role(cwd: Path, role: str, controller: str, binding_file: Path,
+                  plan: Path | None = None) -> dict:
+    """Fresh validation shared by native preflight and the external runner; no cache."""
+    route = resolve_role(cwd, role, controller, plan)
+    check_approved_binding(route, cwd / binding_file)
+    return route
+
+
+def check_approved_binding(route: dict, binding_file: Path) -> None:
+    frozen = json.loads(binding_file.read_text(encoding="utf-8"))
+    routes = frozen.get("routes", []) if isinstance(frozen, dict) else None
+    if not isinstance(routes, list) or not all(isinstance(row, dict) for row in routes):
+        raise ValueError("invalid approved binding file; expected resolver JSON")
+    match = [row for row in routes if row.get("role") == route["role"]]
+    if len(match) != 1 or match[0].get("fingerprint") != route["fingerprint"]:
+        raise ValueError("approved binding changed; resolve again and obtain model approval")
+
+
+def inspect_routing(cwd: Path, controller: str, plan: Path | None = None, which=None,
+                    *, resolved: list[dict] | None = None) -> list[dict]:
+    which = which or shutil.which
     findings, routes = [], {}
-    for role in ROLES:
+    for role in ROLES if resolved is None else [row["role"] for row in resolved]:
         try:
-            routes[role] = route = resolve_role(cwd, role, controller, plan)
+            routes[role] = route = (resolve_role(cwd, role, controller, plan) if resolved is None
+                                    else next(row for row in resolved if row["role"] == role))
             if which(route["runtime"]) is None:
                 findings.append({"level": "ERROR", "role": role, "message": f"{route['runtime']} CLI not on PATH"})
         except (ValueError, OSError) as exc:
@@ -140,14 +161,22 @@ def main() -> int:
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--dry-run", action="store_true", help="read-only; this command never launches agents")
     parser.add_argument("--check-cli", action="store_true")
+    parser.add_argument("--binding-file", type=Path, help="Compare fresh bindings with the approved resolver JSON")
+    parser.add_argument("--compact", action="store_true", help="JSON summary; omit config and registry bodies")
     args = parser.parse_args()
     args.cwd = args.cwd.resolve()
     try:
         plan = args.cwd / args.plan if args.plan else None
         roles = [args.role] if args.role else ROLES
         routes = [resolve_role(args.cwd, role, args.controller_runtime, plan) for role in roles]
-        findings = inspect_routing(args.cwd, args.controller_runtime, plan) if args.check_cli else []
-        print(json.dumps({"routes": routes, "findings": findings}, indent=2))
+        if args.binding_file:
+            for route in routes:
+                check_approved_binding(route, args.cwd / args.binding_file)
+        findings = inspect_routing(args.cwd, args.controller_runtime, plan, resolved=routes) if args.check_cli else []
+        if args.compact:
+            keys = ("role", "runtime", "model", "effort", "dispatch", "fingerprint")
+            routes = [{key: route[key] for key in keys} for route in routes]
+        print(json.dumps({"routes": routes, "findings": findings}, indent=None if args.compact else 2))
         return int(any(row["level"] == "ERROR" for row in findings))
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import json
 import sys
 import tempfile
 import unittest
@@ -166,6 +167,27 @@ class SpecadocStepTest(unittest.TestCase):
         self.assertTrue((runs / 'T1-brief.md').is_file())
         self.assertIn('T1-report.md', fields['next'])
 
+    def test_routed_native_dispatch_checks_approval_before_writing_baseline(self):
+        (self.project / '.specadoc.json').write_text(json.dumps({'version': 1, 'roles': {'worker': {'runtime': 'codex'}}}))
+        role = self.project / '.codex/agents/worker.toml'
+        role.parent.mkdir(parents=True)
+        role.write_text('model = "test-model"\nmodel_reasoning_effort = "low"\n')
+        fields, _ = self.step('dispatch', 'demo', 'T1', expected=2)
+        self.assertIn('binding', fields['blocking reason'])
+        runs = self.project / 'docs/specadoc/demo/runs'
+        self.assertFalse((runs / 'T1-baseline.json').exists())
+        binding = self.script('role_routing.py', '--controller-runtime', 'codex', '--role', 'worker')
+        self.assertEqual(binding.returncode, 0, binding.stderr)
+        (self.project / 'approved.json').write_text(binding.stdout)
+        flags = ('--controller-runtime', 'codex', '--binding-file', 'approved.json')
+        fields, _ = self.step('dispatch', 'demo', 'T1', *flags, expected=0)
+        self.assertIn('approved worker binding', fields['checked'])
+        baseline = (runs / 'T1-baseline.json').read_bytes()
+        role.write_text(role.read_text().replace('test-model', 'changed-model'))
+        fields, _ = self.step('dispatch', 'demo', 'T1', *flags, expected=2)
+        self.assertIn('approved binding changed', fields['blocking reason'])
+        self.assertEqual(baseline, (runs / 'T1-baseline.json').read_bytes())
+
     def test_accept_without_baseline_is_blocked(self):
         fields, _ = self.step('accept', 'demo', 'T1', expected=2)
         self.assertEqual('BLOCKED', fields['result'])
@@ -242,6 +264,38 @@ class SpecadocStepTest(unittest.TestCase):
         self.assertIn('"hash": "', snapshot.stdout)
         digest = snapshot.stdout.split('"hash": "', 1)[1].split('"', 1)[0]
         self.assertIn(f'snapshot: {digest}', output)
+
+    def test_documentation_followup_refuses_changed_disk_snapshot_before_dispatch(self):
+        _, output = self.step('pre-review', 'demo', expected=0)
+        digest = next(line.split(': ', 1)[1] for line in output.splitlines() if line.startswith('snapshot: '))
+        policy = next(line.split(': ', 1)[1] for line in output.splitlines() if line.startswith('policy snapshot: '))
+        rounds = ('### G1\n- **Type:** initial\n- **Outcome:** FAIL\n'
+                  '### G2\n- **Type:** re-review\n- **Outcome:** FAIL\n'
+                  '- **Remaining findings:** documentation-only\n'
+                  f'- **Snapshot:** {digest}\n- **Policy snapshot:** {policy}\n'
+                  '### G3\n- **Type:** re-review\n- **Scope:** documentation-only\n'
+                  '- **Previous:** G2\n- **Outcome:** Pending\n'
+                  f'- **Snapshot:** {digest}\n- **Policy snapshot:** {policy}\n')
+        plan = self.project / 'docs/specadoc/demo/plan.md'
+        plan.write_text(PLAN.replace('## Archive summary', rounds + '\n## Archive summary'))
+        self.step('pre-review', 'demo', expected=0)
+        self.project.joinpath('label.py').write_text('def label():\n    return "changed"\n')
+        fields, _ = self.step('pre-review', 'demo', expected=1)
+        self.assertIn('documentation-only', fields['blocking reason'])
+
+    def test_routed_reviewer_binding_is_checked_before_pre_review(self):
+        (self.project / '.specadoc.json').write_text(json.dumps({'version': 1, 'roles': {'reviewer': {'runtime': 'codex'}}}))
+        role = self.project / '.codex/agents/reviewer.toml'
+        role.parent.mkdir(parents=True)
+        role.write_text('model = "test-reviewer"\nmodel_reasoning_effort = "high"\n')
+        binding = self.script('role_routing.py', '--controller-runtime', 'codex', '--role', 'reviewer')
+        self.assertEqual(binding.returncode, 0, binding.stderr)
+        (self.project / 'approved.json').write_text(binding.stdout)
+        role.write_text(role.read_text().replace('test-reviewer', 'changed-reviewer'))
+        fields, output = self.step('pre-review', 'demo', '--controller-runtime', 'codex',
+                                  '--binding-file', 'approved.json', expected=2)
+        self.assertIn('approved binding changed', fields['blocking reason'])
+        self.assertNotIn('snapshot:', output)
 
 
 if __name__ == '__main__':

@@ -33,5 +33,30 @@
     "id": "managed-lifecycle",
     "request": "Use specadoc to add a small new behavior in the isolated fixture. Complete normal proposal approvals and apply; archive only after an explicit archive request.",
     "expected_behavior": "Accepted spec and plan, meaningful RED/GREEN evidence, final controller checks, independent PASS and snapshot, capability update, final gate and explicit archive produce one valid bounded record."
+  },
+  {
+    "id": "native-binding-drift",
+    "request": "Before a routed native worker dispatch, the approved registry model changed. Use the existing approved binding file.",
+    "expected_behavior": "Use compact fresh binding validation; block before dispatch/baseline writes and request approval. Never reuse stale cache or silently update the approved file."
+  },
+  {
+    "id": "browser-context",
+    "request": "A browser task has a verified test exemplar, login helper, isolated environment and a runbook section in Test context. A test failed and the diagnostic log is already saved.",
+    "expected_behavior": "Use the bounded Test context, read saved failure evidence rather than rerun for a different tail. Retry only with changed input/code or a named new hypothesis; preserve real login and final verification."
+  },
+  {
+    "id": "documentation-followup",
+    "request": "The targeted re-review failed only on a stale Reasons bullet; its executable and policy snapshots are unchanged. The cited prose is now fixed.",
+    "expected_behavior": "Use the one guarded re-review Scope documentation-only, Previous and matching Snapshot/Policy snapshot; send finding and changed prose, not another initial/full code review. Do not repeat this exception indefinitely."
+  },
+  {
+    "id": "direct-uninterrupted",
+    "request": "Use specadoc direct for the bounded diagnostic label change. Explicitly continue uninterrupted with the current profile through planning, implementation and verification; do not archive.",
+    "expected_behavior": "Record exact authorization, profile, scope and covered phases in chat. Keep bounded plan and verification, skip only the explicitly covered manual stops. Material scope/risk changes require renewed approval."
+  },
+  {
+    "id": "bounded-loading",
+    "request": "Continue the same approved apply task. The registered worker contract and selected mode reference are already loaded; memory needs saving while an independent source read is next.",
+    "expected_behavior": "Do not reload known role contracts or references or print a descriptions catalog. Combine independent required memory and work calls without delaying saves; preserve approval and verification evidence in a task-boundary handoff when context is large."
   }
 ]

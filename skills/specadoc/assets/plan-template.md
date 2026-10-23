@@ -102,6 +102,8 @@ section otherwise.>
 - **Expected RED:** <why it initially fails>
 - **Implementation:** <minimum technical direction>
 - **Verification:** `<exact command>`
+- **Test context:** <optional: verified test exemplar, bootstrap/login helper,
+  test-only environment and one runbook section; delete when not needed>
 - **Surface:** <code|ui|mixed>
 - **Delivery verification:** <For ui/mixed: final build, typecheck, and Browser URL/state check; for code: N/A>
 - **Done when:** <objective condition>
@@ -173,11 +175,14 @@ un-indent it to four spaces less when you add the first real entry:
 
     - **Type:** initial|re-review
     - **Snapshot:** sha256:... (the `hash` from `review_snapshot.py compute`)
+    - **Policy snapshot:** sha256:... (from `specadoc_step.py pre-review`)
     - **Previous:** none|G<n-1>
     - **Reviewer runtime:** <runtime/model>
     - **Independence waiver:** Pending (required only when the reviewer runs on the worker's runtime)
     - **Outcome:** PASS|FAIL
     - **Reason:** <one line, required on FAIL>
+    - **Remaining findings:** documentation-only (only when code fixes passed and just evidence/handoff prose remains)
+    - **Scope:** documentation-only (only for the one extra documentation follow-up)
     - **Round cap override:** Pending
     - **Snapshot waiver:** Pending (only for a technical read failure; never for a manifest mismatch)
 

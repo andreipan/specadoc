@@ -98,6 +98,14 @@ class TaskBriefTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("no T7", result.stderr)
 
+    def test_optional_test_context_is_task_local_without_loading_runbooks(self) -> None:
+        context = "- **Test context:** `tests/Browser/Example.php`; `docs/testing/browser.md#login`; test-only DB.\n"
+        (self.change / "plan.md").write_text(PLAN.replace("### T2", context + "\n### T2"), encoding="utf-8")
+        self.assertEqual(self.run_cli("demo", "T1").returncode, 0)
+        brief = (self.change / "runs/T1-brief.md").read_text()
+        self.assertIn(context.strip(), brief)
+        self.assertNotIn("### T2", brief)
+
 
 if __name__ == "__main__":
     unittest.main()

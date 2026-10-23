@@ -81,7 +81,10 @@ class PluginPackageTest(unittest.TestCase):
 
     def test_behavioral_eval_cases_cover_approved_scenarios(self):
         cases = json.loads((ROOT / 'tests/evals/specadoc.json').read_text())
-        self.assertEqual({'direct', 'grilling-skip', 'minor-re-review', 'project-role', 'embedded-role', 'reviewer-unavailable', 'managed-lifecycle'}, {c['id'] for c in cases})
+        self.assertEqual({'direct', 'grilling-skip', 'minor-re-review', 'project-role',
+                          'embedded-role', 'reviewer-unavailable', 'managed-lifecycle',
+                          'native-binding-drift', 'browser-context', 'documentation-followup',
+                          'direct-uninterrupted', 'bounded-loading'}, {c['id'] for c in cases})
         for case in cases:
             self.assertTrue(case['request'])
             self.assertTrue(case['expected_behavior'])

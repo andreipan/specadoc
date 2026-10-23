@@ -39,7 +39,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import resolve_root  # noqa: E402
-from validate_change import Document, task_fields  # noqa: E402
+from validate_change import Document, task_fields, review_policy_hash  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 
 COMMAND = re.compile(r"`([^`]+)`")
@@ -74,8 +74,23 @@ def root_args(root: str | None) -> list[str]:
     return ["--root", root] if root else []
 
 
-def dispatch(slug: str, task: str, root: str | None) -> int:
-    checked = ["baseline", "brief"]
+def binding_check(slug: str, root: str | None, role: str, controller: str | None,
+                  binding_file: Path | None) -> list[str]:
+    from specadoc_config import load_config
+    if not (controller or binding_file or "roles" in load_config(Path.cwd())):
+        return []  # Legacy host/plugin registry fallback, unchanged.
+    if not controller or not binding_file:
+        raise ValueError("routed dispatch requires --controller-runtime and --binding-file from the approved checkpoint")
+    from role_routing import approved_role
+    plan = Path(resolve_root(root).path) / slug / "plan.md"
+    approved_role(Path.cwd(), role, controller, binding_file, plan)
+    return [f"approved {role} binding"]
+
+
+def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
+             binding_file: Path | None = None) -> int:
+    checked = binding_check(slug, root, "worker", controller, binding_file)
+    checked += ["baseline", "brief"]
     baseline = run_script("review_snapshot.py", "baseline", slug, "--task", task, *root_args(root))
     if baseline.returncode != 0:
         return emit(checked[:1], "BLOCKED", [], tail(baseline.stderr + baseline.stdout), "fix the plan task, then rerun dispatch")
@@ -150,8 +165,9 @@ def accept(slug: str, task: str, root: str | None, verify: bool) -> int:
     return emit(checked, "PASS", changed, "", "read the worker report and accept the task")
 
 
-def pre_review(slug: str, root: str | None) -> int:
-    checked = ["validate pre-review"]
+def pre_review(slug: str, root: str | None, controller: str | None = None,
+               binding_file: Path | None = None) -> int:
+    checked = binding_check(slug, root, "reviewer", controller, binding_file) + ["validate pre-review"]
     gate = run_script("validate_change.py", slug, "--phase", "pre-review", *root_args(root))
     if gate.returncode != 0:
         result = "BLOCKED" if gate.returncode == 2 else "FAIL"
@@ -162,7 +178,8 @@ def pre_review(slug: str, root: str | None) -> int:
         return emit(checked, "BLOCKED", [], tail(snapshot.stderr + snapshot.stdout), "fix Review scope")
     payload = json.loads(snapshot.stdout)
     changed = sorted(path for path in payload["manifest"] if path != CONTRACT_KEY)
-    detail = f"snapshot: {payload['hash']}\n```json\n{json.dumps(payload['manifest'])}\n```"
+    plan = Document(Path(resolve_root(root).path) / slug / "plan.md", "plan.md")
+    detail = f"snapshot: {payload['hash']}\npolicy snapshot: {review_policy_hash(plan)}\n```json\n{json.dumps(payload['manifest'])}\n```"
     return emit(checked, "PASS", changed, "", "record this snapshot in a new G<n> round and dispatch the reviewer", detail)
 
 
@@ -176,7 +193,11 @@ def build_parser() -> argparse.ArgumentParser:
         step.add_argument("task", help="Task id such as T3")
         if name == "accept":
             step.add_argument("--verify", action="store_true", help="Also run the task's Verification commands")
-    steps.add_parser("pre-review").add_argument("change_slug")
+    review = steps.add_parser("pre-review")
+    review.add_argument("change_slug")
+    for step in (steps.choices["dispatch"], review):
+        step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
+        step.add_argument("--binding-file", type=Path, help="Approved resolver JSON; required for routed projects")
     return parser
 
 
@@ -187,10 +208,10 @@ def main() -> int:
         return 2
     try:
         if args.step == "dispatch":
-            return dispatch(args.change_slug, args.task, args.root)
+            return dispatch(args.change_slug, args.task, args.root, args.controller_runtime, args.binding_file)
         if args.step == "accept":
             return accept(args.change_slug, args.task, args.root, args.verify)
-        return pre_review(args.change_slug, args.root)
+        return pre_review(args.change_slug, args.root, args.controller_runtime, args.binding_file)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return emit([args.step], "BLOCKED", [], str(exc), "inspect the plan and handoff files, then retry")
 

@@ -832,12 +832,37 @@ def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP) -> list[Vi
     ]
 
 
+def review_policy_hash(plan: Document) -> str:
+    """Approval/binding fields, not mutable Reasons or progress prose."""
+    fields = {key: value for key, value in handoff_fields(plan).items()
+              if key not in ("Owns next", "Execution accounting")}
+    payload = {"handoff": fields,
+               "approval": [line for _, line in plan.body("Plan approval")]}
+    return "sha256:" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def documentation_followup(plan: Document, current: dict, previous: dict, previous_id: str) -> bool:
+    digest = current.get("Snapshot", "").strip()
+    policy = current.get("Policy snapshot", "").strip()
+    return (current.get("Scope", "").strip().lower() == "documentation-only"
+            and previous.get("Scope", "").strip().lower() != "documentation-only"
+            and previous.get("Type", "").strip().lower() == "re-review"
+            and previous.get("Outcome", "").strip().upper() == "FAIL"
+            and previous.get("Remaining findings", "").strip().lower() == "documentation-only"
+            and current.get("Previous", "").strip() == previous_id
+            and bool(re.fullmatch(r"sha256:[0-9a-f]{64}", digest))
+            and digest == previous.get("Snapshot", "").strip()
+            and policy == previous.get("Policy snapshot", "").strip() == review_policy_hash(plan))
+
+
 def check_review_round_structure(plan: Document) -> list[Violation]:
-    """Validate round types and the single targeted re-review allowance."""
+    """One targeted re-review, then at most one guarded documentation follow-up."""
     violations: list[Violation] = []
     may_re_review = False
+    previous, previous_id = {}, ""
     for identifier, start, end in plan.blocks("Review result", "G"):
-        round_type = task_fields(plan, start, end).get("Type", "").strip().lower()
+        fields = task_fields(plan, start, end)
+        round_type = fields.get("Type", "").strip().lower()
         if round_type not in ("initial", "re-review"):
             violations.append(
                 Violation(
@@ -847,19 +872,22 @@ def check_review_round_structure(plan: Document) -> list[Violation]:
                 )
             )
             may_re_review = False
+            previous, previous_id = {}, ""
             continue
         if round_type == "initial":
             may_re_review = True
+            previous, previous_id = fields, identifier
             continue
-        if not may_re_review:
+        if not may_re_review and not documentation_followup(plan, fields, previous, previous_id):
             violations.append(
                 Violation(
                     plan.display,
                     start + 1,
-                    f"{identifier}: at most one re-review may follow an initial round",
+                    f"{identifier}: at most one re-review may follow an initial round; a documentation-only follow-up needs unchanged Snapshot/Policy snapshot and prior documentation-only FAIL",
                 )
             )
         may_re_review = False
+        previous, previous_id = fields, identifier
 
     return violations
 
@@ -1191,7 +1219,12 @@ def main() -> int:
         from review_snapshot import ScopeError, SnapshotError, compute as compute_snapshot
 
         try:
-            compute_snapshot(change, Path.cwd())
+            current = compute_snapshot(change, Path.cwd())
+            latest = latest_review_round(plan)
+            if (latest and latest[1].get("Scope", "").strip().lower() == "documentation-only"
+                    and latest[1].get("Snapshot", "").strip() != review_manifest_hash(current)):
+                violations.append(Violation(plan.display, 1,
+                    "documentation-only follow-up cannot review a changed executable/requirements snapshot"))
         except (ScopeError, SnapshotError) as exc:
             violations.append(
                 Violation(plan.display, 1, f"Review scope cannot produce a snapshot: {exc}")

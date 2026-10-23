@@ -607,6 +607,48 @@ class ValidateChangeTest(unittest.TestCase):
 
         self.assertTrue(any("at most one re-review" in message for message in messages))
 
+    def documentation_rounds(self):
+        module = load_module()
+        policy = "## Model handoff\n**Model checkpoint:** Approved\n**Worker runtime:** codex/test\n\n## Plan approval\n**Status:** Approved\n\n"
+        plan = self.document("plan.md", policy)
+        digest = module.review_policy_hash(plan)
+        snapshot = "sha256:" + "a" * 64
+        rounds = ("## Review result\n### G1\n- **Type:** initial\n- **Outcome:** FAIL\n"
+                  "### G2\n- **Type:** re-review\n- **Outcome:** FAIL\n"
+                  "- **Remaining findings:** documentation-only\n"
+                  f"- **Snapshot:** {snapshot}\n- **Policy snapshot:** {digest}\n"
+                  "### G3\n- **Type:** re-review\n- **Scope:** documentation-only\n"
+                  "- **Previous:** G2\n- **Outcome:** PASS\n"
+                  f"- **Snapshot:** {snapshot}\n- **Policy snapshot:** {digest}\n")
+        return module, policy, rounds
+
+    def test_policy_hash_excludes_progress_but_not_approvals(self):
+        module = load_module()
+        content = "## Model handoff\n**Worker runtime:** codex/model\n**Owns next:** controller\n**Execution accounting:** pending\n### Reasons\nStale prose\n## Plan approval\n**Status:** Approved\n"
+        digest = module.review_policy_hash(self.document("plan.md", content))
+        progress = content.replace('controller', 'reviewer').replace('pending', 'recorded').replace('Stale prose', 'Corrected prose')
+        self.assertEqual(digest, module.review_policy_hash(self.document("plan.md", progress)))
+        self.assertNotEqual(digest, module.review_policy_hash(self.document("plan.md", content.replace('Approved', 'Pending'))))
+
+    def test_one_documentation_followup_does_not_require_an_initial_round(self):
+        module, policy, rounds = self.documentation_rounds()
+        self.assertEqual(module.check_review_round_structure(self.document("plan.md", policy + rounds)), [])
+
+    def test_documentation_followup_is_bounded_and_cannot_cover_code_or_policy_changes(self):
+        module, policy, rounds = self.documentation_rounds()
+        variants = [
+            rounds.replace("**Remaining findings:** documentation-only", "**Remaining findings:** code"),
+            rounds.replace("**Previous:** G2", "**Previous:** G1"),
+            rounds.replace("**Outcome:** FAIL\n- **Remaining", "**Outcome:** PASS\n- **Remaining"),
+            rounds.replace("**Snapshot:** sha256:" + "a" * 64, "**Snapshot:** sha256:" + "b" * 64, 1),
+            rounds + "### G4\n- **Type:** re-review\n- **Scope:** documentation-only\n- **Outcome:** PASS\n",
+        ]
+        for value in variants:
+            with self.subTest(value=value):
+                self.assertTrue(module.check_review_round_structure(self.document("plan.md", policy + value)))
+        changed = policy.replace("codex/test", "codex/other") + rounds
+        self.assertTrue(module.check_review_round_structure(self.document("plan.md", changed)))
+
     def test_pre_review_rejects_evidence_hash_when_a_file_was_deleted(self) -> None:
         module = load_module()
         target = self.change / "Handler.php"

@@ -149,19 +149,16 @@ def start(args: argparse.Namespace) -> int:
     if "roles" in config or controller or binding_file or plan_file:
         if not controller:
             raise RunError("project routing requires --controller-runtime; do not infer the controller from the worker")
-        from role_routing import resolve_role
+        from role_routing import resolve_role, check_approved_binding
 
         route = resolve_role(cwd, args.role, controller, cwd / plan_file if plan_file else None)
         if not args.dry_run and not binding_file:
             raise RunError("resolved dispatch requires --binding-file from the approved model checkpoint")
         if binding_file:
-            frozen = json.loads((cwd / binding_file).read_text(encoding="utf-8"))
-            routes = frozen.get("routes", []) if isinstance(frozen, dict) else None
-            if not isinstance(routes, list) or not all(isinstance(row, dict) for row in routes):
-                raise RunError("invalid approved binding file; expected resolver JSON")
-            match = [row for row in routes if row.get("role") == args.role]
-            if len(match) != 1 or match[0].get("fingerprint") != route["fingerprint"]:
-                raise RunError("approved binding changed; resolve again and obtain model approval")
+            try:
+                check_approved_binding(route, cwd / binding_file)
+            except ValueError as exc:
+                raise RunError(str(exc)) from exc
         for flag, selected in (("runtime", route["runtime"]), ("model", route["model"]), ("effort", route["effort"])):
             explicit = getattr(args, flag)
             if explicit is not None and explicit != selected:

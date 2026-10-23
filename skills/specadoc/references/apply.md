@@ -25,7 +25,9 @@ Load this reference only for `specadoc apply <slug>`.
    and prefix an intentional deletion with `!`. Then run
    `specadoc_step.py pre-review <slug>`: it runs
    `validate_change.py <slug> --phase pre-review` and, on PASS, prints the
-   `review_snapshot.py compute` hash and manifest for the round block.
+   snapshot hash, policy snapshot, and manifest for the round block. For routed
+   projects, pass `--controller-runtime` and `--binding-file` to `dispatch` and
+   `pre-review`; these check the approved binding without a separate full dry-run.
 6. On a stable executable diff, run one independent read-only `reviewer` and
    record its PASS as the archive input. Record the round as a `### G<n>`
    block under `plan.md`'s `Review result` → `Round log`
@@ -50,6 +52,13 @@ Load this reference only for `specadoc apply <slug>`.
    scope, repeat final verification, and run one reviewer for that diff. Do not
    dispatch another reviewer solely because evidence, capability documents, or archive
    material was completed.
+   Exception: after the targeted round FAILs solely on documentation, allow one
+   more `re-review` with `Scope: documentation-only` and `Previous: G<n>`.
+   The failed round must record `Remaining findings: documentation-only`;
+   both rounds need identical `Snapshot` and `Policy snapshot` from pre-review.
+   Only fix cited evidence/handoff prose, not requirements, bindings or approvals.
+   Send the finding and changed prose only. This is not an `initial` round;
+   another doc-only follow-up or changed snapshot requires a decision.
 7. On PASS, update capability specifications and fill `Archive summary` with the
    durable outcome, decisions, and residual risks, then run
    `validate_change.py <slug> --phase final`. The final gate validates the

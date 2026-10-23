@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "skills/specadoc/scripts"))
 
+import role_routing
 from role_routing import resolve_role, inspect_routing
 from specadoc_config import load_config
 from specadoc_root import resolve_root
@@ -112,3 +116,69 @@ class RoutingTest(unittest.TestCase):
         report = inspect_routing(self.repo, "claude", which=lambda _: None)
         self.assertTrue(any(row["level"] == "ERROR" and "CLI" in row["message"] for row in report))
         self.assertTrue(any(row["level"] == "WARN" and "waiver" in row["message"] for row in report))
+
+    def cli(self, *args):
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["role_routing", "--cwd", str(self.repo),
+                                        "--controller-runtime", "claude", *args]), contextlib.redirect_stdout(output):
+            code = role_routing.main()
+        return code, json.loads(output.getvalue())
+
+    def test_compact_cli_checks_only_selected_role_once(self):
+        with patch.object(role_routing, "resolve_role", wraps=resolve_role) as resolve, \
+                patch.object(role_routing.shutil, "which", return_value="/bin/claude"):
+            code, data = self.cli("--role", "worker", "--check-cli", "--compact")
+        self.assertEqual(code, 0)
+        self.assertEqual(resolve.call_count, 1)
+        self.assertEqual(data["routes"][0]["model"], "host")
+        self.assertNotIn("config", data["routes"][0])
+        self.assertIn("fingerprint", data["routes"][0])
+
+    def test_binding_check_is_fresh_and_shared_by_native_and_external_dispatch(self):
+        binding = self.repo / "bindings.json"
+        route = resolve_role(self.repo, "worker", "claude")
+        binding.write_text(json.dumps({"routes": [route]}))
+        code, _ = self.cli("--role", "worker", "--binding-file", str(binding), "--compact")
+        self.assertEqual(code, 0)
+        self.role("claude", "worker", "changed", "medium")
+        with self.assertRaisesRegex(ValueError, "approved binding changed"):
+            role_routing.approved_role(self.repo, "worker", "claude", binding)
+
+    def test_compact_output_keeps_fingerprint_for_revalidation(self):
+        _, data = self.cli("--role", "worker", "--compact")
+        binding = self.repo / "bindings.json"
+        binding.write_text(json.dumps(data))
+        self.assertEqual(role_routing.approved_role(self.repo, "worker", "claude", binding)["model"], "host")
+
+    def test_codex_registry_with_unsupported_python_fails_explicitly(self):
+        with patch.object(role_routing, "tomllib", None):
+            with self.assertRaisesRegex(ValueError, "Python 3.11"):
+                resolve_role(self.repo, "worker", "codex")
+
+    def test_approval_rejects_effort_config_and_malformed_snapshots(self):
+        route = resolve_role(self.repo, "worker", "claude")
+        binding = self.repo / "bindings.json"
+        for value in ([], {"routes": None}, {"routes": [None]}, {"routes": []},
+                      {"routes": [route, route]}):
+            with self.subTest(snapshot=value):
+                binding.write_text(json.dumps(value))
+                with self.assertRaises(ValueError):
+                    role_routing.approved_role(self.repo, "worker", "claude", binding)
+        binding.write_text(json.dumps({"routes": [route]}))
+        self.role("claude", "worker", "host", "high")
+        with self.assertRaisesRegex(ValueError, "binding changed"):
+            role_routing.approved_role(self.repo, "worker", "claude", binding)
+        self.role("claude", "worker", "host", "medium")
+        self.config({"version": 1, "roles": {"worker": {"runtime": "codex"}}})
+        with self.assertRaisesRegex(ValueError, "binding changed"):
+            role_routing.approved_role(self.repo, "worker", "claude", binding)
+
+    def test_all_role_cli_checks_do_not_resolve_twice_and_missing_cli_fails(self):
+        for role in ("scout", "reviewer"):
+            self.role("claude", role, "test", "high")
+        with patch.object(role_routing, "resolve_role", wraps=resolve_role) as resolve, \
+                patch.object(role_routing.shutil, "which", return_value=None):
+            code, data = self.cli("--check-cli", "--compact")
+        self.assertEqual(resolve.call_count, 3)
+        self.assertEqual(code, 1)
+        self.assertEqual(sum(row["level"] == "ERROR" for row in data["findings"]), 3)

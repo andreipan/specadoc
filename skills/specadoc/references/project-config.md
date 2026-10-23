@@ -26,7 +26,9 @@ configuration layering is introduced in v1.
 
 ## Resolve, approve, dispatch
 
-Routing scripts require Python 3.11+ to read native Codex TOML registries.
+Use a verified Python 3.11+ interpreter when routes read Codex TOML registries;
+record its command once in the handoff. Do not rediscover the same version error
+per task or hard-code a machine-specific interpreter in this plugin.
 Follow the host's shell prefix convention for all commands below.
 
 Before the model checkpoint run this read-only command from the checkout root:
@@ -61,9 +63,12 @@ regenerate an approved snapshot silently. Record the selected runtime/model,
 effort, sources and snapshot path in Model handoff (direct: chat). Merely running
 the resolver or creating a snapshot is not user approval.
 
-- Native dispatch: use the installed native role; re-resolve immediately before
-  dispatch and compare its fingerprint with the approved snapshot. If it
-  changed, stop for new approval. Delegation remains subject to host policy.
+- Native dispatch: use the installed native role. For managed workers/reviewers,
+  pass `--controller-runtime` and `--binding-file` to `specadoc_step.py dispatch`
+  or `pre-review`; it checks the fresh fingerprint before writing a baseline.
+  For direct/scout dispatch use `role_routing.py --role <role> --binding-file
+  <approved-json> --compact --check-cli` with the same controller/plan arguments.
+  Changed bindings require new approval. Delegation remains subject to host policy.
 - External dispatch: use the runner directly, not a host wrapper:
 
 ```text
@@ -77,6 +82,12 @@ snapshot for a real routed launch, and records the binding in its run metadata.
 anything; it does not launch or approve a role. `--prompt-file`, `--out-dir`,
 `--plan` and `--binding-file` are relative to `--cwd` (default: the current
 directory), not to the caller's shell.
+
+Resolve full JSON once for the checkpoint; use `--compact` for human-facing
+revalidation, not repeated configuration dumps. The runner already checks
+external bindings at launch: do not precede each launch with a full dry-run.
+No cache may replace fresh validation. Keep full resolver JSON as the approval
+artifact; a successful check is not authentication evidence.
 
 The fingerprint covers the whole project config and the target registry, so it
 includes personal models. An approved snapshot belongs to whoever approved it.

@@ -143,7 +143,10 @@ and the next action. After model approval, present a short plan with the bounded
 edit and exact check, stop for plan approval, then implement and report evidence.
 Artifact initialization, file-based handoffs and artifact gates apply only to
 the managed path. An explicit uninterrupted request may waive both manual
-stops, but not the bounded plan or verification.
+stops, but not the bounded plan or verification. Record the exact request,
+chosen profile, bounded scope and covered phases in the checkpoint (direct:
+chat). Do not infer this permission from silence or reuse it for a material
+scope/risk change. Never label an unapproved profile as approved.
 
 Then output a concise recommendation and stop. Do not continue planning, write
 tests, or edit production code until the user confirms or changes the profile.

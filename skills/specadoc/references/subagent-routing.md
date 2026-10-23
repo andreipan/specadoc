@@ -185,6 +185,11 @@ Use the standard reviewer response.
 
 ## File-based worker handoff
 
+For browser tasks, put a bounded `Test context` in the task: a verified test
+exemplar, bootstrap/login helper, test-only environment, exact focused command,
+and relevant runbook section. The brief already carries task fields; do not
+paste the whole runbook or invent a new handoff system.
+
 Use this for every worker dispatch when the scripts are available, and always
 for a worker on another runtime (see `runners.md`):
 

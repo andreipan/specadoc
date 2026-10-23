@@ -67,6 +67,12 @@ A missing convenient test harness is not automatically an exception. Prefer addi
 - During implementation, run the smallest deterministic check for the current
   task. Do not repeatedly run the same broad suite after edits outside its
   scope.
+- For browser failures, save one diagnostic artifact (synthetic URL/state,
+  relevant error and sanitized body excerpt). Do not rerun just for another
+  tail/grep view of the same log. A retry needs changed input, implementation or
+  an explicit new hypothesis; repeated failure without new evidence is
+  NEEDS_CONTEXT/BLOCKED, not permission to widen scope. Never save credentials,
+  cookies, tokens or real personal data in diagnostics.
 - Run one structural static-analysis/type-check after the first stable migration batch,
   before broad regression tests. Scope it to changed production paths and
   separate migration errors from a confirmed baseline.
