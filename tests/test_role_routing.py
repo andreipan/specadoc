@@ -69,18 +69,18 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual((route["model"], route["effort"]), ("executor", "low"))
         self.assertEqual(route["sources"]["runtime"], ".specadoc.json")
 
-    def test_approved_plan_wins_and_pending_plan_fails(self):
-        self.config({"version": 1, "roles": {"worker": {"runtime": "claude"}}})
-        plan = self.repo / "plan.md"
-        text = "## Model handoff\n**Model checkpoint:** Approved by user\n**Worker runtime:** codex/approved-model\n**Worker effort:** high\n## Tasks\n"
-        plan.write_text(text)
-        route = resolve_role(self.repo, "worker", "claude", plan)
-        self.assertEqual((route["model"], route["effort"]), ("approved-model", "high"))
-        self.assertEqual(route, resolve_role(self.repo, "worker", "claude", Path("plan.md")))
-        self.assertEqual(route["sources"]["model"], "plan.md")
-        plan.write_text(text.replace("Approved by user", "Awaiting user confirmation"))
-        with self.assertRaisesRegex(ValueError, "approved"):
-            resolve_role(self.repo, "worker", "claude", plan)
+    def test_route_has_no_snapshot_fields_and_resolver_takes_no_plan(self):
+        self.config({"version": 1, "roles": {"worker": {"runtime": "codex"}}})
+        route = resolve_role(self.repo, "worker", "claude")
+        self.assertEqual(set(route), {"role", "controller_runtime", "runtime", "model", "effort",
+                                      "dispatch", "sources", "controller_source"})
+        for gone in ("fingerprint", "registry_hash", "config"):
+            self.assertNotIn(gone, route)
+        self.assertEqual((route["runtime"], route["model"], route["effort"]), ("codex", "executor", "low"))
+        with self.assertRaises(TypeError):
+            resolve_role(self.repo, "worker", "claude", Path("plan.md"))
+        for gone in ("plan_overrides", "approved_role", "check_approved_binding"):
+            self.assertFalse(hasattr(role_routing, gone), gone)
 
     def test_missing_target_binding_and_controller_mismatch_fail(self):
         self.config({"version": 1, "roles": {"worker": {"runtime": "opencode"}}})
@@ -100,22 +100,30 @@ class RoutingTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     load_config(self.repo)
 
-    def test_approved_controller_override_does_not_launch_another_controller(self):
+    def test_controller_expectation_mismatch_still_fails(self):
         self.config({"version": 1, "roles": {"controller": {"runtime": "claude"}}})
-        plan = self.repo / "plan.md"
-        plan.write_text("## Model handoff\n**Model checkpoint:** Approved by user\n**Controller runtime:** codex\n")
-        route = resolve_role(self.repo, "worker", "codex", plan)
-        self.assertEqual(route["dispatch"], "native")
-        self.assertEqual(route["controller_source"], "plan.md")
+        route = resolve_role(self.repo, "worker", "claude")
+        self.assertEqual((route["dispatch"], route["controller_source"]), ("native", ".specadoc.json"))
         with self.assertRaisesRegex(ValueError, "controller"):
-            resolve_role(self.repo, "worker", "claude", plan)
+            resolve_role(self.repo, "worker", "codex")
+
+    def test_unrouted_scout_falls_back_to_controller_role_file(self):
+        self.config({"version": 1, "roles": {"worker": {"runtime": "codex"}}})
+        self.role("claude", "scout", "scout-model", "low")
+        route = resolve_role(self.repo, "scout", "claude")
+        self.assertEqual((route["runtime"], route["model"], route["effort"], route["dispatch"]),
+                         ("claude", "scout-model", "low", "native"))
+        self.assertEqual(route["sources"]["runtime"], ".claude/agents/scout.md")
+        self.assertEqual(route["sources"]["model"], ".claude/agents/scout.md")
 
     def test_cli_presence_and_independence_are_separate_checks(self):
         for role in ("scout", "reviewer"):
             self.role("claude", role, "test", "high")
         report = inspect_routing(self.repo, "claude", which=lambda _: None)
         self.assertTrue(any(row["level"] == "ERROR" and "CLI" in row["message"] for row in report))
-        self.assertTrue(any(row["level"] == "WARN" and "waiver" in row["message"] for row in report))
+        warnings = [row for row in report if row["level"] == "WARN"]
+        self.assertEqual([row["message"] for row in warnings], ["reviewer shares worker runtime claude"])
+        self.assertNotIn("waiver", warnings[0]["message"])
 
     def cli(self, *args):
         output = io.StringIO()
@@ -132,46 +140,32 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(resolve.call_count, 1)
         self.assertEqual(data["routes"][0]["model"], "host")
         self.assertNotIn("config", data["routes"][0])
-        self.assertIn("fingerprint", data["routes"][0])
+        self.assertNotIn("fingerprint", data["routes"][0])
 
-    def test_binding_check_is_fresh_and_shared_by_native_and_external_dispatch(self):
-        binding = self.repo / "bindings.json"
-        route = resolve_role(self.repo, "worker", "claude")
-        binding.write_text(json.dumps({"routes": [route]}))
-        code, _ = self.cli("--role", "worker", "--binding-file", str(binding), "--compact")
-        self.assertEqual(code, 0)
-        self.role("claude", "worker", "changed", "medium")
-        with self.assertRaisesRegex(ValueError, "approved binding changed"):
-            role_routing.approved_role(self.repo, "worker", "claude", binding)
+    def test_edited_role_file_effort_applies_to_next_resolution(self):
+        self.role("claude", "reviewer", "rev", "medium")
+        self.assertEqual(resolve_role(self.repo, "reviewer", "claude")["effort"], "medium")
+        self.role("claude", "reviewer", "rev", "high")
+        route = resolve_role(self.repo, "reviewer", "claude")
+        self.assertEqual(route["effort"], "high")
+        code, data = self.cli("--role", "reviewer", "--compact")
+        self.assertEqual((code, data["routes"][0]["effort"]), (0, "high"))
 
-    def test_compact_output_keeps_fingerprint_for_revalidation(self):
-        _, data = self.cli("--role", "worker", "--compact")
-        binding = self.repo / "bindings.json"
-        binding.write_text(json.dumps(data))
-        self.assertEqual(role_routing.approved_role(self.repo, "worker", "claude", binding)["model"], "host")
+    def test_removed_options_are_usage_errors_naming_the_option(self):
+        for option in ("--binding-file", "--plan"):
+            with self.subTest(option=option):
+                err = io.StringIO()
+                with patch.object(sys, "argv", ["role_routing", "--cwd", str(self.repo),
+                                                "--controller-runtime", "claude", option, "x.json"]), \
+                        contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+                    role_routing.main()
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(option, err.getvalue())
 
     def test_codex_registry_with_unsupported_python_fails_explicitly(self):
         with patch.object(role_routing, "tomllib", None):
             with self.assertRaisesRegex(ValueError, "Python 3.11"):
                 resolve_role(self.repo, "worker", "codex")
-
-    def test_approval_rejects_effort_config_and_malformed_snapshots(self):
-        route = resolve_role(self.repo, "worker", "claude")
-        binding = self.repo / "bindings.json"
-        for value in ([], {"routes": None}, {"routes": [None]}, {"routes": []},
-                      {"routes": [route, route]}):
-            with self.subTest(snapshot=value):
-                binding.write_text(json.dumps(value))
-                with self.assertRaises(ValueError):
-                    role_routing.approved_role(self.repo, "worker", "claude", binding)
-        binding.write_text(json.dumps({"routes": [route]}))
-        self.role("claude", "worker", "host", "high")
-        with self.assertRaisesRegex(ValueError, "binding changed"):
-            role_routing.approved_role(self.repo, "worker", "claude", binding)
-        self.role("claude", "worker", "host", "medium")
-        self.config({"version": 1, "roles": {"worker": {"runtime": "codex"}}})
-        with self.assertRaisesRegex(ValueError, "binding changed"):
-            role_routing.approved_role(self.repo, "worker", "claude", binding)
 
     def test_all_role_cli_checks_do_not_resolve_twice_and_missing_cli_fails(self):
         for role in ("scout", "reviewer"):

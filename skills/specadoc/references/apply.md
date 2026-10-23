@@ -2,8 +2,8 @@
 
 Load this reference only for `specadoc apply <slug>`.
 
-1. Refuse to edit until `spec.md`, `plan.md`, model approval, and plan approval
-   pass deterministic validation.
+1. Refuse to edit until `spec.md`, `plan.md` and plan approval pass
+   deterministic validation.
 2. Implement behavior with RED-GREEN-REFACTOR. Mechanical migrations use their
    accepted migration matrix rather than manufactured RED failures.
    REFACTOR may include optional behavior-preserving cleanup; see
@@ -26,8 +26,8 @@ Load this reference only for `specadoc apply <slug>`.
    `specadoc_step.py pre-review <slug>`: it runs
    `validate_change.py <slug> --phase pre-review` and, on PASS, prints the
    snapshot hash, policy snapshot, and manifest for the round block. For routed
-   projects, pass `--controller-runtime` and `--binding-file` to `dispatch` and
-   `pre-review`; these check the approved binding without a separate full dry-run.
+   projects, pass `--controller-runtime` to `dispatch` and `pre-review`. They
+   resolve the role again and report the binding they will use.
 6. On a stable executable diff, run one independent read-only `reviewer` and
    record its PASS as the archive input. Record the round as a `### G<n>`
    block under `plan.md`'s `Review result` → `Round log`
@@ -56,7 +56,7 @@ Load this reference only for `specadoc apply <slug>`.
    more `re-review` with `Scope: documentation-only` and `Previous: G<n>`.
    The failed round must record `Remaining findings: documentation-only`;
    both rounds need identical `Snapshot` and `Policy snapshot` from pre-review.
-   Only fix cited evidence/handoff prose, not requirements, bindings or approvals.
+   Only fix cited evidence/handoff prose, not requirements or approvals.
    Send the finding and changed prose only. This is not an `initial` round;
    another doc-only follow-up or changed snapshot requires a decision.
 7. On PASS, update capability specifications and fill `Archive summary` with the

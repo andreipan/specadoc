@@ -6,24 +6,9 @@
 **Risk:** __RISK__  
 **Created:** __DATE__
 
-## Model handoff
+## Handoff
 
-**Reconnaissance level:** Unknown  
-**Recommended execution level:** Pending  
-**Risk:** __RISK__  
-**Role registry:** <.claude/agents | .codex/agents | .opencode/agents | specadoc plugin | embedded contract | none>  
-**Scout runtime:** <runtime/model from the role registry, or the approved per-change override>  
-**Worker runtime:** <runtime/model>  
-**Reviewer runtime:** <runtime/model>  
-**External code access:** <approved for <runtimes> | not needed>  
-**Execution accounting:** Per-execution totals are recorded in Completion evidence.  
-**Owns next:** Pending  
-**Model checkpoint:** Awaiting user confirmation  
 **Plan checkpoint:** Not ready
-
-### Reasons
-
-- Pending classification.
 
 ### Read before continuing
 
@@ -37,7 +22,6 @@
 - [ ] Explore evidence accepted or bounded reconnaissance complete
 - [ ] Requirement clarification
 - [ ] Behavioral specification
-- [ ] Model approval
 - [ ] Technical planning
 - [ ] Plan approval
 - [ ] TDD implementation
@@ -45,7 +29,7 @@
 
 ### Continue with
 
-`Continue from the model checkpoint. Read the handoff files first and do not repeat completed reconnaissance. Do not resurrect approaches discarded in Confirmed decisions or chat summaries.`
+`Continue from the plan checkpoint. Read the handoff files first and do not repeat completed reconnaissance. Do not resurrect approaches discarded in Confirmed decisions or chat summaries.`
 
 ## Reconnaissance evidence
 
@@ -59,7 +43,7 @@ change; do not restate them elsewhere.>
 
 ## Technical approach
 
-<Complete after the behavioral specification and model checkpoint are ready.>
+<Complete after the behavioral specification is ready.>
 
 ## Migration matrix
 
@@ -91,7 +75,6 @@ section otherwise.>
 - **Risk:** __RISK__
 - **Decision risk:** <low|medium|high>
 - **Owner:** <controller|worker>
-- **Owner level:** <EASY|MEDIUM|HIGH, or the approved alternative>
 - **Verification owner:** <worker|controller>
 - **Controller justification:** <required only when Owner is controller and Decision
   risk is low — name the subagent-routing.md exception that applies (e.g. the
@@ -126,7 +109,7 @@ from the diff; see `references/measurement.md`.
 ## Plan approval
 
 **Status:** Awaiting user approval  
-**Approved profile:** Pending  
+**Bindings shown:** Pending  
 **Approved at:** Pending
 
 Do not begin RED or implementation until this checkpoint is approved.
@@ -177,8 +160,6 @@ un-indent it to four spaces less when you add the first real entry:
     - **Snapshot:** sha256:... (the `hash` from `review_snapshot.py compute`)
     - **Policy snapshot:** sha256:... (from `specadoc_step.py pre-review`)
     - **Previous:** none|G<n-1>
-    - **Reviewer runtime:** <runtime/model>
-    - **Independence waiver:** Pending (required only when the reviewer runs on the worker's runtime)
     - **Outcome:** PASS|FAIL
     - **Reason:** <one line, required on FAIL>
     - **Remaining findings:** documentation-only (only when code fixes passed and just evidence/handoff prose remains)

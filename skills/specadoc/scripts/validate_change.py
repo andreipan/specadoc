@@ -35,7 +35,7 @@ SPEC_SECTIONS = (
 )
 
 PLAN_SECTIONS = (
-    "Model handoff",
+    "Handoff",
     "Reconnaissance evidence",
     "Confirmed decisions",
     "Technical approach",
@@ -55,7 +55,6 @@ TASK_FIELDS = (
     "Risk",
     "Decision risk",
     "Owner",
-    "Owner level",
     "Verification owner",
     "Files",
     "Test first",
@@ -173,8 +172,10 @@ class Document:
 
     def placeholders(self, section: str) -> list[tuple[int, str]]:
         found = []
+        if section in LEGACY_SECTION_ALIASES.values():
+            return found
         for number, line in self.body(section):
-            if "specadoc:ignore-placeholder" in line:
+            if "specadoc:ignore-placeholder" in line or LEGACY_FIELD.match(line):
                 continue
             bare = DISCLOSURE_TAG.sub("", INLINE_CODE.sub("", line))
             match = PLACEHOLDER.search(bare)
@@ -187,11 +188,19 @@ def ids_in(text: str, prefix: str) -> list[str]:
     return re.findall(rf"\b({prefix}\d+)\b", text)
 
 
+LEGACY_SECTION_ALIASES = {"Handoff": "Model handoff"}
+# Fields of the removed model-level fixation; old plans may still carry them unfilled.
+LEGACY_FIELD = re.compile(
+    r"^\s*(?:-\s*)?\*\*(?:Owner level|Approved profile|Reviewer runtime|Independence waiver):\*\*"
+)
+
+
 def check_sections(document: Document, required: tuple[str, ...]) -> list[Violation]:
     return [
         Violation(document.display, 1, f"missing required section: ## {name}")
         for name in required
         if name not in document.sections
+        and LEGACY_SECTION_ALIASES.get(name) not in document.sections
     ]
 
 
@@ -833,11 +842,8 @@ def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP) -> list[Vi
 
 
 def review_policy_hash(plan: Document) -> str:
-    """Approval/binding fields, not mutable Reasons or progress prose."""
-    fields = {key: value for key, value in handoff_fields(plan).items()
-              if key not in ("Owns next", "Execution accounting")}
-    payload = {"handoff": fields,
-               "approval": [line for _, line in plan.body("Plan approval")]}
+    """Plan approval only, not mutable handoff or progress prose."""
+    payload = {"approval": [line for _, line in plan.body("Plan approval")]}
     return "sha256:" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -950,64 +956,12 @@ def check_review_readiness(plan: Document) -> list[Violation]:
     return violations
 
 
-RUNTIMES = ("claude", "codex", "opencode")
-HANDOFF_FIELD = re.compile(r"^\*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*?)\s*$")
-
-
-def _runtime(value: str) -> str | None:
-    runtime = value.split("/", 1)[0].strip().strip("`").lower()
-    return runtime if runtime in RUNTIMES else None
-
-
-def handoff_fields(plan: Document) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for _, line in plan.body("Model handoff"):
-        if match := HANDOFF_FIELD.match(line):
-            fields[match.group("name").strip()] = match.group("value")
-    return fields
-
-
-def check_reviewer_independence(plan: Document) -> list[Violation]:
-    """A reviewer on the worker's runtime needs a recorded Independence waiver.
-
-    Applies only when the plan delegates at least one task to a worker and both
-    runtimes are recorded (`runners.md`). A round's own `Reviewer runtime`
-    overrides the one in `## Model handoff`.
-    """
-    has_worker = any(
-        task_fields(plan, start, end).get("Owner", "").strip().lower() == "worker"
-        for _, start, end in plan.blocks("Tasks", "T")
-    )
-    handoff = handoff_fields(plan)
-    worker = _runtime(handoff.get("Worker runtime", ""))
-    if not has_worker or worker is None:
-        return []
-    violations: list[Violation] = []
-    for identifier, start, end in plan.blocks("Review result", "G"):
-        fields = task_fields(plan, start, end)
-        reviewer = _runtime(fields.get("Reviewer runtime", "")) or _runtime(handoff.get("Reviewer runtime", ""))
-        if reviewer != worker:
-            continue
-        waiver = fields.get("Independence waiver", "").strip()
-        if not waiver or PENDING.search(waiver):
-            violations.append(
-                Violation(
-                    plan.display,
-                    start + 1,
-                    f"{identifier}: reviewer runs on the worker's runtime ({worker}); record "
-                    "**Independence waiver:** <reason> or review on another runtime (runners.md)",
-                )
-            )
-    return violations
-
-
 def check_pre_review(plan: Document) -> list[Violation]:
     """Validate readiness and refuse only a new reviewer dispatch past the cap."""
     return (
         check_review_readiness(plan)
         + check_review_round_structure(plan)
         + check_review_round_cap(plan)
-        + check_reviewer_independence(plan)
     )
 
 
@@ -1130,9 +1084,9 @@ def check_final(spec: Document, plan: Document) -> list[Violation]:
                 Violation(plan.display, number, f"Completion evidence still Pending: {line.strip()}")
             )
 
-    for section in ("Model handoff", "Plan approval"):
+    for section in ("Handoff", "Plan approval"):
         for number, line in plan.body(section):
-            if PENDING.search(line):
+            if PENDING.search(line) and not LEGACY_FIELD.match(line):
                 violations.append(
                     Violation(plan.display, number, f"{section} still Pending: {line.strip()}")
                 )

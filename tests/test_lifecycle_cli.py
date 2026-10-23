@@ -34,6 +34,11 @@ class LifecycleCliTest(unittest.TestCase):
                 self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
                 return result.stdout
             cli('init_change.py', 'demo', '--risk', 'low')
+            fresh = (project / 'docs/specadoc/demo/plan.md').read_text()
+            self.assertIn('## Handoff', fresh)
+            for removed in ('Model handoff', 'Owner level', 'Independence waiver', 'Model approval',
+                            'Model checkpoint', 'Recommended execution level', 'Reviewer runtime'):
+                self.assertNotIn(removed, fresh)
             change = project / 'docs/specadoc/demo'
             change.joinpath('spec.md').write_text('''# Fixture label
 ## Goal
@@ -71,7 +76,6 @@ No external clients rely on the old text.
 - **Risk:** low
 - **Decision risk:** low
 - **Owner:** worker
-- **Owner level:** MEDIUM
 - **Verification owner:** controller
 - **Files:** label.py, check_label.py
 - **Test first:** Assert {outcome.lower()}
@@ -84,8 +88,8 @@ No external clients rely on the old text.
 - **Evidence:** python3 check_label.py: PASS after observed RED
 ''')
             plan = '''# Fixture plan
-## Model handoff
-Model and execution level approved in this synthetic fixture.
+## Handoff
+Read spec.md and plan.md, then continue with the next task.
 ## Reconnaissance evidence
 label.py and check_label.py.
 ## Confirmed decisions
@@ -104,7 +108,7 @@ label.py defines label(); check_label.py verifies it.
 | R1 | A1 | python3 check_label.py | PASS |
 ## Plan approval
 **Status:** Approved (synthetic test fixture)
-**Approved profile:** MEDIUM
+**Bindings shown:** worker claude/test/low
 **Approved at:** fixture
 ## Review scope
 - `label.py`

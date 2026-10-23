@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -83,11 +84,18 @@ class PluginPackageTest(unittest.TestCase):
         cases = json.loads((ROOT / 'tests/evals/specadoc.json').read_text())
         self.assertEqual({'direct', 'grilling-skip', 'minor-re-review', 'project-role',
                           'embedded-role', 'reviewer-unavailable', 'managed-lifecycle',
-                          'native-binding-drift', 'browser-context', 'documentation-followup',
+                          'edited-binding-applies', 'binding-advice', 'browser-context', 'documentation-followup',
                           'direct-uninterrupted', 'bounded-loading'}, {c['id'] for c in cases})
         for case in cases:
             self.assertTrue(case['request'])
             self.assertTrue(case['expected_behavior'])
+
+    def test_references_describe_no_model_level_fixation(self):
+        banned = re.compile(r'binding-file|model-bindings\.json|model checkpoint|\bEASY\b|Owner level', re.I)
+        hits = [f'{path.relative_to(ROOT)}:{number}'
+                for path in sorted((ROOT / 'skills/specadoc').rglob('*.md'))
+                for number, line in enumerate(path.read_text().splitlines(), 1) if banned.search(line)]
+        self.assertEqual([], hits)
 
 
 if __name__ == '__main__':

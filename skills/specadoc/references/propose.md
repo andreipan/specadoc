@@ -9,20 +9,21 @@ Load this reference only for `specadoc propose`.
 3. Resolve behavior-changing questions and fill observable requirements,
    acceptance scenarios, non-goals, constraints, assumptions, and capability
    operations in `spec.md`.
-4. Run `validate_change.py <slug> --phase spec`, clear violations, record the
-   risk and execution-level recommendation, then stop for model approval.
-5. Under the approved profile, complete three to eight independently verifiable
-   tasks and the requirement-to-check matrix in `plan.md`.
+4. Run `validate_change.py <slug> --phase spec` and clear violations. Record
+   the risk. Do not stop for model approval: Specadoc fixes no model level.
+5. Complete three to eight independently verifiable tasks and the
+   requirement-to-check matrix in `plan.md`.
    Use an installed architecture-design companion only for unresolved interface
    choices; use domain modeling when meanings or invariants need sharpening.
    The controller decides; bounded workers do not choose architecture. Preserve
    repository artifact locations and keep one source of truth per concern.
-6. Run `validate_change.py <slug> --phase plan`, present a compact plan preview,
-   and stop for plan approval. If accumulated context warrants it, offer running
+6. Run `validate_change.py <slug> --phase plan`, present a compact plan preview
+   with the role bindings line and any binding advice (`model-routing.md` →
+   Bindings at plan approval, Binding advice), and stop for plan approval. If accumulated context warrants it, offer running
    `apply <slug>` in a new controller session that starts from the plan's
    `### Read before continuing` list (`model-routing.md` → Session boundaries).
 
-Model approval and plan approval are independent. An explicit uninterrupted
-execution request may waive the stops, but not specification or validation.
+Plan approval is the only approval stop. An explicit uninterrupted execution
+request may waive it, but not specification or validation.
 
 Read `artifacts.md` and `model-routing.md` while preparing the proposal.

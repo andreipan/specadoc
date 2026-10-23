@@ -34,11 +34,11 @@ Without an explicit mode:
 3. Select `propose` when behavior is clear but the change is non-trivial.
 4. Use the internal direct path only when the change is local, reversible, free
    of contract/schema/permission/money/concurrency risk, and has one exact
-   check. Direct still stops for model and plan approval, unless an explicit
-   uninterrupted request waives those stops, but creates no files.
+   check. Direct still stops for plan approval, unless an explicit
+   uninterrupted request waives that stop, but creates no files.
 
-For direct, read `references/model-routing.md`: keep the model handoff, short
-technical plan, both approvals, and exact verification evidence in chat. Do not
+For direct, read `references/model-routing.md`: keep the role bindings line,
+short technical plan, plan approval, and exact verification evidence in chat. Do not
 initialize artifacts or run artifact gates. If new facts violate direct's risk
 conditions, stop and switch to `propose`, carrying forward accepted evidence
 and obtaining the approvals required for the revised scope.
@@ -84,7 +84,7 @@ contract or belongs to a different change.
 ## Progressive references
 
 - Artifacts and deterministic gates: `references/artifacts.md`
-- Risk and model checkpoint: `references/model-routing.md`
+- Risk, role bindings and binding advice: `references/model-routing.md`
 - Role dispatch and fallbacks: `references/subagent-routing.md`
 - Roles on another runtime (`run_role.py`): `references/runners.md`
 - Project-owned routing (`.specadoc.json`): `references/project-config.md`

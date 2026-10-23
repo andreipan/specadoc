@@ -41,8 +41,8 @@ No external clients rely on the old text.
 '''
 
 PLAN = '''# Fixture plan
-## Model handoff
-Model and execution level approved in this synthetic fixture.
+## Handoff
+Read spec.md and plan.md, then continue with the next task.
 ## Reconnaissance evidence
 label.py and check_label.py.
 ## Confirmed decisions
@@ -60,7 +60,6 @@ label.py defines label(); check_label.py verifies it.
 - **Risk:** low
 - **Decision risk:** low
 - **Owner:** worker
-- **Owner level:** MEDIUM
 - **Verification owner:** controller
 - **Files:** `label.py`, `check_label.py`
 - **Test first:** Assert ready label
@@ -77,7 +76,6 @@ label.py defines label(); check_label.py verifies it.
 - **Risk:** low
 - **Decision risk:** low
 - **Owner:** worker
-- **Owner level:** MEDIUM
 - **Verification owner:** controller
 - **Files:** `label.py`, `check_label.py`
 - **Test first:** Assert ready label
@@ -94,7 +92,6 @@ label.py defines label(); check_label.py verifies it.
 - **Risk:** low
 - **Decision risk:** low
 - **Owner:** worker
-- **Owner level:** MEDIUM
 - **Verification owner:** controller
 - **Files:** `label.py`, `check_label.py`
 - **Test first:** Assert ready label
@@ -111,7 +108,7 @@ label.py defines label(); check_label.py verifies it.
 | R1 | A1 | python3 check_label.py | PASS |
 ## Plan approval
 **Status:** Approved (synthetic test fixture)
-**Approved profile:** MEDIUM
+**Bindings shown:** worker claude/test/low
 **Approved at:** fixture
 ## Review scope
 - `label.py`
@@ -130,6 +127,26 @@ Requirement mapping: R1 -> check_label.py
 Execution tokens: not applicable to synthetic CLI fixture
 Review rounds: 1 synthetic fixture round
 '''
+
+LEGACY_PLAN = (
+    PLAN.replace('## Handoff\nRead spec.md and plan.md, then continue with the next task.\n',
+                 '## Model handoff\nModel and execution level approved in this synthetic fixture.\n'
+                 '**Worker runtime:** codex/m1\n**Reviewer runtime:** codex/m2\n')
+    .replace('- **Owner:** worker\n', '- **Owner:** worker\n- **Owner level:** MEDIUM\n')
+    .replace('**Bindings shown:** worker claude/test/low\n', '**Approved profile:** MEDIUM\n')
+    .replace('## Archive summary', '### Round log\n### G1\n- **Type:** initial\n- **Previous:** none\n'
+             '- **Reviewer runtime:** codex/m2\n- **Independence waiver:** reviewer on another vendor\n'
+             '- **Outcome:** Pending\n## Archive summary')
+)
+
+# Created by the old template and left unfilled at the old model checkpoint.
+PARTIAL_LEGACY_PLAN = (
+    LEGACY_PLAN.replace('**Worker runtime:** codex/m1\n',
+                        '**Worker runtime:** <runtime/model>\n**Recommended execution level:** Pending\n')
+    .replace('- **Owner level:** MEDIUM\n', '- **Owner level:** <EASY|MEDIUM|HIGH, or the approved alternative>\n')
+    .replace('**Approved profile:** MEDIUM\n', '**Approved profile:** Pending\n')
+    .replace('- **Independence waiver:** reviewer on another vendor\n', '- **Independence waiver:** Pending\n')
+)
 
 
 class SpecadocStepTest(unittest.TestCase):
@@ -167,26 +184,26 @@ class SpecadocStepTest(unittest.TestCase):
         self.assertTrue((runs / 'T1-brief.md').is_file())
         self.assertIn('T1-report.md', fields['next'])
 
-    def test_routed_native_dispatch_checks_approval_before_writing_baseline(self):
+    def test_routed_dispatch_needs_controller_and_reports_fresh_resolution(self):
         (self.project / '.specadoc.json').write_text(json.dumps({'version': 1, 'roles': {'worker': {'runtime': 'codex'}}}))
         role = self.project / '.codex/agents/worker.toml'
         role.parent.mkdir(parents=True)
         role.write_text('model = "test-model"\nmodel_reasoning_effort = "low"\n')
         fields, _ = self.step('dispatch', 'demo', 'T1', expected=2)
-        self.assertIn('binding', fields['blocking reason'])
+        self.assertIn('controller-runtime', fields['blocking reason'])
         runs = self.project / 'docs/specadoc/demo/runs'
         self.assertFalse((runs / 'T1-baseline.json').exists())
-        binding = self.script('role_routing.py', '--controller-runtime', 'codex', '--role', 'worker')
-        self.assertEqual(binding.returncode, 0, binding.stderr)
-        (self.project / 'approved.json').write_text(binding.stdout)
-        flags = ('--controller-runtime', 'codex', '--binding-file', 'approved.json')
-        fields, _ = self.step('dispatch', 'demo', 'T1', *flags, expected=0)
-        self.assertIn('approved worker binding', fields['checked'])
-        baseline = (runs / 'T1-baseline.json').read_bytes()
-        role.write_text(role.read_text().replace('test-model', 'changed-model'))
-        fields, _ = self.step('dispatch', 'demo', 'T1', *flags, expected=2)
-        self.assertIn('approved binding changed', fields['blocking reason'])
-        self.assertEqual(baseline, (runs / 'T1-baseline.json').read_bytes())
+        fields, _ = self.step('dispatch', 'demo', 'T1', '--controller-runtime', 'claude', expected=0)
+        self.assertIn('resolved worker codex/test-model/low', fields['checked'])
+        role.write_text('model = "changed-model"\nmodel_reasoning_effort = "high"\n')
+        fields, _ = self.step('dispatch', 'demo', 'T1', '--controller-runtime', 'claude', expected=0)
+        self.assertIn('resolved worker codex/changed-model/high', fields['checked'])
+
+    def test_binding_file_is_a_usage_error(self):
+        for step in (('dispatch', 'demo', 'T1'), ('pre-review', 'demo')):
+            result = self.script('specadoc_step.py', *step, '--binding-file', 'x.json')
+            self.assertEqual(2, result.returncode)
+            self.assertIn('--binding-file', result.stderr)
 
     def test_accept_without_baseline_is_blocked(self):
         fields, _ = self.step('accept', 'demo', 'T1', expected=2)
@@ -250,6 +267,30 @@ class SpecadocStepTest(unittest.TestCase):
         self.step('--root', 'changes', 'accept', 'demo', 'T1', expected=0)
         self.step('--root', 'changes', 'pre-review', 'demo', expected=0)
 
+    def test_new_and_legacy_plans_pass_plan_and_pre_review(self):
+        plan = self.project / 'docs/specadoc/demo/plan.md'
+        for name, content in (('new', PLAN), ('legacy', LEGACY_PLAN)):
+            with self.subTest(name):
+                plan.write_text(content)
+                result = self.script('validate_change.py', 'demo', '--phase', 'plan')
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.step('pre-review', 'demo', expected=0)
+
+    def test_unfilled_legacy_fields_never_fail_a_gate(self):
+        plan = self.project / 'docs/specadoc/demo/plan.md'
+        plan.write_text(PARTIAL_LEGACY_PLAN)
+        result = self.script('validate_change.py', 'demo', '--phase', 'plan')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.step('pre-review', 'demo', expected=0)
+        final = self.script('validate_change.py', 'demo', '--phase', 'final')
+        output = final.stdout + final.stderr
+        self.assertEqual(1, final.returncode, output)
+        self.assertNotIn('Traceback', output)
+        self.assertIn('Review result', output)
+        for field in ('Worker runtime', 'Recommended execution level', 'Owner level',
+                      'Approved profile', 'Independence waiver', '<runtime/model>', '<EASY'):
+            self.assertNotIn(field, output)
+
     def test_pre_review_refuses_incomplete_plan(self):
         plan = self.project / 'docs/specadoc/demo/plan.md'
         plan.write_text(PLAN.replace('- [x] Complete', '- [ ] Complete'))
@@ -283,19 +324,17 @@ class SpecadocStepTest(unittest.TestCase):
         fields, _ = self.step('pre-review', 'demo', expected=1)
         self.assertIn('documentation-only', fields['blocking reason'])
 
-    def test_routed_reviewer_binding_is_checked_before_pre_review(self):
+    def test_routed_reviewer_resolution_is_reported_before_pre_review(self):
         (self.project / '.specadoc.json').write_text(json.dumps({'version': 1, 'roles': {'reviewer': {'runtime': 'codex'}}}))
         role = self.project / '.codex/agents/reviewer.toml'
         role.parent.mkdir(parents=True)
         role.write_text('model = "test-reviewer"\nmodel_reasoning_effort = "high"\n')
-        binding = self.script('role_routing.py', '--controller-runtime', 'codex', '--role', 'reviewer')
-        self.assertEqual(binding.returncode, 0, binding.stderr)
-        (self.project / 'approved.json').write_text(binding.stdout)
-        role.write_text(role.read_text().replace('test-reviewer', 'changed-reviewer'))
-        fields, output = self.step('pre-review', 'demo', '--controller-runtime', 'codex',
-                                  '--binding-file', 'approved.json', expected=2)
-        self.assertIn('approved binding changed', fields['blocking reason'])
+        fields, output = self.step('pre-review', 'demo', expected=2)
+        self.assertIn('controller-runtime', fields['blocking reason'])
         self.assertNotIn('snapshot:', output)
+        fields, output = self.step('pre-review', 'demo', '--controller-runtime', 'claude', expected=0)
+        self.assertIn('resolved reviewer codex/test-reviewer/high', fields['checked'])
+        self.assertIn('snapshot:', output)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -161,6 +164,34 @@ class SpecadocDoctorTest(unittest.TestCase):
         self.assertEqual(1, len(report.warnings))
         self.assertEqual(0, report.exit_code(strict=False))
         self.assertEqual(1, report.exit_code(strict=True))
+
+
+    def test_plan_option_is_a_usage_error_and_same_runtime_pair_warns_once(self) -> None:
+        project = self.root.parents[1]
+        bin_dir = project / "bin"
+        bin_dir.mkdir()
+        fake = bin_dir / "codex"
+        fake.write_text("#!/bin/sh\n", encoding="utf-8")
+        fake.chmod(0o755)
+        project.joinpath(".specadoc.json").write_text(json.dumps(
+            {"version": 1, "roles": {role: {"runtime": "codex"} for role in ("scout", "worker", "reviewer")}}))
+        for role in ("scout", "worker", "reviewer"):
+            path = project / f".codex/agents/{role}.toml"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('model = "m"\nmodel_reasoning_effort = "low"\n', encoding="utf-8")
+
+        def run(*args: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([sys.executable, str(MODULE_PATH), *args], cwd=project, capture_output=True,
+                                  text=True, env={**os.environ, "PATH": str(bin_dir)})
+
+        refused = run("--controller-runtime", "claude", "--plan", "plan.md")
+        self.assertEqual(2, refused.returncode)
+        self.assertIn("--plan", refused.stderr)
+        checked = run("--controller-runtime", "claude")
+        self.assertEqual(0, checked.returncode, checked.stdout + checked.stderr)
+        warnings = [line for line in checked.stdout.splitlines() if line.startswith("WARN: routing/")]
+        self.assertEqual(1, len(warnings), checked.stdout)
+        self.assertIn("reviewer shares worker runtime codex", warnings[0])
 
 
 if __name__ == "__main__":

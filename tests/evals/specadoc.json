@@ -2,7 +2,7 @@
   {
     "id": "direct",
     "request": "Use specadoc to change a local diagnostic label with one exact existing test. No API, schema or permissions change. Follow normal checkpoints.",
-    "expected_behavior": "Select direct; model handoff and plan approvals happen in chat before implementation. Do not create lifecycle files or run artifact gates. Report the exact test result."
+    "expected_behavior": "Select direct; show the role bindings line and get plan approval in chat before implementation, with no model approval stop. Do not create lifecycle files or run artifact gates. Report the exact test result."
   },
   {
     "id": "grilling-skip",
@@ -35,9 +35,14 @@
     "expected_behavior": "Accepted spec and plan, meaningful RED/GREEN evidence, final controller checks, independent PASS and snapshot, capability update, final gate and explicit archive produce one valid bounded record."
   },
   {
-    "id": "native-binding-drift",
-    "request": "Before a routed native worker dispatch, the approved registry model changed. Use the existing approved binding file.",
-    "expected_behavior": "Use compact fresh binding validation; block before dispatch/baseline writes and request approval. Never reuse stale cache or silently update the approved file."
+    "id": "edited-binding-applies",
+    "request": "After plan approval the user raised effort in the routed reviewer's role file. Continue apply to the review dispatch.",
+    "expected_behavior": "Resolve the role again at dispatch and use the edited effort; do not ask for re-approval, compare against a snapshot, or edit the role file. Report the binding the run used."
+  },
+  {
+    "id": "binding-advice",
+    "request": "Use specadoc propose for a high-risk payment migration. The routed reviewer's role file resolves to effort medium.",
+    "expected_behavior": "At the plan preview show every role's binding and one advice line naming the reviewer role file and its effort key. Do not edit the file, add a model approval stop, or record the advice as an approval; ask only for plan approval."
   },
   {
     "id": "browser-context",
@@ -51,8 +56,8 @@
   },
   {
     "id": "direct-uninterrupted",
-    "request": "Use specadoc direct for the bounded diagnostic label change. Explicitly continue uninterrupted with the current profile through planning, implementation and verification; do not archive.",
-    "expected_behavior": "Record exact authorization, profile, scope and covered phases in chat. Keep bounded plan and verification, skip only the explicitly covered manual stops. Material scope/risk changes require renewed approval."
+    "request": "Use specadoc direct for the bounded diagnostic label change. Explicitly continue uninterrupted through planning, implementation and verification; do not archive.",
+    "expected_behavior": "Record exact authorization, scope and covered phases in chat. Keep bounded plan and verification, skip only the explicitly covered manual stop. Material scope/risk changes require renewed approval."
   },
   {
     "id": "bounded-loading",

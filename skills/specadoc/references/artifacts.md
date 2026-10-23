@@ -205,8 +205,8 @@ low-decision task from using a worker.
 Before implementation, present the plan as a concise task table or equivalent
 preview showing outcome, files or symbols, owner and model, implementation
 direction, and exact verification. Record the user's plan approval in
-`plan.md`. A capable model, accepted specification, or approved model profile
-does not imply plan approval.
+`plan.md`. A capable model or an accepted specification does not imply plan
+approval.
 
 For mechanical migrations, keep the consumer classification and replacement
 order in `plan.md`. Do not expand the plan into a file-by-file checklist when
@@ -235,7 +235,7 @@ above:
 python3 <skill-root>/scripts/validate_change.py <change-slug> --phase <spec|plan|pre-review|final>
 ```
 
-Run `--phase spec` before the model checkpoint, `--phase plan` before the plan
+Run `--phase spec` before technical planning, `--phase plan` before the plan
 preview, `--phase pre-review` before dispatching the reviewer, and `--phase final`
 after its PASS and before archive. A non-zero exit blocks that checkpoint.
 

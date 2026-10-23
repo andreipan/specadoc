@@ -1,7 +1,7 @@
 # Role runtimes and external runners
 
 Load this reference only when a role's runtime differs from the harness the
-controller runs in, or when the plan records a per-change runtime override.
+controller runs in.
 
 ## Runtime binding
 
@@ -13,29 +13,26 @@ controller's runs natively as a subagent; any other runtime runs as an
 
 Resolve each role's runtime and model in this order, first match wins:
 
-1. The plan's `## Model handoff` → `Scout runtime`, `Worker runtime`,
-   `Reviewer runtime` (`<runtime>/<model>`), approved at the model checkpoint.
-2. Project `.specadoc.json` routing, resolved by `scripts/role_routing.py`.
+1. Project `.specadoc.json` routing, resolved by `scripts/role_routing.py`.
    Read `project-config.md` when `roles` is present. Model and effort come from
    the selected runtime's registry, not the current harness's wrapper model.
-3. The role registry (`model-routing.md` → Role registry). A host may install a
+2. The role registry (`model-routing.md` → Binding resolution). A host may install a
    thin wrapper role that already calls `run_role.py` for its configured
    runtime; a `Runtime:` line in the dispatch prompt overrides the wrapper's
    default.
-4. The controller's own runtime.
+3. The controller's own runtime.
 
-Record the resolved values in `## Model handoff` before the first dispatch.
-Specadoc names no models: the registry or the user supplies them.
-With project routing, approve and freeze the resolver output and use
-`run_role.py --controller-runtime ... --binding-file ...` as described in
-`project-config.md`; legacy explicit flags below remain for non-migrated projects.
+Specadoc names no models: the registry or the user supplies them. Nothing is
+frozen or approved. Each dispatch resolves again, and with project routing it
+uses `run_role.py --controller-runtime ...` (`project-config.md`). The explicit
+flags below remain for projects without routing.
 
 ## Independence
 
-The final reviewer should not run on the worker's runtime: two models from the
-same vendor share blind spots. When they match, the latest `### G<n>` block
-needs `**Independence waiver:** <reason>`; `validate_change.py --phase
-pre-review` enforces this when both runtimes are recorded.
+The final reviewer should not run on the worker's runtime, because two models
+from the same vendor share blind spots. This is a project-level choice in
+`.specadoc.json`. The doctor warns once when `worker` and `reviewer` share a
+runtime, and no review round records a waiver.
 
 ## External run contract
 
@@ -83,10 +80,10 @@ a necessary user decision. Claude Code can run `wait --follow` with
 `run_in_background` and is woken when it exits; Codex and OpenCode have no such
 wake-up, so they must keep waiting in the foreground.
 
-Ask for permission to send code to an external runtime once per change: record it
-in `## Model handoff` as `**External code access:** approved for <runtimes>` at the
-model checkpoint, and do not ask again for each task. A confirmation prompt from the
-host itself (for example the Codex approval policy) is not controlled by Specadoc.
+Routing a role to an external runtime in the committed `.specadoc.json` is the
+project's consent to send it code. Do not ask for each change or task. A
+confirmation prompt from the host itself (for example the Codex approval policy)
+is not controlled by Specadoc.
 
 For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
 `specadoc_step.py dispatch` before `start`, `specadoc_step.py accept --verify`

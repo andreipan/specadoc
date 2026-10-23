@@ -48,7 +48,7 @@ section defines only what a scout is given and what it returns.
 
 Give the scout one bounded question and the smallest useful scope. Require the
 standard scout report defined by the runtime's role profile (`model-routing.md`
-→ Role registry); if there is no registered profile but subagents are available,
+→ Binding resolution); if there is no registered profile but subagents are available,
 paste this skill's `roles/scout.md` contract into the dispatch prompt.
 
 When `explore.md` selected capability specifications, include their paths in

@@ -3,13 +3,13 @@
 ## Responsibility split
 
 - `SKILL.md` controls the workflow and decides which role to invoke.
-- The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: a project role (`.claude/agents/*.md`, `.codex/agents/*.toml`, `.opencode/agents/*.md`) or the role shipped with this plugin. See `model-routing.md` → Role registry for the lookup order. Project `.specadoc.json` selects the runtime, not the model; use its approved binding snapshot and target registry (`project-config.md`).
+- The runtime's role registry defines each role's persistent specialization, model tier, reasoning level, permissions, prohibitions, and output contract: a project role (`.claude/agents/*.md`, `.codex/agents/*.toml`, `.opencode/agents/*.md`) or the role shipped with this plugin. See `model-routing.md` → Binding resolution for the lookup order. Project `.specadoc.json` selects the runtime, not the model; the target registry supplies model and effort at each dispatch (`project-config.md`).
 - The dispatch prompt supplies the current task, files, requirements, commands, and completion condition.
 
 When the runtime has no registered role but can start subagents, include only
 the selected `roles/<role>.md` portable contract from this reference directory
 in the prompt. Project roles take precedence; follow `model-routing.md` for
-profile binding and the no-subagent fallback. Do not write host agent configs.
+binding resolution and the no-subagent fallback. Do not write host agent configs.
 
 Do not place task-specific paths, requirement IDs, or feature details in the role profiles.
 
@@ -36,8 +36,8 @@ The overall change may be high risk. Delegate bounded tests, mechanical
 migrations, and scoped static-analysis fixes when their task-level decision risk
 is low. A task with `Decision risk: low` defaults to `worker` even when the
 overall change is high risk — running tools and fixing what they find is
-worker's job, not controller's, and expensive execution levels (`opus`/`high`)
-are for tasks that carry real decision risk, not for rg sweeps, full test runs,
+worker's job, not controller's, and expensive controller time
+is for tasks that carry real decision risk, not for rg sweeps, full test runs,
 or static-analysis cleanup. Keeping such a task on `controller` requires a
 `**Controller justification:**` line on the task naming the specific exception
 below (e.g. the one-file, one-cycle fix exception) — `validate_change.py`
@@ -229,7 +229,7 @@ tree while a worker runs.
 
 ## Escalation
 
-Keep work in the controller or move to a stronger execution level when:
+Keep work in the controller, or advise a stronger role binding (`model-routing.md` → Binding advice), when:
 
 - Requirements remain ambiguous.
 - Architecture must be selected.

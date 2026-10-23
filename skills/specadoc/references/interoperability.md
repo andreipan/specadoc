@@ -4,7 +4,7 @@ Load this reference only when repository instructions or another active skill ov
 
 ## Role of this skill
 
-Treat this skill as an engineering lifecycle orchestrator. It owns sequencing, artifact state, model checkpoints, task boundaries, and completion evidence. It does not override a more specific skill's concrete operational rules.
+Treat this skill as an engineering lifecycle orchestrator. It owns sequencing, artifact state, task boundaries, and completion evidence. It does not override a more specific skill's concrete operational rules.
 
 Examples:
 
@@ -92,7 +92,7 @@ If repository policy defines a different test order or test framework, follow it
 
 ### Agent routing
 
-If another skill or runtime owns subagent selection, supply the task risk and execution level and let that mechanism bind the concrete agent. Do not invent model names and do not reason about model price. Where a role registry exists, read it; `model-routing.md` names the registry path per runtime.
+If another skill or runtime owns subagent selection, supply the task risk and let that mechanism bind the concrete agent. Do not invent model names and do not reason about model price. Where a role registry exists, read it; `model-routing.md` names the registry path per runtime.
 
 ### Review policy
 
@@ -104,8 +104,8 @@ Do not commit, push, open a pull request, deploy, or modify external trackers un
 
 ### Autonomous execution
 
-An explicit user request for uninterrupted autonomous execution waives both the
-manual model checkpoint and the manual plan checkpoint, but not specification,
+An explicit user request for uninterrupted autonomous execution waives the
+manual plan checkpoint, but not specification,
 testing, or completion evidence unless the user explicitly waives those too.
 
 ## Source-of-truth rule

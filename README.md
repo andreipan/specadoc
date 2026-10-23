@@ -4,14 +4,14 @@
 
 Optional `.specadoc.json` can select `claude`, `codex` or `opencode` per role
 without embedding personal models in the plugin or installer configuration.
-Existing root-only configurations remain compatible. Model/effort come from
-the target runtime's installed registry; approved `plan.md` overrides win.
+Existing root-only configurations remain compatible. Model and effort come
+only from the target runtime's installed role file, resolved again at every
+dispatch; edit that file or `.specadoc.json` to change a binding.
 The controller runtime is checked, never automatically switched. Routing
 scripts require Python 3.11+.
 
 See [project configuration](skills/specadoc/references/project-config.md) for
-the schema, read-only resolver, approval snapshots, external runner and migration
-contract. Updating Specadoc does not rewrite the project JSON or personal role
+the schema, read-only resolver, external runner and migration contract. Updating Specadoc does not rewrite the project JSON or personal role
 settings. Non-migrated projects retain their existing registry/wrapper behavior.
 
 An explicit engineering lifecycle for coding agents: **explore → propose →
@@ -19,11 +19,14 @@ apply → archive**. Specadoc keeps a stable behavioral contract (`spec.md`) apa
 from mutable execution state (`plan.md`), gates each phase with deterministic
 checks, and routes work to three bounded roles:
 
-| Role | Level | Job |
-|---|---|---|
-| `scout` | EASY | One bounded, read-only investigation; returns a fixed report. |
-| `worker` | MEDIUM | One fully specified, low-decision task, test-first. |
-| `reviewer` | HIGH | Independent read-only review of the final diff against the spec. |
+| Role | Job |
+|---|---|
+| `scout` | One bounded, read-only investigation; returns a fixed report. |
+| `worker` | One fully specified, low-decision task, test-first. |
+| `reviewer` | Independent read-only review of the final diff against the spec. |
+
+Specadoc fixes no model level. Each role's model and effort come from its
+installed role file, and the plan preview shows them.
 
 The controller (your main agent session) owns requirements, architecture,
 approvals and final verification. Specadoc runs only when you invoke it
@@ -33,7 +36,7 @@ explicitly; it never takes over ordinary coding work.
 
 - `specadoc explore <request>`: facts and stress-testing, no files.
 - `specadoc propose <request|slug>`: writes `docs/specadoc/<slug>/spec.md` and
-  `plan.md` and stops at the model and plan checkpoints.
+  `plan.md`, shows the role bindings, and stops at the plan checkpoint.
 - `specadoc apply <slug>`: TDD implementation, bounded workers, controller
   verification, final reviewer.
 - `specadoc archive <slug>`: compacts a finished change into
@@ -147,8 +150,8 @@ method (for plain skills, link or copy it as shown above).
 
 ## Roles and overrides
 
-Specadoc resolves each role in this order (see
-`skills/specadoc/references/model-routing.md`):
+Without `.specadoc.json` routing, Specadoc resolves each role in this order
+(see `skills/specadoc/references/model-routing.md`):
 
 1. a project role: `.claude/agents/<role>.md`, `.codex/agents/<role>.toml`, or
    `.opencode/agents/<role>.md`;

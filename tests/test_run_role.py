@@ -41,9 +41,9 @@ class RunRoleTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def run_cli(self, *args: str, result: dict | str = "") -> subprocess.CompletedProcess[str]:
+    def run_cli(self, *args: str, result: dict | str = "", path: str | None = None) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ)
-        env["PATH"] = f"{self.bin}{os.pathsep}{env['PATH']}"
+        env["PATH"] = path if path is not None else f"{self.bin}{os.pathsep}{env['PATH']}"
         env["FAKE_RESULT"] = result if isinstance(result, str) else json.dumps(result)
         env.setdefault("XDG_DATA_HOME", str(self.repo / "xdg"))
         return subprocess.run(
@@ -86,58 +86,89 @@ class RunRoleTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(target.exists())
 
-    def test_project_routing_uses_executor_model_and_rejects_stale_approval(self):
+    def routed_worker(self, model: str = "m1", effort: str = "low") -> Path:
         (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {"worker": {"runtime": "codex"}}}))
         role = self.repo / ".codex/agents/worker.toml"
-        role.parent.mkdir(parents=True)
-        role.write_text('model = "executor"\nmodel_reasoning_effort = "low"\n')
+        role.parent.mkdir(parents=True, exist_ok=True)
+        role.write_text(f'model = "{model}"\nmodel_reasoning_effort = "{effort}"\n')
+        return role
+
+    def launch(self, name: str, *extra: str, result: dict | str = "") -> dict:
+        started = self.run_cli("start", "--role", "worker", "--controller-runtime", "claude", *extra,
+                               "--prompt-file", str(self.brief), "--name", name, result=result)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        run_file = started.stdout.strip()
+        self.assertEqual(self.run_cli("wait", run_file, "--timeout", "20").returncode, 0)
+        return json.loads(Path(run_file).read_text())
+
+    def test_project_routing_uses_executor_model_and_follows_role_file_edits(self):
+        role = self.routed_worker("executor", "low")
         args = ("start", "--role", "worker", "--controller-runtime", "claude",
                 "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
         result = self.run_cli(*args)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("executor", json.loads(result.stdout))
-        sys.path.insert(0, str(SCRIPT.parent))
-        from role_routing import resolve_role
-        snapshot = self.repo / "binding.json"
-        snapshot.write_text(json.dumps({"routes": [resolve_role(self.repo, "worker", "claude")]}))
-        role.write_text(role.read_text().replace("executor", "changed"))
-        result = self.run_cli(*args, "--binding-file", str(snapshot))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("binding changed", result.stderr)
+        role.write_text(role.read_text().replace("executor", "changed").replace("low", "high"))
+        command = json.loads(self.run_cli(*args).stdout)
+        self.assertIn("changed", command)
+        self.assertIn('model_reasoning_effort="high"', command)
 
-    def test_routing_requires_explicit_controller_and_snapshot_for_launch(self):
+    def test_routing_requires_explicit_controller_for_launch(self):
         (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {}}))
         result = self.run_cli("start", "--role", "worker", "--runtime", "codex", "--model", "m1",
                               "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("controller-runtime", result.stderr)
-        role = self.repo / ".codex/agents/worker.toml"
-        role.parent.mkdir(parents=True)
-        role.write_text('model = "m1"\nmodel_reasoning_effort = "low"\n')
-        result = self.run_cli("start", "--role", "worker", "--controller-runtime", "codex",
-                              "--prompt-file", str(self.brief), "--name", "T1")
+        self.routed_worker()
+        result = self.run_cli("start", "--role", "worker", "--controller-runtime", "claude", "--model", "other",
+                              "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("binding-file", result.stderr)
+        self.assertIn("conflicts with the resolved binding", result.stderr)
 
-    def test_approved_routed_launch_records_provenance_and_validates_result(self):
-        (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {"worker": {"runtime": "codex"}}}))
-        role = self.repo / ".codex/agents/worker.toml"
-        role.parent.mkdir(parents=True)
-        role.write_text('model = "m1"\nmodel_reasoning_effort = "low"\n')
-        sys.path.insert(0, str(SCRIPT.parent))
-        from role_routing import resolve_role
-        route = resolve_role(self.repo, "worker", "claude")
-        bindings = self.repo / "binding.json"
-        bindings.write_text(json.dumps({"routes": [route]}))
+    def test_routed_launch_without_snapshot_records_binding_and_validates_result(self):
+        self.routed_worker()
         payload = {"status": "DONE", "summary": "smoke", "files_changed": [],
                    "tests": {"red": "N/A", "green": "transport"}, "concerns": [], "report": "smoke.md"}
         started = self.run_cli("start", "--role", "worker", "--controller-runtime", "claude",
-                               "--binding-file", str(bindings), "--prompt-file", str(self.brief), "--name", "T1", result=payload)
+                               "--prompt-file", str(self.brief), "--name", "T1", result=payload)
         self.assertEqual(started.returncode, 0, started.stderr)
         run_file = started.stdout.strip()
         self.assertEqual(self.run_cli("wait", run_file, "--timeout", "20").returncode, 0)
         self.assertEqual(self.run_cli("result", run_file).returncode, 0)
-        self.assertEqual(json.loads(Path(run_file).read_text())["binding"], route)
+        record = json.loads(Path(run_file).read_text())
+        self.assertEqual((record["runtime"], record["model"], record["effort"]), ("codex", "m1", "low"))
+        self.assertEqual(record["binding"]["dispatch"], "external")
+        self.assertNotIn("fingerprint", record["binding"])
+
+    def test_role_file_edit_between_starts_changes_the_second_run(self):
+        role = self.routed_worker("m1", "medium")
+        first = self.launch("T1")
+        role.write_text('model = "m2"\nmodel_reasoning_effort = "high"\n')
+        second = self.launch("T2")
+        self.assertEqual((first["model"], first["effort"]), ("m1", "medium"))
+        self.assertEqual((second["model"], second["effort"]), ("m2", "high"))
+        self.assertEqual(second["binding"]["effort"], "high")
+
+    def test_removed_options_are_usage_errors_and_explicit_flags_still_launch(self):
+        base = ("start", "--role", "worker", "--prompt-file", str(self.brief), "--name", "T1")
+        for option in ("--binding-file", "--plan"):
+            result = self.run_cli(*base, "--controller-runtime", "claude", option, "x.json", "--dry-run")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(option, result.stderr)
+        run_file = self.start({"status": "DONE"})
+        self.assertIsNone(json.loads(Path(run_file).read_text())["binding"])
+
+    def test_missing_routed_cli_names_runtime_and_role_without_fallback(self):
+        (self.repo / ".specadoc.json").write_text(json.dumps({"version": 1, "roles": {"reviewer": {"runtime": "opencode"}}}))
+        role = self.repo / ".opencode/agents/reviewer.md"
+        role.parent.mkdir(parents=True)
+        role.write_text("---\nmodel: openai/m\nvariant: low\n---\n")
+        result = self.run_cli("start", "--role", "reviewer", "--controller-runtime", "codex",
+                              "--prompt-file", str(self.brief), "--name", "G1", path=str(self.bin))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("opencode", result.stderr)
+        self.assertIn("reviewer", result.stderr)
+        self.assertFalse((self.runs / "G1.reviewer.run.json").exists())
 
     def test_codex_reviewer_and_claude_commands_are_read_only(self) -> None:
         codex = json.loads(self.run_cli(

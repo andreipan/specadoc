@@ -143,22 +143,13 @@ def start(args: argparse.Namespace) -> int:
 
     config = load_config(cwd)
     controller = getattr(args, "controller_runtime", None)
-    binding_file = getattr(args, "binding_file", None)
-    plan_file = getattr(args, "plan", None)
     route = None
-    if "roles" in config or controller or binding_file or plan_file:
+    if "roles" in config or controller:
         if not controller:
             raise RunError("project routing requires --controller-runtime; do not infer the controller from the worker")
-        from role_routing import resolve_role, check_approved_binding
+        from role_routing import resolve_role
 
-        route = resolve_role(cwd, args.role, controller, cwd / plan_file if plan_file else None)
-        if not args.dry_run and not binding_file:
-            raise RunError("resolved dispatch requires --binding-file from the approved model checkpoint")
-        if binding_file:
-            try:
-                check_approved_binding(route, cwd / binding_file)
-            except ValueError as exc:
-                raise RunError(str(exc)) from exc
+        route = resolve_role(cwd, args.role, controller)
         for flag, selected in (("runtime", route["runtime"]), ("model", route["model"]), ("effort", route["effort"])):
             explicit = getattr(args, flag)
             if explicit is not None and explicit != selected:
@@ -175,7 +166,7 @@ def start(args: argparse.Namespace) -> int:
         print(json.dumps(command))
         return 0
     if shutil.which(command[0]) is None:
-        raise RunError(f"{command[0]} is not on PATH")
+        raise RunError(f"{command[0]} CLI is not on PATH for role {args.role}")
     if args.runtime == "opencode":
         _check_opencode_log()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -406,8 +397,6 @@ def build_parser() -> argparse.ArgumentParser:
     begin.add_argument("--model")
     begin.add_argument("--effort")
     begin.add_argument("--controller-runtime", choices=RUNTIMES, help="resolve project routing and target model registry")
-    begin.add_argument("--plan", type=Path, help="plan with approved Model handoff overrides")
-    begin.add_argument("--binding-file", type=Path, help="saved role_routing.py JSON approved at model checkpoint")
     begin.add_argument("--prompt-file", required=True, help="Brief or full dispatch prompt")
     begin.add_argument("--name", required=True, help="Run name, usually the task id")
     begin.add_argument("--cwd", default=".", help="Repository root the role works in")

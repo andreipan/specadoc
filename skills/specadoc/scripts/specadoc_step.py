@@ -74,22 +74,19 @@ def root_args(root: str | None) -> list[str]:
     return ["--root", root] if root else []
 
 
-def binding_check(slug: str, root: str | None, role: str, controller: str | None,
-                  binding_file: Path | None) -> list[str]:
+def binding_check(role: str, controller: str | None) -> list[str]:
     from specadoc_config import load_config
-    if not (controller or binding_file or "roles" in load_config(Path.cwd())):
+    if not (controller or "roles" in load_config(Path.cwd())):
         return []  # Legacy host/plugin registry fallback, unchanged.
-    if not controller or not binding_file:
-        raise ValueError("routed dispatch requires --controller-runtime and --binding-file from the approved checkpoint")
-    from role_routing import approved_role
-    plan = Path(resolve_root(root).path) / slug / "plan.md"
-    approved_role(Path.cwd(), role, controller, binding_file, plan)
-    return [f"approved {role} binding"]
+    if not controller:
+        raise ValueError("routed dispatch requires --controller-runtime")
+    from role_routing import resolve_role
+    route = resolve_role(Path.cwd(), role, controller)
+    return [f"resolved {role} {route['runtime']}/{route['model']}/{route['effort']}"]
 
 
-def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
-             binding_file: Path | None = None) -> int:
-    checked = binding_check(slug, root, "worker", controller, binding_file)
+def dispatch(slug: str, task: str, root: str | None, controller: str | None = None) -> int:
+    checked = binding_check("worker", controller)
     checked += ["baseline", "brief"]
     baseline = run_script("review_snapshot.py", "baseline", slug, "--task", task, *root_args(root))
     if baseline.returncode != 0:
@@ -165,9 +162,8 @@ def accept(slug: str, task: str, root: str | None, verify: bool) -> int:
     return emit(checked, "PASS", changed, "", "read the worker report and accept the task")
 
 
-def pre_review(slug: str, root: str | None, controller: str | None = None,
-               binding_file: Path | None = None) -> int:
-    checked = binding_check(slug, root, "reviewer", controller, binding_file) + ["validate pre-review"]
+def pre_review(slug: str, root: str | None, controller: str | None = None) -> int:
+    checked = binding_check("reviewer", controller) + ["validate pre-review"]
     gate = run_script("validate_change.py", slug, "--phase", "pre-review", *root_args(root))
     if gate.returncode != 0:
         result = "BLOCKED" if gate.returncode == 2 else "FAIL"
@@ -197,7 +193,6 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("change_slug")
     for step in (steps.choices["dispatch"], review):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
-        step.add_argument("--binding-file", type=Path, help="Approved resolver JSON; required for routed projects")
     return parser
 
 
@@ -208,10 +203,10 @@ def main() -> int:
         return 2
     try:
         if args.step == "dispatch":
-            return dispatch(args.change_slug, args.task, args.root, args.controller_runtime, args.binding_file)
+            return dispatch(args.change_slug, args.task, args.root, args.controller_runtime)
         if args.step == "accept":
             return accept(args.change_slug, args.task, args.root, args.verify)
-        return pre_review(args.change_slug, args.root, args.controller_runtime, args.binding_file)
+        return pre_review(args.change_slug, args.root, args.controller_runtime)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return emit([args.step], "BLOCKED", [], str(exc), "inspect the plan and handoff files, then retry")
 

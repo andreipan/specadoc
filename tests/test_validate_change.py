@@ -321,7 +321,7 @@ class ValidateChangeTest(unittest.TestCase):
             "plan.md",
             "## Tasks\n\n### T1 — Task\n\n- [ ] Complete\n"
             "- **Requirements:** R1\n- **Risk:** Low\n- **Decision risk:** low\n"
-            "- **Owner:** controller\n- **Owner level:** EASY\n"
+            "- **Owner:** controller\n"
             "- **Verification owner:** controller\n- **Files:** file\n"
             "- **Test first:** test\n- **Expected RED:** failure\n"
             "- **Implementation:** work\n- **Verification:** `rtk test`\n"
@@ -337,7 +337,7 @@ class ValidateChangeTest(unittest.TestCase):
         return (
             f"## Tasks\n\n### T1 — Task\n\n- [{mark}] Complete\n"
             f"- **Requirements:** R1\n- **Risk:** Low\n- **Decision risk:** {risk}\n"
-            f"- **Owner:** {owner}\n- **Owner level:** EASY\n{extra}"
+            f"- **Owner:** {owner}\n{extra}"
             f"- **Verification owner:** controller\n- **Files:** {files}\n"
             "- **Test first:** test\n- **Expected RED:** failure\n"
             "- **Implementation:** work\n- **Verification:** `rtk test`\n"
@@ -419,34 +419,27 @@ class ValidateChangeTest(unittest.TestCase):
         self.assertEqual(patterns, ["app/A.php", "pkg/x/b.json", "pkg/y/b.json"])
         self.assertEqual(uncheckable, ["`Foo::bar`", "prose here"])
 
-    def independence_messages(self, *, worker: str, reviewer: str, round_extra: str = "", owner: str = "worker") -> list[str]:
+    def test_same_runtime_reviewer_round_without_waiver_passes_pre_review(self) -> None:
         module = load_module()
         plan = self.document(
             "plan.md",
             "## Model handoff\n\n"
-            f"**Worker runtime:** {worker}  \n**Reviewer runtime:** {reviewer}  \n\n"
-            f"## Tasks\n\n### T1 — One\n\n- [x] Complete\n- **Owner:** {owner}\n\n"
-            "## Review result\n\n### G1\n\n- **Type:** initial\n" + round_extra,
+            "**Worker runtime:** codex/m1  \n**Reviewer runtime:** codex/m2  \n\n"
+            "## Tasks\n\n### T1 — One\n\n- [x] Complete\n- **Owner:** worker\n\n"
+            "## Review result\n\n### G1\n\n- **Type:** initial\n- **Reviewer runtime:** codex/m2\n",
         )
-        return [item.message for item in module.check_reviewer_independence(plan)]
+        messages = [item.message for item in module.check_pre_review(plan)]
+        self.assertFalse(any("Independence waiver" in m or "worker's runtime" in m for m in messages), messages)
+        self.assertFalse(hasattr(module, "check_reviewer_independence"))
 
-    def test_reviewer_on_worker_runtime_needs_waiver(self) -> None:
-        same = self.independence_messages(worker="codex/m1", reviewer="codex/m2")
-        waived = self.independence_messages(
-            worker="codex/m1", reviewer="codex/m2", round_extra="- **Independence waiver:** only Codex is licensed\n"
-        )
-        other = self.independence_messages(worker="codex/m1", reviewer="claude/m3")
-        round_override = self.independence_messages(
-            worker="codex/m1", reviewer="claude/m3", round_extra="- **Reviewer runtime:** codex/m2\n"
-        )
-        self.assertTrue(any("Independence waiver" in message for message in same), same)
-        self.assertEqual([], waived)
-        self.assertEqual([], other)
-        self.assertTrue(any("G1: reviewer runs on the worker's runtime" in message for message in round_override))
-
-    def test_independence_is_silent_without_recorded_runtimes_or_worker_tasks(self) -> None:
-        self.assertEqual([], self.independence_messages(worker="<runtime/model>", reviewer="codex/m"))
-        self.assertEqual([], self.independence_messages(worker="codex/m", reviewer="codex/m", owner="controller"))
+    def test_plan_accepts_handoff_or_legacy_model_handoff_without_removed_fields(self) -> None:
+        for heading in ("Handoff", "Model handoff"):
+            with self.subTest(heading):
+                messages = self.plan_messages(f"## {heading}\n\nRead spec.md.\n")
+                self.assertFalse(any("## Handoff" in m or "## Model handoff" in m for m in messages), messages)
+        messages = self.plan_messages("## Tasks\n\nnothing\n")
+        self.assertIn("missing required section: ## Handoff", messages)
+        self.assertNotIn("Owner level", "\n".join(self.plan_messages(self.task_plan(owner="worker", risk="low", files="`a`"))))
 
     def test_final_rejects_review_that_omits_current_requirement(self) -> None:
         module = load_module()
@@ -609,7 +602,7 @@ class ValidateChangeTest(unittest.TestCase):
 
     def documentation_rounds(self):
         module = load_module()
-        policy = "## Model handoff\n**Model checkpoint:** Approved\n**Worker runtime:** codex/test\n\n## Plan approval\n**Status:** Approved\n\n"
+        policy = "## Handoff\n**Plan checkpoint:** Ready\n\n## Plan approval\n**Status:** Approved\n**Bindings shown:** worker codex/test\n\n"
         plan = self.document("plan.md", policy)
         digest = module.review_policy_hash(plan)
         snapshot = "sha256:" + "a" * 64
@@ -622,12 +615,14 @@ class ValidateChangeTest(unittest.TestCase):
                   f"- **Snapshot:** {snapshot}\n- **Policy snapshot:** {digest}\n")
         return module, policy, rounds
 
-    def test_policy_hash_excludes_progress_but_not_approvals(self):
+    def test_policy_hash_changes_only_with_plan_approval(self):
         module = load_module()
-        content = "## Model handoff\n**Worker runtime:** codex/model\n**Owns next:** controller\n**Execution accounting:** pending\n### Reasons\nStale prose\n## Plan approval\n**Status:** Approved\n"
+        content = "## Handoff\n**Plan checkpoint:** Not ready\n### Continue with\nStale prose\n## Plan approval\n**Status:** Approved\n"
         digest = module.review_policy_hash(self.document("plan.md", content))
-        progress = content.replace('controller', 'reviewer').replace('pending', 'recorded').replace('Stale prose', 'Corrected prose')
+        progress = content.replace('Not ready', 'Approved').replace('Stale prose', 'Corrected prose')
         self.assertEqual(digest, module.review_policy_hash(self.document("plan.md", progress)))
+        legacy = "## Model handoff\n**Worker runtime:** codex/model\n" + content.split("\n", 1)[1]
+        self.assertEqual(digest, module.review_policy_hash(self.document("plan.md", legacy)))
         self.assertNotEqual(digest, module.review_policy_hash(self.document("plan.md", content.replace('Approved', 'Pending'))))
 
     def test_one_documentation_followup_does_not_require_an_initial_round(self):
@@ -646,7 +641,7 @@ class ValidateChangeTest(unittest.TestCase):
         for value in variants:
             with self.subTest(value=value):
                 self.assertTrue(module.check_review_round_structure(self.document("plan.md", policy + value)))
-        changed = policy.replace("codex/test", "codex/other") + rounds
+        changed = policy.replace("Approved", "Revoked") + rounds
         self.assertTrue(module.check_review_round_structure(self.document("plan.md", changed)))
 
     def test_pre_review_rejects_evidence_hash_when_a_file_was_deleted(self) -> None:
