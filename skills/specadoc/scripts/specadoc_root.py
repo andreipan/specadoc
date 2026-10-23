@@ -53,3 +53,13 @@ def legacy_warning(choice: RootChoice) -> str | None:
         f"warning: using legacy Specadoc root `{LEGACY_ROOT}`; move it with "
         f"`python3 <skill-root>/scripts/migrate_root.py --apply` (target `{DEFAULT_ROOT}`)"
     )
+
+
+def ensure_runs(directory: Path) -> Path:
+    """Create a change's `runs/` handoff directory and keep it out of git:
+    its files are transient and archive removes them."""
+    directory.mkdir(parents=True, exist_ok=True)
+    ignore = directory / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text("*\n", encoding="utf-8")
+    return directory

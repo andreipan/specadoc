@@ -36,7 +36,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+from specadoc_root import ensure_runs, legacy_warning, resolve_root  # noqa: E402
 from validate_change import (  # noqa: E402
     Document,
     PENDING,
@@ -372,7 +372,7 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
     current = tree_manifest(Path.cwd(), artifact_root)
 
     if action == "baseline":
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_runs(baseline_path.parent)
         payload = {"task": task, "hash": manifest_hash(current), "manifest": current}
         baseline_path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
         print(json.dumps({"baseline": str(baseline_path), "files": len(current), "uncheckable": uncheckable}))

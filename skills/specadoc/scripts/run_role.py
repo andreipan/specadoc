@@ -40,6 +40,8 @@ READ_SHELL = ("git diff", "git log", "git show", "git status")
 # Later rules win: these re-deny writes a read-only git command could still make.
 SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*")
 STILL_RUNNING = 3
+# A successful run keeps only this much of its log; usage moves into the run file.
+LOG_TAIL = 8192
 
 
 class RunError(RuntimeError):
@@ -158,7 +160,8 @@ def start(args: argparse.Namespace) -> int:
     if not args.runtime or not args.model:
         raise RunError("provide --runtime and --model, or --controller-runtime to resolve the role")
     prompt_path = cwd / args.prompt_file
-    prompt = prompt_path.read_text(encoding="utf-8")
+    if not prompt_path.is_file():
+        raise RunError(f"no prompt file at {prompt_path}")
     out_dir = cwd / args.out_dir if args.out_dir else prompt_path.parent
     paths = _paths(out_dir, args.name, args.role)
     command = build_command(args.runtime, args.role, args.model, args.effort, cwd, paths["result"].resolve())
@@ -169,23 +172,28 @@ def start(args: argparse.Namespace) -> int:
         raise RunError(f"{command[0]} CLI is not on PATH for role {args.role}")
     if args.runtime == "opencode":
         _check_opencode_log()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if out_dir.name == "runs":
+        from specadoc_root import ensure_runs
+
+        ensure_runs(out_dir)
+    else:
+        out_dir.mkdir(parents=True, exist_ok=True)
     for key in ("result", "exit"):
         paths[key].unlink(missing_ok=True)
 
     # A small supervisor shell records the exit code, so `wait` works after the
-    # caller's own process is gone. The prompt goes on stdin.
-    script = '"$@" < "$SPECADOC_PROMPT" > "$SPECADOC_LOG" 2>&1; echo $? > "$SPECADOC_EXIT"'
-    prompt_file = out_dir / f"{args.name}.{args.role}.prompt.md"
-    prompt_file.write_text(prompt, encoding="utf-8")
+    # caller's own process is gone. The prompt file itself goes on stdin, with an
+    # optional suffix instead of a rewritten copy.
+    script = '{ cat "$SPECADOC_PROMPT"; printf %s "$SPECADOC_SUFFIX"; } | "$@" > "$SPECADOC_LOG" 2>&1; echo $? > "$SPECADOC_EXIT"'
     env = dict(os.environ)
+    suffix = ""
     if args.runtime == "opencode":
         env["OPENCODE_CONFIG_CONTENT"] = opencode_config(args.role)
-        prompt += "\nReturn only a JSON object matching this schema as your final message:\n"
-        prompt += schema_path(args.role).read_text(encoding="utf-8")
-        prompt_file.write_text(prompt, encoding="utf-8")
+        suffix = "\nReturn only a JSON object matching this schema as your final message:\n"
+        suffix += schema_path(args.role).read_text(encoding="utf-8")
     env.update(
-        SPECADOC_PROMPT=str(prompt_file.resolve()),
+        SPECADOC_PROMPT=str(prompt_path.resolve()),
+        SPECADOC_SUFFIX=suffix,
         SPECADOC_LOG=str(paths["log"].resolve()),
         SPECADOC_EXIT=str(paths["exit"].resolve()),
     )
@@ -375,6 +383,58 @@ def schema_errors(value: Any, schema: dict[str, Any], where: str = "$") -> list[
     return []
 
 
+def _add_usage(total: dict[str, int], value: Any, prefix: str = "") -> None:
+    for key, item in value.items():
+        if isinstance(item, dict):
+            _add_usage(total, item, f"{prefix}{key}.")
+        elif isinstance(item, (int, float)) and not isinstance(item, bool):
+            total[prefix + key] = total.get(prefix + key, 0) + item
+
+
+def _usage(record: dict[str, Any]) -> dict[str, int]:
+    """Token totals from the log: Claude's envelope `usage`, Codex `turn.completed`
+    usage, OpenCode `step_finish` part tokens. Unknown shapes contribute nothing."""
+    log = Path(record["log"])
+    if not log.is_file():
+        return {}
+    text = log.read_text(encoding="utf-8", errors="replace")
+    events = []
+    for chunk in [text] if record["runtime"] == "claude" else text.splitlines():
+        try:
+            events.append(json.loads(chunk))
+        except json.JSONDecodeError:
+            continue
+    total: dict[str, int] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if record["runtime"] == "opencode":
+            part = event.get("part")
+            usage = part.get("tokens") if isinstance(part, dict) else None
+        else:
+            usage = event.get("usage")
+        if isinstance(usage, dict):
+            _add_usage(total, usage)
+    return total
+
+
+def _settle(run_file: str, record: dict[str, Any], payload: Any) -> None:
+    """After a successful run keep the result, record usage, and cut the log to its tail."""
+    Path(record["result"]).write_text(json.dumps(payload, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    log = Path(record["log"])
+    if "usage" in record or not log.is_file():
+        return
+    record["usage"] = _usage(record)
+    record["log_bytes"] = log.stat().st_size
+    Path(run_file).write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
+    if record["log_bytes"] > LOG_TAIL:
+        with log.open("rb") as handle:
+            handle.seek(-LOG_TAIL, os.SEEK_END)
+            tail = handle.read()
+        note = f"[specadoc: log cut to its last {LOG_TAIL} bytes of {record['log_bytes']} after a successful result; usage is in the run file]\n"
+        log.write_bytes(note.encode() + tail)
+
+
 def result(args: argparse.Namespace) -> int:
     record = _load(args.run_file)
     exit_file = Path(record["exit"])
@@ -384,6 +444,8 @@ def result(args: argparse.Namespace) -> int:
     schema = json.loads(schema_path(record["role"]).read_text(encoding="utf-8"))
     errors = schema_errors(payload, schema)
     output = {"exit": int(exit_file.read_text().strip() or 1), "result": payload, "schema_errors": errors}
+    if not errors and output["exit"] == 0:
+        _settle(args.run_file, record, payload)
     print(json.dumps(output, indent=2, ensure_ascii=False))
     return 0 if not errors and output["exit"] == 0 else 1
 

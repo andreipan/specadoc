@@ -69,6 +69,12 @@ exits 1 when the CLI failed or the JSON breaks the schema; read the log named
 in the run file before retrying, and never resend an unchanged prompt. Use
 `stop <run-file>` to abandon a run.
 
+The prompt file goes to the CLI as is; no copy is written. A successful `result`
+saves the final JSON as the result file, records the summed token `usage` and the
+original `log_bytes` in the run file, and cuts the log to its last 8 KiB; a failed
+run keeps its full log. `runs/` holds a `.gitignore` of `*`, so handoff files
+never show up in `git status`.
+
 Use `--follow` for every wait: it prints one progress line every `--interval`
 seconds (default 45): elapsed time, and for OpenCode the tool-call count and last
 tool; for the other runtimes the log size. Relay each line to the user as a short

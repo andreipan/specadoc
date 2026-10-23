@@ -321,6 +321,46 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
         self.assertEqual(json.loads(result.stdout)["result"]["status"], "DONE")
         self.assertEqual((self.repo / "prompt.seen").read_text(encoding="utf-8"), "do the task\n")
 
+    def test_prompt_is_not_copied_and_runs_is_git_ignored(self) -> None:
+        self.start({"status": "COMPLETE"})
+        self.assertEqual([], sorted(path.name for path in self.runs.glob("*.prompt.md")))
+        self.assertEqual("*\n", (self.runs / ".gitignore").read_text(encoding="utf-8"))
+
+    def noisy_codex(self) -> None:
+        """A codex that streams two usage events and a large log before writing its result."""
+        fake = self.bin / "codex"
+        fake.write_text(FAKE_CODEX.replace("cat > prompt.seen\n", "cat > prompt.seen\n" + "\n".join([
+            """echo '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}'""",
+            "i=0; while [ $i -lt 400 ]; do echo '{\"type\":\"item.completed\",\"item\":\"" + "x" * 80 + "\"}'; i=$((i+1)); done",
+            """echo '{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":0,"output_tokens":3}}'""",
+        ]) + "\n"), encoding="utf-8")
+
+    def test_successful_result_moves_usage_to_run_file_and_cuts_the_log(self) -> None:
+        self.noisy_codex()
+        payload = {"status": "DONE", "summary": "ok", "files_changed": [],
+                   "tests": {"red": "fails", "green": "passes"}, "concerns": [], "report": "runs/T1-report.md"}
+        run_file = self.start(payload)
+        log = self.runs / "T1.worker.log"
+        full = log.stat().st_size
+        self.assertEqual(0, self.run_cli("result", run_file).returncode)
+        record = json.loads(Path(run_file).read_text(encoding="utf-8"))
+        self.assertEqual({"input_tokens": 120, "cached_input_tokens": 40, "output_tokens": 10}, record["usage"])
+        self.assertEqual(full, record["log_bytes"])
+        self.assertLess(log.stat().st_size, 8192 + 200)
+        self.assertTrue(log.read_text(encoding="utf-8").startswith("[specadoc: log cut"))
+        again = self.run_cli("result", run_file)
+        self.assertEqual(0, again.returncode, again.stderr)
+        self.assertEqual(payload, json.loads(again.stdout)["result"])
+
+    def test_failed_result_keeps_the_full_log(self) -> None:
+        self.noisy_codex()
+        run_file = self.start({"status": "COMPLETE"})
+        log = self.runs / "T1.worker.log"
+        full = log.stat().st_size
+        self.assertEqual(1, self.run_cli("result", run_file).returncode)
+        self.assertEqual(full, log.stat().st_size)
+        self.assertNotIn("usage", json.loads(Path(run_file).read_text(encoding="utf-8")))
+
     def test_result_rejects_output_that_breaks_the_schema(self) -> None:
         run_file = self.start({"status": "COMPLETE"})
 

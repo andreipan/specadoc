@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+from specadoc_root import ensure_runs, legacy_warning, resolve_root  # noqa: E402
 from validate_change import Document, ids_in, task_fields  # noqa: E402
 
 RUNS_DIR = "runs"
@@ -117,7 +117,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     target = change / RUNS_DIR / f"{args.task}-brief.md"
-    target.parent.mkdir(parents=True, exist_ok=True)
+    ensure_runs(target.parent)
     target.write_text(brief, encoding="utf-8")
     print(target)
     return 0

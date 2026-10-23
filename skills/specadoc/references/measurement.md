@@ -64,6 +64,10 @@ Each backend reads what its harness records:
 - **opencode** — `~/.local/share/opencode/opencode.db`, table `session`, which
   carries `parent_id`, `agent`, and a `cost` column, so the controller-to-child
   link is native.
+- **external runs** (`run_role.py`) — Codex runs are `--ephemeral` and Claude runs
+  keep no session, so neither leaves a transcript: read the `usage` totals that a
+  successful `result` writes into `runs/<name>.<role>.run.json`, in the runtime's
+  own field names.
 
 The aggregate is reported context volume, not provider billing. Plan, pricing, and
 cache-rate semantics are not available from a transcript, so do not convert it to
