@@ -7,7 +7,7 @@ task to Codex. See `references/runners.md` for the contract.
 
     run_role.py start  --role worker --runtime codex --model M --effort E \\
                        --prompt-file runs/T1-brief.md --name T1
-    run_role.py wait   runs/T1.worker.run.json --timeout 540
+    run_role.py wait   runs/T1.worker.run.json --timeout 110 --shell-budget 120
     run_role.py result runs/T1.worker.run.json
 
 `start` launches the CLI in the background and returns at once; `wait` blocks
