@@ -19,8 +19,13 @@ against the role's schema. No model names live here: the caller passes them.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+from functools import wraps
+import fcntl
+import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -42,10 +47,61 @@ SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*")
 STILL_RUNNING = 3
 # A successful run keeps only this much of its log; usage moves into the run file.
 LOG_TAIL = 8192
+NO_PROGRESS_TIMEOUT = 900.0
 
 
 class RunError(RuntimeError):
     pass
+
+
+@contextmanager
+def _record_lock(run_file: str):
+    """One advisory lock per run directory; no per-poll files or stale writes."""
+    parent = Path(run_file).parent
+    parent.mkdir(parents=True, exist_ok=True)
+    with (parent / ".specadoc-run.lock").open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _locked_action(action):
+    @wraps(action)
+    def locked(args):
+        if action.__name__ == "start":
+            if args.dry_run:
+                return action(args)
+            cwd = Path(args.cwd).resolve()
+            prompt = cwd / args.prompt_file
+            if not prompt.is_file():
+                raise RunError(f"no prompt file at {prompt}")
+            directory = cwd / args.out_dir if args.out_dir else prompt.parent
+            run_file = str(_paths(directory, args.name, args.role)["run"])
+        else:
+            run_file = args.run_file
+            if not Path(run_file).is_file():
+                raise RunError(f"no run record at {run_file}")
+        # The action loads its record only after acquiring the shared lock.
+        with _record_lock(run_file):
+            return action(args)
+    return locked
+
+
+def _write_record(run_file: str, record: dict[str, Any]) -> None:
+    path = Path(run_file)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def _persist_completion(run_file: str) -> None:
+    # A wait loop may have loaded its copy before result settled and cut the log.
+    with _record_lock(run_file):
+        current = _load(run_file)
+        _completion(current)
+        _write_record(run_file, current)
 
 
 def schema_path(role: str) -> Path:
@@ -139,6 +195,7 @@ def _paths(out_dir: Path, name: str, role: str) -> dict[str, Path]:
     }
 
 
+@_locked_action
 def start(args: argparse.Namespace) -> int:
     cwd = Path(args.cwd).resolve()
     from specadoc_config import load_config
@@ -164,10 +221,26 @@ def start(args: argparse.Namespace) -> int:
         raise RunError(f"no prompt file at {prompt_path}")
     out_dir = cwd / args.out_dir if args.out_dir else prompt_path.parent
     paths = _paths(out_dir, args.name, args.role)
+    invocation = {
+        "role": args.role, "runtime": args.runtime, "model": args.model, "effort": args.effort,
+        "cwd": str(cwd), "binding": route, "controller_runtime": controller,
+    }
+    prompt_digest = hashlib.sha256(prompt_path.read_bytes()).hexdigest()
     command = build_command(args.runtime, args.role, args.model, args.effort, cwd, paths["result"].resolve())
     if args.dry_run:
         print(json.dumps(command))
         return 0
+    if paths["run"].exists():
+        existing = _load(str(paths["run"]))
+        if existing.get("prompt_sha256") != prompt_digest or existing.get("invocation") != invocation:
+            raise RunError(f"existing run {paths['run']} has a conflicting or unverifiable dispatch; "
+                           "inspect it with status and choose a new --name for new work")
+        state = _status(existing)
+        print(f"existing {state['status']} run; use status or result; no work relaunched", file=sys.stderr)
+        print(paths["run"])
+        return 0
+    if any(paths[key].exists() for key in ("result", "exit", "log")):
+        raise RunError("existing run artifacts without a record; preserve them and choose a new --name")
     if shutil.which(command[0]) is None:
         raise RunError(f"{command[0]} CLI is not on PATH for role {args.role}")
     if args.runtime == "opencode":
@@ -178,8 +251,12 @@ def start(args: argparse.Namespace) -> int:
         ensure_runs(out_dir)
     else:
         out_dir.mkdir(parents=True, exist_ok=True)
-    for key in ("result", "exit"):
-        paths[key].unlink(missing_ok=True)
+    # Reserve the name exclusively before launching. A concurrent dispatch or a
+    # failed launch must never overwrite a run (including a partially written one).
+    try:
+        reservation = paths["run"].open("x", encoding="utf-8")
+    except FileExistsError as exc:
+        raise RunError("run name was claimed concurrently; inspect status or choose a new --name") from exc
 
     # A small supervisor shell records the exit code, so `wait` works after the
     # caller's own process is gone. The prompt file itself goes on stdin, with an
@@ -197,28 +274,38 @@ def start(args: argparse.Namespace) -> int:
         SPECADOC_LOG=str(paths["log"].resolve()),
         SPECADOC_EXIT=str(paths["exit"].resolve()),
     )
-    process = subprocess.Popen(
-        ["sh", "-c", script, "specadoc-run", *command],
-        cwd=cwd,
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    started = time.time()
+    try:
+        process = subprocess.Popen(
+            ["sh", "-c", script, "specadoc-run", *command],
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except BaseException:
+        reservation.close()
+        raise
     record = {
         "role": args.role,
         "runtime": args.runtime,
         "model": args.model,
         "effort": args.effort,
         "binding": route,
+        "prompt_sha256": prompt_digest,
+        "prompt_file": str(prompt_path.resolve()),
+        "invocation": invocation,
+        "no_progress_timeout": getattr(args, "no_progress_timeout", NO_PROGRESS_TIMEOUT),
         "pid": process.pid,
-        "started": time.time(),
+        "started": started,
         "cwd": str(cwd),
         "command": [part if len(part) < 200 else part[:40] + "…" for part in command],
         **{key: str(path.resolve()) for key, path in paths.items() if key != "run"},
     }
-    paths["run"].write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
+    with reservation:
+        reservation.write(json.dumps(record, indent=1) + "\n")
     print(paths["run"])
     return 0
 
@@ -227,7 +314,10 @@ def _load(run_file: str) -> dict[str, Any]:
     path = Path(run_file)
     if not path.is_file():
         raise RunError(f"no run record at {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RunError(f"incomplete run record at {path}; inspect it before retrying, or choose a new --name") from exc
 
 
 def _alive(pid: int) -> bool:
@@ -238,6 +328,116 @@ def _alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _completion(record: dict[str, Any]) -> bool:
+    """Use the supervisor's timestamp, not the time result was first requested."""
+    exit_file = Path(record["exit"])
+    if not exit_file.is_file() or not exit_file.read_text().strip():
+        return False
+    record.setdefault("completed", max(record["started"], exit_file.stat().st_mtime))
+    record.setdefault("elapsed_seconds", max(0.0, record["completed"] - record["started"]))
+    return True
+
+
+DIAGNOSTIC_MARKERS = ("api error:", "connection reset", "connection refused", "authentication failed",
+                      "stream disconnected", "stream error")
+
+
+def _transport_diagnostics(record: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """Return (terminal error, warnings).
+
+    Only an event that ends the turn (`turn.failed`, an error result) is terminal.
+    Every other error line is a warning: CLIs retry and reconnect on their own,
+    so a live process with such a line is still running, and the exit code
+    decides a finished one.
+    """
+    log = Path(record["log"])
+    if not log.is_file():
+        return None, []
+    text = log.read_text(encoding="utf-8", errors="replace")
+    # Claude's JSON envelope can be pretty-printed rather than JSONL.
+    try:
+        envelope = json.loads(text)
+        if isinstance(envelope, dict) and envelope.get("is_error") is True:
+            return json.dumps(envelope, ensure_ascii=False)[-2000:], []
+    except json.JSONDecodeError:
+        pass
+    terminal = None
+    warnings: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            # Do not mistake tool output or a role's JSON report about an error for
+            # a transport failure. Plain CLI diagnostics are separate from events.
+            lower = line.strip().lower()
+            if not lower.startswith(('"', '{', '[')) and (
+                    lower.startswith(("error:", "fatal:")) or any(m in lower for m in DIAGNOSTIC_MARKERS)):
+                warnings.append(line[-2000:])
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "turn.failed" or (event.get("type") == "result" and event.get("is_error") is True):
+            terminal = json.dumps(event, ensure_ascii=False)[-2000:]
+        elif event.get("type") == "error" or event.get("is_error") is True:
+            warnings.append(json.dumps(event, ensure_ascii=False)[-2000:])
+    return terminal, warnings
+
+
+def _status(record: dict[str, Any], no_progress_timeout: float | None = None) -> dict[str, Any]:
+    now = time.time()
+    finished = _completion(record)
+    alive = not finished and _alive(record["pid"])
+    log = Path(record["log"])
+    stat = log.stat() if log.is_file() else None
+    observable = record["runtime"] != "claude"
+    silence = max(0.0, now - max(record["started"], stat.st_mtime if stat else record["started"]))
+    threshold = no_progress_timeout if no_progress_timeout is not None else record.get("no_progress_timeout", NO_PROGRESS_TIMEOUT)
+    error, warnings = _transport_diagnostics(record)
+    exit_code = int(Path(record["exit"]).read_text().strip()) if finished else None
+    if finished:
+        state = "completed" if exit_code == 0 and not error else "failed"
+        if state == "failed" and not error and warnings:
+            error = warnings[-1]
+    else:
+        state = "failed" if error or not alive else "running"
+    if state == "running" and observable and threshold > 0 and silence >= threshold:
+        state = "no-progress"
+    role_status = None
+    if finished:
+        try:
+            payload = _final_json(record)
+            if isinstance(payload, dict):
+                role_status = payload.get("status")
+        except (RunError, ValueError, OSError):
+            pass
+    return {
+        "status": state, "role_status": role_status, "exit": exit_code, "pid": record["pid"],
+        "alive": alive, "completed": record.get("completed"),
+        "elapsed_seconds": record.get("elapsed_seconds", max(0.0, now - record["started"])),
+        "progress": {"observable": observable, "log_bytes": stat.st_size if stat else 0,
+                     "last_activity": stat.st_mtime if stat else None,
+                     "silence_seconds": silence, "no_progress_timeout": threshold,
+                     "note": "stream activity only; no automatic stop" if observable else "unobservable: buffered JSON; silence is not stall evidence"},
+        "transport_error": error,
+        "warnings": warnings,
+        "retry": {"safe": not alive and state == "failed" and role_status is None, "automatic": False,
+                  "instruction": "inspect log/result; use a new --name for any approved retry; never rerun completed work"},
+    }
+
+
+@_locked_action
+def status(args: argparse.Namespace) -> int:
+    record = _load(args.run_file)
+    before = dict(record)
+    state = _status(record, getattr(args, "no_progress_timeout", None))
+    if record != before:
+        _write_record(args.run_file, record)
+    print(json.dumps(state, indent=2))
+    return 0
 
 
 def _progress(record: dict[str, Any], state: dict[str, Any]) -> str:
@@ -270,23 +470,41 @@ def _progress(record: dict[str, Any], state: dict[str, Any]) -> str:
 def wait(args: argparse.Namespace) -> int:
     record = _load(args.run_file)
     exit_file = Path(record["exit"])
-    deadline = time.monotonic() + args.timeout
+    budget = getattr(args, "shell_budget", 120.0)
+    if budget <= 0 or args.timeout < 0:
+        raise RunError("--shell-budget must be positive and --timeout nonnegative")
+    # Leave room for startup, persistence, and reporting before the host kills us.
+    deadline = time.monotonic() + min(args.timeout, max(0.0, budget - min(5.0, budget * 0.1)))
     follow = getattr(args, "follow", False)
     interval = getattr(args, "interval", 45.0)
     next_report = time.monotonic() + interval
     state: dict[str, Any] = {}
-    while time.monotonic() < deadline:
-        if exit_file.is_file():
+    while True:
+        if _completion(record):
+            _persist_completion(args.run_file)
             print(f"finished: exit {exit_file.read_text().strip()}")
             return 0
         if not _alive(record["pid"]):
             print("finished: supervisor exited without an exit code")
             return 0
+        snapshot = _status(record, getattr(args, "no_progress_timeout", None))
+        if snapshot["status"] == "failed":
+            print(f"failed: pid {record['pid']} reported a terminal transport error; role not stopped; "
+                  "inspect status/log and any existing diff before an explicit stop or retry")
+            return 1
+        if snapshot["status"] == "no-progress":
+            print(f"no-progress: pid {record['pid']}; role not stopped; "
+                  "inspect status/log before deciding whether to keep waiting or stop explicitly")
+            return STILL_RUNNING
+        if time.monotonic() >= deadline:
+            break
         if follow and time.monotonic() >= next_report:
             print(_progress(record, state), flush=True)
             next_report = time.monotonic() + interval
-        time.sleep(min(1.0, max(0.1, deadline - time.monotonic())))
-    print(f"running: pid {record['pid']}; call wait again" if not follow else _progress(record, state) + "; call wait again")
+        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+    snapshot = _status(record, getattr(args, "no_progress_timeout", None))
+    line = f"{snapshot['status']}: pid {record['pid']}" if not follow else _progress(record, state)
+    print(line + "; wait timed out (not a role result); call wait again")
     return STILL_RUNNING
 
 
@@ -420,14 +638,17 @@ def _usage(record: dict[str, Any]) -> dict[str, int]:
 
 def _settle(run_file: str, record: dict[str, Any], payload: Any) -> None:
     """After a successful run keep the result, record usage, and cut the log to its tail."""
+    if "settled" in record:
+        return
     Path(record["result"]).write_text(json.dumps(payload, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     log = Path(record["log"])
-    if "usage" in record or not log.is_file():
-        return
-    record["usage"] = _usage(record)
-    record["log_bytes"] = log.stat().st_size
-    Path(run_file).write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
-    if record["log_bytes"] > LOG_TAIL:
+    _completion(record)
+    if "usage" not in record:
+        record["usage"] = _usage(record)
+        record["log_bytes"] = log.stat().st_size if log.is_file() else 0
+    record["settled"] = time.time()
+    _write_record(run_file, record)
+    if log.is_file() and record.get("log_bytes", 0) > LOG_TAIL:
         with log.open("rb") as handle:
             handle.seek(-LOG_TAIL, os.SEEK_END)
             tail = handle.read()
@@ -435,11 +656,15 @@ def _settle(run_file: str, record: dict[str, Any], payload: Any) -> None:
         log.write_bytes(note.encode() + tail)
 
 
+@_locked_action
 def result(args: argparse.Namespace) -> int:
     record = _load(args.run_file)
-    exit_file = Path(record["exit"])
-    if not exit_file.is_file():
+    before = dict(record)
+    if not _completion(record):
         raise RunError("run has not finished; call wait first")
+    if record != before:
+        _write_record(args.run_file, record)
+    exit_file = Path(record["exit"])
     payload = _final_json(record)
     schema = json.loads(schema_path(record["role"]).read_text(encoding="utf-8"))
     errors = schema_errors(payload, schema)
@@ -464,19 +689,42 @@ def build_parser() -> argparse.ArgumentParser:
     begin.add_argument("--cwd", default=".", help="Repository root the role works in")
     begin.add_argument("--out-dir", help="Where run files go (default: the prompt file's directory)")
     begin.add_argument("--dry-run", action="store_true", help="Print the command instead of running it")
-    for name in ("wait", "result", "stop"):
+    begin.add_argument("--no-progress-timeout", type=_nonnegative, default=NO_PROGRESS_TIMEOUT,
+                       help="stream silence deadline in seconds; 0 disables; buffered JSON is unobservable")
+    for name in ("wait", "result", "stop", "status"):
         child = sub.add_parser(name)
         child.add_argument("run_file")
+        if name in ("wait", "status"):
+            child.add_argument("--no-progress-timeout", type=_nonnegative,
+                               help="override stream silence deadline; never automatically stops the role")
         if name == "wait":
-            child.add_argument("--timeout", type=float, default=540.0)
+            child.add_argument("--timeout", type=_nonnegative, default=120.0)
+            child.add_argument("--shell-budget", type=_positive, default=120.0,
+                               help="host shell limit in seconds; wait leaves a safety margin below it")
             child.add_argument("--follow", action="store_true", help="print a progress line every --interval seconds")
             child.add_argument("--interval", type=float, default=45.0)
     return parser
 
 
+def _nonnegative(value: str) -> float:
+    import math
+
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise argparse.ArgumentTypeError("must be finite and nonnegative")
+    return number
+
+
+def _positive(value: str) -> float:
+    number = _nonnegative(value)
+    if number == 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
 def main() -> int:
     args = build_parser().parse_args()
-    handler = {"start": start, "wait": wait, "result": result, "stop": stop}[args.action]
+    handler = {"start": start, "wait": wait, "result": result, "stop": stop, "status": status}[args.action]
     try:
         return handler(args)
     except (RunError, OSError, ValueError) as exc:

@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,10 +122,10 @@ class Violation:
 class Document:
     """A parsed artifact file addressed by section and by `### <id>` block."""
 
-    def __init__(self, path: Path, display: str) -> None:
+    def __init__(self, path: Path, display: str, *, text: str | None = None) -> None:
         self.path = path
         self.display = display
-        self.lines = path.read_text(encoding="utf-8").splitlines()
+        self.lines = (path.read_text(encoding="utf-8") if text is None else text).splitlines()
         self.sections: dict[str, tuple[int, int]] = {}
         starts: list[tuple[str, int]] = []
         for index, line in enumerate(self.lines):
@@ -186,6 +187,15 @@ class Document:
 
 def ids_in(text: str, prefix: str) -> list[str]:
     return re.findall(rf"\b({prefix}\d+)\b", text)
+
+
+def expand_ids(text: str, prefix: str) -> list[str]:
+    """Like ids_in, but `R1–R9` / `R1-R9` / `R1..R9` ranges list every id between."""
+    found: list[str] = []
+    for match in re.finditer(rf"\b{prefix}(\d+)(?:\s*(?:-|–|—|\.\.)\s*{prefix}?(\d+))?\b", text):
+        first, last = int(match[1]), int(match[2] or match[1])
+        found.extend(f"{prefix}{n}" for n in range(first, max(first, last) + 1))
+    return list(dict.fromkeys(found))
 
 
 LEGACY_SECTION_ALIASES = {"Handoff": "Model handoff"}
@@ -324,6 +334,7 @@ def check_capability_deltas(
     *,
     expect_applied: bool = False,
     requirement_ids: list[str] | None = None,
+    baseline: dict | None = None,
 ) -> list[Violation]:
     """The declared operations must be well formed and must agree with the
     capability files as they stand before this change is archived.
@@ -350,8 +361,9 @@ def check_capability_deltas(
                 f"{path}: declared with no ADDED/MODIFIED/REMOVED/RENAMED operation"))
             continue
 
-        existing = capability_requirements(Path(path))
-        file_present = Path(path).is_file()
+        state = (baseline or {}).get(path)
+        existing = set(state["requirements"]) if state is not None and not expect_applied else capability_requirements(Path(path))
+        file_present = state["present"] if state is not None and not expect_applied else Path(path).is_file()
 
         # Before archive a new capability has not been materialized yet. During
         # archive, expect_applied means the file and its declared requirements
@@ -469,7 +481,8 @@ def check_spec_content(
     return violations
 
 
-def check_spec(spec: Document, root: str, *, expect_capabilities_applied: bool = False) -> list[Violation]:
+def check_spec(spec: Document, root: str, *, expect_capabilities_applied: bool = False,
+               capability_baseline: dict | None = None) -> list[Violation]:
     violations = check_sections(spec, SPEC_SECTIONS)
 
     requirements = spec.blocks("Requirements", "R")
@@ -503,7 +516,8 @@ def check_spec(spec: Document, root: str, *, expect_capabilities_applied: bool =
 
     violations.extend(
         check_capability_deltas(
-            spec, root, expect_applied=expect_capabilities_applied, requirement_ids=requirement_ids
+            spec, root, expect_applied=expect_capabilities_applied, requirement_ids=requirement_ids,
+            baseline=capability_baseline
         )
     )
     violations.extend(stray_delta_lines(spec, root))
@@ -652,6 +666,63 @@ def files_field_hash(files_field: str) -> str | None:
     return hashlib.sha256("\n".join(sorted(digests)).encode("utf-8")).hexdigest()
 
 
+def files_field_digests(files_field: str) -> dict[str, str]:
+    """Per-path content digests (or `missing`) for the literal paths in a `Files:` field."""
+    digests: dict[str, str] = {}
+    for raw in re.split(r"[,\n]", files_field):
+        candidate = raw.strip().strip("`")
+        if candidate:
+            path = Path(candidate)
+            digests[candidate] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
+    return digests
+
+
+def evidence_is_current(runs: Path, task: str, files_field: str) -> bool | None:
+    """Whether a task's accepted evidence still covers its Files.
+
+    A file may have changed since, when a later accepted task recorded exactly
+    its current content (overlapping tasks). None when the task has no
+    per-file acceptance record (older plans fall back to Evidence hash).
+    """
+    try:
+        record = json.loads((runs / f"{task}-baseline.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    recorded = (record.get("verification") or {}).get("files") if isinstance(record, dict) else None
+    if not isinstance(recorded, dict) or record.get("state") != "accepted":
+        return None
+    current = files_field_digests(files_field)
+    if set(current) != set(recorded):
+        return False
+    owned: dict[str, set[str]] = {}
+    for other in runs.glob("T*-baseline.json"):
+        if other.name == f"{task}-baseline.json":
+            continue
+        try:
+            state = json.loads(other.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(state, dict) and state.get("state") == "accepted":
+            for path, value in ((state.get("verification") or {}).get("files") or {}).items():
+                owned.setdefault(path, set()).add(value)
+    return all(current[path] == recorded[path] or current[path] in owned.get(path, ()) for path in current)
+
+
+def repeated_verification_warnings(plan: Document) -> list[str]:
+    """The same Verification in three or more worker tasks is usually the full suite."""
+    by_command: dict[str, list[str]] = {}
+    for identifier, start, end in plan.blocks("Tasks", "T"):
+        fields = task_fields(plan, start, end)
+        if fields.get("Owner", "").strip().lower() != "worker":
+            continue
+        command = " ".join(fields.get("Verification", "").split())
+        if command and not PENDING.search(command):
+            by_command.setdefault(command, []).append(identifier)
+    return [f"{', '.join(tasks)} share Verification {command}: narrow worker checks to the task's "
+            "focused tests; the controller runs the full suite once in Final verification"
+            for command, tasks in by_command.items() if len(tasks) >= 3]
+
+
 def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
     violations = check_sections(plan, PLAN_SECTIONS)
 
@@ -662,13 +733,8 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
             )
 
     tasks = plan.blocks("Tasks", "T")
-    if not MIN_TASKS <= len(tasks) <= MAX_TASKS:
-        message = f"{len(tasks)} tasks; a normal change carries {MIN_TASKS} to {MAX_TASKS}"
-        if len(tasks) > MAX_TASKS:
-            message += "; split the extra work into a separate change"
-        violations.append(
-            Violation(plan.display, plan.sections.get("Tasks", (0, 0))[0] + 1, message)
-        )
+    if not tasks:
+        violations.append(Violation(plan.display, 1, "Tasks: at least one independently verifiable outcome is required"))
 
     task_requirements: set[str] = set()
     for identifier, start, end in tasks:
@@ -690,7 +756,7 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                     Violation(plan.display, start + 1, f"{identifier}: missing field **{field}:**")
                 )
         for field, value in fields.items():
-            if field == "Evidence":
+            if field in ("Evidence", "Evidence hash"):
                 continue
             if PENDING.search(value):
                 violations.append(
@@ -806,7 +872,8 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
     return violations
 
 
-def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP) -> list[Violation]:
+def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP, next_type: str = "initial",
+                           decision: str | None = None) -> list[Violation]:
     """Refuse to dispatch a reviewer for the `limit`-th new-diff round.
 
     Counts only `### G<n>` blocks under `Review result` with `Type: initial`
@@ -817,6 +884,10 @@ def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP) -> list[Vi
     at `--phase final` after the fact.
     """
     rounds = plan.blocks("Review result", "G")
+    if next_type == "re-review":
+        return []
+    if decision and not PENDING.search(decision) and decision.strip().lower() not in ("n/a", "none", "-"):
+        return []
     if not rounds:
         return []
     new_diff_rounds = sum(
@@ -827,8 +898,9 @@ def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP) -> list[Vi
     if new_diff_rounds < limit:
         return []
     _, last_start, last_end = rounds[-1]
-    override = task_fields(plan, last_start, last_end).get("Round cap override", "").strip()
-    if override and not PENDING.search(override):
+    fields = task_fields(plan, last_start, last_end)
+    override = fields.get("Round cap override", "").strip()
+    if override and not PENDING.search(override) and not fields.get("Decision used"):
         return []
     return [
         Violation(
@@ -881,10 +953,25 @@ def check_review_round_structure(plan: Document) -> list[Violation]:
             previous, previous_id = {}, ""
             continue
         if round_type == "initial":
+            if previous and fields.get("Reason", "").strip().lower() == "corrections":
+                violations.append(Violation(plan.display, start + 1,
+                    f"{identifier}: corrections remain a re-review; do not relabel to bypass the round limit"))
             may_re_review = True
             previous, previous_id = fields, identifier
             continue
-        if not may_re_review and not documentation_followup(plan, fields, previous, previous_id):
+        decision = fields.get("Review decision", "").strip()
+        explicit = (bool(decision) and not PENDING.search(decision) and decision.lower() not in ("n/a", "none", "-")
+                    and fields.get("Previous", "").strip() == previous_id)
+        # One uncapped review of executable MINOR fixes after a MINOR-only PASS; never chained.
+        minor_fixes = (fields.get("Reason", "").strip().lower() == "minor-fixes"
+                       and previous.get("Reason", "").strip().lower() != "minor-fixes"
+                       and fields.get("Previous", "").strip() == previous_id
+                       and minor_only_pass(plan, previous_id))
+        if minor_fixes:
+            may_re_review = False
+            previous, previous_id = fields, identifier
+            continue
+        if not may_re_review and not explicit and not documentation_followup(plan, fields, previous, previous_id):
             violations.append(
                 Violation(
                     plan.display,
@@ -902,6 +989,15 @@ def check_review_readiness(plan: Document) -> list[Violation]:
     """Require completed, current task evidence for review and completion."""
     violations: list[Violation] = []
     for identifier, start, end in plan.blocks("Tasks", "T"):
+        state_path = plan.path.parent / "runs" / f"{identifier}-baseline.json"
+        if state_path.is_file():
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                if state.get("schema") == "specadoc.task/v2" and state.get("state") != "accepted":
+                    violations.append(Violation(plan.display, start + 1,
+                        f"{identifier}: task has not reached report-aware ACCEPTED; settle its result before review"))
+            except (OSError, ValueError, TypeError, AttributeError):
+                violations.append(Violation(plan.display, start + 1, f"{identifier}: task state is unreadable"))
         marks = [
             match.group("mark")
             for index in range(start, end)
@@ -927,9 +1023,10 @@ def check_review_readiness(plan: Document) -> list[Violation]:
             )
 
         evidence_hash = fields.get("Evidence hash", "").strip()
-        if evidence_hash and not PENDING.search(evidence_hash):
+        current_evidence = evidence_is_current(plan.path.parent / "runs", identifier, fields.get("Files", ""))
+        if evidence_hash and not PENDING.search(evidence_hash) and current_evidence is not True:
             current_hash = files_field_hash(fields.get("Files", ""))
-            if current_hash is not None and current_hash != evidence_hash:
+            if current_evidence is False or (current_hash is not None and current_hash != evidence_hash):
                 violations.append(
                     Violation(
                         plan.display,
@@ -943,8 +1040,8 @@ def check_review_readiness(plan: Document) -> list[Violation]:
         if surface in ("ui", "mixed"):
             evidence = evidence_raw.lower()
             browser = re.search(r"browser:\s*url:\s*\S+.*state:\s*\S+", evidence)
-            build = re.search(r"build:\s*pass(?:\s|$)", evidence)
-            typecheck = re.search(r"typecheck:\s*pass(?:\s|$)", evidence)
+            build = re.search(r"build:\s*pass(?=\s|[.;,)]|$)", evidence)
+            typecheck = re.search(r"typecheck:\s*pass(?=\s|[.;,)]|$)", evidence)
             if not build or not typecheck or not browser:
                 violations.append(
                     Violation(
@@ -956,18 +1053,33 @@ def check_review_readiness(plan: Document) -> list[Violation]:
     return violations
 
 
-def check_pre_review(plan: Document) -> list[Violation]:
+def check_pre_review(plan: Document, *, next_type: str = "initial", decision: str | None = None) -> list[Violation]:
     """Validate readiness and refuse only a new reviewer dispatch past the cap."""
     return (
         check_review_readiness(plan)
         + check_review_round_structure(plan)
-        + check_review_round_cap(plan)
+        + check_review_round_cap(plan, next_type=next_type, decision=decision)
     )
 
 
 def review_manifest_hash(manifest: dict[str, str]) -> str:
     ordered = "\n".join(f"{path}:{digest}" for path, digest in sorted(manifest.items()))
     return "sha256:" + hashlib.sha256(ordered.encode("utf-8")).hexdigest()
+
+
+RECORDED_FINDING = re.compile(r"^- (?P<severity>BLOCKER|IMPORTANT|MINOR) \((?P<round>G\d+)-\d+\):")
+
+
+def minor_only_pass(plan: Document, identifier: str) -> bool:
+    """A settled PASS whose recorded findings are all MINOR (at least one)."""
+    for found, start, end in plan.blocks("Review result", "G"):
+        if found != identifier:
+            continue
+        if task_fields(plan, start, end).get("Outcome", "").strip().upper() != "PASS":
+            return False
+        severities = [m["severity"] for line in plan.lines[start:end] if (m := RECORDED_FINDING.match(line))]
+        return bool(severities) and all(severity == "MINOR" for severity in severities)
+    return False
 
 
 def latest_review_round(
@@ -1059,7 +1171,7 @@ def check_final(spec: Document, plan: Document) -> list[Violation]:
         if not match:
             violations.append(Violation(plan.display, 1, f"Review result: missing **{label}:**"))
             continue
-        actual = set(ids_in(match.group("value"), prefix))
+        actual = set(expand_ids(match.group("value"), prefix))
         if actual != expected:
             missing = ", ".join(sorted(expected - actual)) or "None"
             extra = ", ".join(sorted(actual - expected)) or "None"
@@ -1117,6 +1229,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)",
     )
     parser.add_argument("--json", action="store_true", help="Emit violations as JSON")
+    parser.add_argument("--next-review-type", choices=("initial", "re-review"), default="initial",
+                        help="The proposed dispatch, not a relabelled historical round")
+    parser.add_argument("--review-decision", help="Explicit user decision for the proposed extra review")
     parser.add_argument(
         "--files-hash",
         metavar="FIELD",
@@ -1126,6 +1241,27 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def legacy_capability_baseline(spec: Document, root: str, manifest: dict) -> dict | None:
+    """Recover V1 state only from content matching its immutable original hash.
+
+    HEAD is an optional content source, never assumed to be the task baseline.
+    A dirty baseline with no recoverable content remains an explicit missing fact.
+    """
+    recovered = {}
+    for _, path, _, _ in capability_deltas(spec, root):
+        original_hash = manifest.get(path)
+        if original_hash is None:
+            recovered[path] = {"present": False, "requirements": []}
+            continue
+        result = subprocess.run(["git", "show", f"HEAD:{path}"], capture_output=True)
+        if result.returncode or hashlib.sha256(result.stdout).hexdigest() != original_hash:
+            return None
+        identifiers = [match["id"] for line in result.stdout.decode("utf-8").splitlines()
+                       if (match := CAPABILITY_HEADING.match(line))]
+        recovered[path] = {"present": True, "requirements": identifiers}
+    return recovered
 
 
 def main() -> int:
@@ -1165,11 +1301,26 @@ def main() -> int:
     plan = documents["plan.md"]
     requirement_ids = [identifier for identifier, _, _ in spec.blocks("Requirements", "R")]
 
-    violations = check_spec(spec, root, expect_capabilities_applied=args.phase == "final")
+    capability_baseline = None
+    saved_baselines = []
+    for baseline_path in sorted((change / "runs").glob("T*-baseline.json")):
+        try:
+            saved = json.loads(baseline_path.read_text(encoding="utf-8"))
+            if saved.get("capabilities"):
+                saved_baselines.append((saved.get("started", ""), saved["capabilities"]))
+            elif isinstance(saved.get("manifest"), dict):
+                if recovered := legacy_capability_baseline(spec, root, saved["manifest"]):
+                    saved_baselines.append((saved.get("started", ""), recovered))
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    if saved_baselines:
+        capability_baseline = min(saved_baselines, key=lambda item: item[0])[1]
+    violations = check_spec(spec, root, expect_capabilities_applied=args.phase == "final",
+                            capability_baseline=capability_baseline)
     if args.phase in ("plan", "pre-review", "final"):
         violations += check_plan(plan, requirement_ids)
     if args.phase == "pre-review":
-        violations += check_pre_review(plan)
+        violations += check_pre_review(plan, next_type=args.next_review_type, decision=args.review_decision)
         from review_snapshot import ScopeError, SnapshotError, compute as compute_snapshot
 
         try:
@@ -1194,6 +1345,11 @@ def main() -> int:
 
     cross_violations, cross_warnings = cross_change_findings(spec, root, args.change_slug)
     violations += cross_violations
+    if args.phase == "plan":
+        cross_warnings += repeated_verification_warnings(plan)
+    task_count = len(plan.blocks("Tasks", "T"))
+    if args.phase != "spec" and task_count > MAX_TASKS:
+        cross_warnings.append(f"{task_count} tasks: inspect change size and dependency boundaries; retain corrective tasks rather than folding them into completed work")
 
     violations.sort(key=lambda violation: (violation.file, violation.line))
 

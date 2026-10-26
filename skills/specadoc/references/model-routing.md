@@ -96,6 +96,10 @@ A fresh session can lose useful cache, so it is not mandatory at every phase:
 - In `apply`, record each accepted task's result in `plan.md` before the next
   task. When the controller context exceeds roughly 150k tokens, stop at a task
   boundary and recommend resuming in a new session from `plan.md`.
+- Use an observed host context count, never token-volume totals as an estimate
+  of the current window. Pass `--context-tokens` to dispatch when available.
+  A boundary handoff lists accepted interfaces, the next ready task, relevant
+  decisions and exact evidence; do not copy the discussion or raw logs.
 
 Role boundaries, routing policy, dispatch contracts, and escalation live in
 `subagent-routing.md`. This file owns risk, binding resolution, binding advice,

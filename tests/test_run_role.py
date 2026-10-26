@@ -7,6 +7,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+import threading
+from argparse import Namespace
+from unittest.mock import patch
 import unittest
 from pathlib import Path
 
@@ -25,6 +29,54 @@ printf '%s' "$FAKE_RESULT" > "$out"
 
 
 class RunRoleTest(unittest.TestCase):
+    def test_status_and_result_cannot_overwrite_settled_usage(self):
+        spec = importlib.util.spec_from_file_location('run_role_concurrent', SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        run_file = self.runs / 'G1.reviewer.run.json'
+        log = self.runs / 'G1.reviewer.log'
+        exit_file = self.runs / 'G1.reviewer.exit'
+        output = self.runs / 'G1.reviewer.result.json'
+        log.write_text(json.dumps(dict(structured_output=dict(verdict='PASS', findings=[], report='Verified'),
+                                       usage=dict(input_tokens=12345), padding='x' * 16000)))
+        exit_file.write_text('0')
+        run_file.write_text(json.dumps(dict(runtime='claude', role='reviewer', started=time.time()-10,
+                                            pid=os.getpid(), log=str(log), exit=str(exit_file), result=str(output))))
+        entered, release, settled = threading.Event(), threading.Event(), threading.Event()
+        original = module._status
+        errors = []
+        def stalled_status(record, timeout=None):
+            value = original(record, timeout)
+            entered.set()
+            release.wait(5)
+            return value
+        def call_status():
+            try:
+                module.status(Namespace(run_file=str(run_file), no_progress_timeout=None))
+            except Exception as exc:
+                errors.append(exc)
+        def call_result():
+            try:
+                module.result(Namespace(run_file=str(run_file)))
+                settled.set()
+            except Exception as exc:
+                errors.append(exc)
+        with patch.object(module, '_status', side_effect=stalled_status), patch('builtins.print'):
+            first = threading.Thread(target=call_status)
+            second = threading.Thread(target=call_result)
+            first.start()
+            self.assertTrue(entered.wait(2))
+            second.start()
+            premature = settled.wait(0.1)
+            release.set()
+            first.join(5)
+            second.join(5)
+        self.assertFalse(premature, 'result must wait for status to release the shared record lock')
+        self.assertFalse(errors, errors)
+        record = json.loads(run_file.read_text())
+        self.assertEqual(12345, record['usage']['input_tokens'])
+        self.assertIn('settled', record)
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name)
@@ -370,6 +422,215 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
         errors = json.loads(result.stdout)["schema_errors"]
         self.assertTrue(any("status" in error for error in errors), errors)
         self.assertTrue(any("files_changed: missing" in error for error in errors), errors)
+
+    def dispatch(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return self.run_cli("start", "--role", "worker", "--runtime", "codex", "--model", "m1",
+                            "--effort", "low", "--prompt-file", str(self.brief), "--name", "T1", *extra)
+
+    def test_repeated_completed_dispatch_preserves_record_and_artifacts(self):
+        run_file = self.start({"status": "DONE"})
+        paths = [Path(run_file), self.runs / "T1.worker.exit", self.runs / "T1.worker.result.json"]
+        before = [path.read_bytes() for path in paths]
+        repeated = self.dispatch()
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertEqual(repeated.stdout.strip(), run_file)
+        self.assertEqual([path.read_bytes() for path in paths], before)
+        self.assertIn("completed", repeated.stderr)
+        record = json.loads(paths[0].read_text())
+        self.assertEqual(len(record["prompt_sha256"]), 64)
+        self.assertEqual(record["invocation"]["cwd"], str(self.repo.resolve()))
+
+    def test_repeated_active_dispatch_does_not_launch_another_process(self):
+        fake = self.bin / "codex"
+        fake.write_text(FAKE_CODEX.replace("cat > prompt.seen", "cat > prompt.seen\n"
+                        "echo launch >> launches\n"
+                        "i=0; while [ ! -f release ] && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done"))
+        first = self.dispatch()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        run_file = Path(first.stdout.strip())
+        before = run_file.read_bytes()
+        try:
+            repeated = self.dispatch()
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(run_file.read_bytes(), before)
+            self.assertIn("running", repeated.stderr)
+        finally:
+            (self.repo / "release").touch()
+            self.run_cli("wait", str(run_file), "--timeout", "10")
+        self.assertEqual((self.repo / "launches").read_text(), "launch\n")
+
+    def test_conflicting_binding_or_cwd_and_orphan_artifacts_are_preserved(self):
+        run_file = self.start({"status": "DONE"})
+        before = Path(run_file).read_bytes()
+        other = self.repo / "other"
+        other.mkdir()
+        for extra in (("--model", "different"), ("--effort", "high"),
+                      ("--cwd", str(other), "--out-dir", str(self.runs))):
+            with self.subTest(extra=extra):
+                refused = self.dispatch(*extra)
+                self.assertEqual(refused.returncode, 2)
+                self.assertIn("new --name", refused.stderr)
+                self.assertEqual(Path(run_file).read_bytes(), before)
+        Path(run_file).unlink()  # Simulate an old interrupted launch with orphan artifacts.
+        result_path = self.runs / "T1.worker.result.json"
+        saved = result_path.read_bytes()
+        refused = self.dispatch()
+        self.assertEqual(refused.returncode, 2)
+        self.assertEqual(result_path.read_bytes(), saved)
+
+    def test_conflicting_dispatch_and_legacy_record_refuse_without_erasing(self):
+        run_file = self.start({"status": "DONE"})
+        before = Path(run_file).read_bytes()
+        self.brief.write_text("different prompt")
+        refused = self.dispatch()
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("new --name", refused.stderr)
+        self.assertEqual(Path(run_file).read_bytes(), before)
+        self.brief.write_text("do the task\n")
+        record = json.loads(before)
+        record.pop("prompt_sha256", None)
+        record.pop("invocation", None)
+        Path(run_file).write_text(json.dumps(record))
+        refused = self.dispatch()
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("new --name", refused.stderr)
+        self.assertTrue(Path(record["exit"]).exists())
+        legacy_status = self.run_cli("status", run_file)
+        self.assertEqual(legacy_status.returncode, 0, legacy_status.stderr)
+        self.assertEqual(json.loads(legacy_status.stdout)["status"], "completed")
+
+    def live_record(self, runtime="codex", text=""):
+        log = self.runs / "live.log"
+        log.write_text(text)
+        old = time.time() - 100
+        os.utime(log, (old, old))
+        record = self.runs / "live.run.json"
+        record.write_text(json.dumps({"role": "worker", "runtime": runtime, "pid": os.getpid(),
+                                     "started": old, "exit": str(self.runs / "live.exit"),
+                                     "log": str(log), "result": str(self.runs / "live.result.json")}))
+        return record
+
+    def test_status_distinguishes_no_progress_from_buffered_claude_and_transport_error(self):
+        for runtime, text, expected, observable in (
+                ("codex", "", "no-progress", True), ("claude", "", "running", False),
+                ("claude", '{"type":"result","is_error":true,"result":"API error: connection reset"}', "failed", False)):
+            with self.subTest(runtime=runtime, expected=expected):
+                record = self.live_record(runtime, text)
+                checked = self.run_cli("status", str(record), "--no-progress-timeout", "10")
+                self.assertEqual(checked.returncode, 0, checked.stderr)
+                state = json.loads(checked.stdout)
+                self.assertEqual(state["status"], expected)
+                self.assertEqual(state["progress"]["observable"], observable)
+                self.assertGreaterEqual(state["elapsed_seconds"], 99)
+                self.assertFalse(state["retry"]["safe"])
+                if expected == "failed":
+                    self.assertIn("connection reset", state["transport_error"])
+
+    def test_wait_shell_budget_and_timeout_are_not_role_status(self):
+        record = self.live_record("claude")
+        before = time.monotonic()
+        waited = self.run_cli("wait", str(record), "--timeout", "30", "--shell-budget", "0.3")
+        self.assertEqual(waited.returncode, 3, waited.stderr)
+        self.assertLess(time.monotonic() - before, 2)
+        self.assertIn("wait timed out", waited.stdout)
+        checked = json.loads(self.run_cli("status", str(record)).stdout)
+        self.assertEqual(checked["status"], "running")
+        spec = importlib.util.spec_from_file_location("run_role_defaults", SCRIPT)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        self.assertLessEqual(runner.build_parser().parse_args(["wait", str(record)]).timeout, 120)
+
+    def test_no_progress_wait_is_non_destructive_and_can_be_disabled(self):
+        record = self.live_record()
+        before = time.monotonic()
+        waited = self.run_cli("wait", str(record), "--timeout", "10", "--no-progress-timeout", "1")
+        self.assertLess(time.monotonic() - before, 2)
+        self.assertEqual(waited.returncode, 3, waited.stderr)
+        self.assertIn("no-progress", waited.stdout)
+        self.assertIn("not stopped", waited.stdout)
+        checked = json.loads(self.run_cli("status", str(record), "--no-progress-timeout", "0").stdout)
+        self.assertEqual(checked["status"], "running")
+        self.assertTrue(checked["alive"])
+
+    def test_status_does_not_confuse_role_or_tool_output_with_transport_failure(self):
+        record = self.live_record("codex", json.dumps({"type": "item.completed", "item": {
+            "text": "test reproduced connection refused; role reports API error: handled"}}))
+        checked = json.loads(self.run_cli("status", str(record)).stdout)
+        self.assertEqual(checked["status"], "running")
+        self.assertIsNone(checked["transport_error"])
+        (self.runs / "live.result.json").write_text('{"status":"BLOCKED"}')
+        (self.runs / "live.exit").write_text("0\n")
+        checked = json.loads(self.run_cli("status", str(record)).stdout)
+        self.assertEqual(checked["status"], "completed")
+        self.assertEqual(checked["role_status"], "BLOCKED")
+
+    def test_transient_reconnect_error_is_not_failure(self):
+        reconnect = "\n".join(json.dumps(event) for event in (
+            {"type": "thread.started"},
+            {"type": "error", "message": "Reconnecting... 1/5 (stream disconnected before completion)"},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "{}"}}))
+        record = self.live_record("codex", reconnect)
+        checked = json.loads(self.run_cli("status", str(record), "--no-progress-timeout", "0").stdout)
+        self.assertEqual(checked["status"], "running")
+        self.assertIsNone(checked["transport_error"])
+        self.assertTrue(checked["warnings"])
+        (self.runs / "live.result.json").write_text('{"status":"DONE"}')
+        (self.runs / "live.exit").write_text("0\n")
+        checked = json.loads(self.run_cli("status", str(record)).stdout)
+        self.assertEqual(checked["status"], "completed")
+        self.assertFalse(checked["retry"]["safe"])
+
+    def test_live_retrying_process_is_running_whatever_its_last_line(self):
+        for text in ("ERROR: stream error: 429 Too Many Requests; will try again",
+                     json.dumps({"type": "error", "message": "overloaded"}),
+                     '{"type":"error","message":"overloaded"}'):
+            with self.subTest(text=text):
+                record = self.live_record("codex", text)
+                checked = json.loads(self.run_cli("status", str(record), "--no-progress-timeout", "0").stdout)
+                self.assertEqual(checked["status"], "running")
+                self.assertTrue(checked["warnings"])
+
+    def test_error_followed_by_progress_is_a_warning_not_failure(self):
+        text = "\n".join(json.dumps(event) for event in (
+            {"type": "error", "message": "rate limited"}, {"type": "turn.started"}))
+        record = self.live_record("codex", text)
+        (self.runs / "live.exit").write_text("0\n")
+        checked = json.loads(self.run_cli("status", str(record)).stdout)
+        self.assertEqual(checked["status"], "completed")
+        self.assertIn("rate limited", checked["warnings"][0])
+
+    def test_wait_reports_terminal_failure_of_live_process_as_failure(self):
+        record = self.live_record("claude", '{"type":"result","is_error":true,"result":"API error: connection reset"}')
+        waited = self.run_cli("wait", str(record), "--timeout", "5")
+        self.assertEqual(waited.returncode, 1, waited.stdout)
+        self.assertIn("failed", waited.stdout)
+
+    def test_failed_transport_status_and_invalid_timeout_options(self):
+        record = self.live_record()
+        (self.runs / "live.exit").write_text("7\n")
+        checked = json.loads(self.run_cli("status", str(record)).stdout)
+        self.assertEqual(checked["status"], "failed")
+        self.assertEqual(checked["exit"], 7)
+        self.assertTrue(checked["retry"]["safe"])
+        for flag, value in (("--timeout", "nan"), ("--shell-budget", "0"),
+                            ("--no-progress-timeout", "-1")):
+            result = self.run_cli("wait", str(record), flag, value)
+            self.assertEqual(result.returncode, 2)
+
+    def test_status_completion_and_settlement_metrics_are_idempotent(self):
+        payload = {"status": "DONE", "summary": "ok", "files_changed": [],
+                   "tests": {"red": "fails", "green": "passes"}, "concerns": [], "report": "report.md"}
+        self.noisy_codex()
+        run_file = self.start(payload)
+        state = json.loads(self.run_cli("status", run_file).stdout)
+        self.assertEqual(state["status"], "completed")
+        self.assertEqual(state["role_status"], "DONE")
+        self.assertEqual(self.run_cli("result", run_file).returncode, 0)
+        first = json.loads(Path(run_file).read_text())
+        self.assertGreaterEqual(first["completed"], first["started"])
+        self.assertGreaterEqual(first["elapsed_seconds"], 0)
+        self.assertEqual(self.run_cli("result", run_file).returncode, 0)
+        self.assertEqual(json.loads(Path(run_file).read_text()), first)
 
 
 if __name__ == "__main__":

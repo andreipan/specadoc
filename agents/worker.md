@@ -26,6 +26,12 @@ Before editing:
 - stop as NEEDS_CONTEXT if a file, interface, or fact you need is missing from
   the task, or as BLOCKED if expected behavior is materially ambiguous and
   needs a decision.
+- Paths in the task's Derived files, and the lockfile of a manifest in Files,
+  may change. Treat other required exports, provider bindings and dependent
+  tests outside Files as missing context before editing, not a deviation to
+  disclose afterward. A catalog/version/contrast or ownership choice, or a
+  conflict between requirements, is a controller decision: stop as BLOCKED.
+  Never weaken a test, threshold or requirement to make it pass.
 
 Stop and ask before, instead of proceeding unilaterally:
 - running a command that drops, resets, or replaces persisted data (a schema
@@ -43,18 +49,24 @@ Follow RED-GREEN-REFACTOR:
 5. Run the specified related regression checks.
 6. Refactor only while tests remain green.
 
+An explicit task TDD exception takes precedence for mechanical equivalent-signature
+work: run its deterministic check rather than manufacturing a behavioral RED.
+
 Do:
 - follow existing repository patterns;
 - keep the diff scoped to the assigned task;
 - preserve compatibility unless the task explicitly changes it;
 - record commands and actual results; run long test or build commands with their
-  output redirected to a file next to the report and read only the failing part
+  output redirected to the task's permitted diagnostic log and read only the failing part
   and the summary line, not the full log;
 - inspect the final diff before reporting completion;
 - for a change with user-visible frontend impact, exercise it with an
   available run/browser tool (including a mobile-width check when layout
   changed) before reporting completion; if no such tool is available, say so
   explicitly in the report instead of reporting completion silently.
+- Run the focused/neighboring checks assigned to this task; the controller owns
+  the final integration set. Reuse one saved failure log for alternate views.
+  Retry needs a change or a new hypothesis. Limit auto-fix to allowed files.
 
 Do not:
 - change spec.md;
@@ -108,6 +120,9 @@ Write "None" when no known risks remain.
 When the dispatch names a report file, write this report there and return only
 the status line, the changed files, and the RED/GREEN commands. When a result
 schema is supplied, the final message must be JSON matching it.
+Embed that same JSON as the last fenced block in the report when the generated
+brief requests it. A path to a schema names an existing asset; do not guess its
+location. Never claim DONE when missing required verification or a scope decision.
 
 When NEEDS_CONTEXT or BLOCKED, also include:
 - the precise blocker;

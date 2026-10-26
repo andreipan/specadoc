@@ -2,76 +2,74 @@
 
 Load this reference only for `specadoc apply <slug>`.
 
-1. Refuse to edit until `spec.md`, `plan.md` and plan approval pass
-   deterministic validation.
-2. Implement behavior with RED-GREEN-REFACTOR. Mechanical migrations use their
-   accepted migration matrix rather than manufactured RED failures.
-   REFACTOR may include optional behavior-preserving cleanup; see
-   `interoperability.md` → Behavior-preserving cleanup.
-3. Delegate only one fully specified low-decision task at a time to `worker` when
-   it reduces controller context. Architecture and ambiguous decisions remain in
-   the controller. Wrap each dispatch in the file-based handoff
-   (`subagent-routing.md`): `specadoc_step.py dispatch <slug> T<n>`, dispatch,
-   then `specadoc_step.py accept <slug> T<n> --verify`. When the worker's
-   runtime is not the controller's, dispatch through `run_role.py`
-   (`runners.md`).
-4. Record exact commands and one-line results in `plan.md`; never paste raw
-   successful logs. When the controller context exceeds roughly 150k tokens,
-   stop at a task boundary and recommend resuming in a new session from
-   `plan.md`.
-5. The controller runs the final affected-only verification and populates
-   `plan.md`'s `Review scope` from the actual executable diff. The scope is
-   independent of task `Files:`: use repository-relative literal file paths,
-   and prefix an intentional deletion with `!`. Then run
-   `specadoc_step.py pre-review <slug>`: it runs
-   `validate_change.py <slug> --phase pre-review` and, on PASS, prints the
-   snapshot hash, policy snapshot, and manifest for the round block. For routed
-   projects, pass `--controller-runtime` to `dispatch` and `pre-review`. They
-   resolve the role again and report the binding they will use.
-6. On a stable executable diff, run one independent read-only `reviewer` and
-   record its PASS as the archive input. Record the round as a `### G<n>`
-   block under `plan.md`'s `Review result` → `Round log`
-   (`assets/plan-template.md`): `**Type:** initial` for a new-diff round,
-   `**Snapshot:**` and the manifest from `review_snapshot.py compute <slug>`,
-   `**Previous:**`,
-   `**Outcome:**`, and `**Reason:**` on FAIL. `check_pre_review`
-   (`--phase pre-review`) refuses to dispatch a 4th `initial`-type round
-   without a recorded `**Round cap override:** <reason>` on the latest
-   block — stop and ask the user whether to consolidate or split the change
-   instead of overriding by default. Fix every confirmed finding, MINOR included
-   (see `tdd-and-review.md` for the only allowed deferral), then dispatch the
-   one targeted re-review of the fixes (`**Type:** re-review`) immediately,
-   without waiting for the user, scoped
-   to only the files `review_snapshot.py diff` shows changed since the prior
-   round — see `subagent-routing.md`'s targeted re-review example; do not
-   resend the full `spec.md` or `plan.md` for that round. If a later
-   production-code, test, migration, executable-configuration,
-   public-contract, or approved-requirement change creates a new executable
-   diff — detected by `review_snapshot.py verify` reporting a mismatch
-   against the latest round's snapshot, not by judgment alone — update Review
-   scope, repeat final verification, and run one reviewer for that diff. Do not
-   dispatch another reviewer solely because evidence, capability documents, or archive
-   material was completed.
-   Exception: after the targeted round FAILs solely on documentation, allow one
-   more `re-review` with `Scope: documentation-only` and `Previous: G<n>`.
-   The failed round must record `Remaining findings: documentation-only`;
-   both rounds need identical `Snapshot` and `Policy snapshot` from pre-review.
-   Only fix cited evidence/handoff prose, not requirements or approvals.
-   Send the finding and changed prose only. This is not an `initial` round;
-   another doc-only follow-up or changed snapshot requires a decision.
-7. On PASS, update capability specifications and fill `Archive summary` with the
-   durable outcome, decisions, and residual risks, then run
-   `validate_change.py <slug> --phase final`. The final gate validates the
-   latest round's Outcome, manifest, Snapshot hash, header Result, and current
-   snapshot; it does not re-apply the reviewer-dispatch cap. Do not archive implicitly.
+1. Refuse edits until spec/plan validation and explicit plan approval are recorded.
+   Start apply in a fresh session after propose. `dispatch` blocks at roughly 150k
+   controller context: save a compact handoff and resume `apply <slug>` in a new
+   session. Claude Code sessions are read automatically; other hosts pass the
+   observed count with `--context-tokens <n>`. Never invent a count.
+2. Before delegation, close material decisions. Each worker task names bounded
+   `Decisions`, `Interfaces`, `Depends on` and `Test context`; its `Files` cover
+   the code and tests, and `Derived files` covers generated or wiring paths
+   (barrel exports, generated clients). A lockfile is derived when its manifest
+   is in scope: `package.json` in its directory or a workspace package below it,
+   `go.mod` for `go.sum`, or a same-stem manifest for `<stem>.lock`. A `low` label does not authorize architecture,
+   catalog, contrast or compatibility decisions.
+3. `specadoc_step.py dispatch <slug> T<n>` checks readiness, records the task
+   baseline and writes the brief. Retries keep the original baseline. Delegate one
+   fully specified task at a time; serialize overlapping writers. Routed projects
+   pass `--controller-runtime`; see `subagent-routing.md`.
+4. Worker uses RED-GREEN-REFACTOR; an explicit `TDD exception` names the
+   deterministic check for mechanical work. REFACTOR may include
+   optional behavior-preserving cleanup (`interoperability.md`). Worker checks
+   are focused; the full suite runs once in Final verification.
+5. Read the report, then `specadoc_step.py accept <slug> T<n>`. It validates the
+   report JSON, runs Verification (reused automatically for unchanged Files and
+   commands), checks scope, and on **ACCEPTED** records Evidence, Evidence hash
+   and Accepted result. One call reports both scope violations and check results.
+   Concerns return **NEEDS_DECISION**: rerun with `--note '<decision>'`.
+   A returned status is a claim, not evidence.
+6. The controller runs the final affected-only verification once, records observed
+   Build/Typecheck PASS and Browser URL/state for UI tasks, and fills Review
+   scope from the actual executable diff (literal paths, `!path` for deletion).
+7. On a stable diff, `specadoc_step.py pre-review <slug>` records the pending
+   round; then run one independent read-only `reviewer`.
+   On return run `specadoc_step.py review-result <slug> --result-file <json>`
+   before anything else, including a user question.
+8. Fix confirmed findings within the approved scope, then
+   `pre-review <slug> --review-type re-review` for one targeted round limited to
+   prior findings and changed files, without waiting for the user. After a PASS
+   with only MINOR findings, fix them: test/doc-only fixes need no new round;
+   executable fixes take one `re-review` (recorded as `minor-fixes`, outside the
+   round cap). New BLOCKER/IMPORTANT after a re-review: stop and ask.
+9. On PASS, update capability specs, the Archive summary (name post-review MINOR
+   fixes) and residual risks, collect tokens after all review rounds, then run
+   `validate_change.py <slug> --phase final`. Archive only when asked.
+
+### Exceptions
+
+- **Scope.** Fix a missing-context brief and resume the same worker. For a
+  required path outside the task: `amend <slug> T<n> --allow <path>` or
+  `--derived <path>`, with `--reason '<decision>'`. Controller edits outside the
+  artifact root use `--controller-path`. This change's `plan.md` is the
+  controller's, but the task's Verification and the plan approval are frozen at
+  dispatch; only `amend` changes them. Never widen Files silently.
+- **Corrective task work after later tasks.** `dispatch <slug> T<n> --reopen
+  '<reason>'` archives the previous attempt and report and starts from the current
+  tree. Without `--reopen`, a retry compares against the first attempt.
+- **Review rounds.** New user requirements use `--review-type initial --reason
+  requirements`; optional polish uses `--reason polish`. Corrections stay
+  `re-review`. The cap blocks a fourth `initial`; an extra round needs
+  `--review-decision '<user decision and bounded scope>'` (a generic archive
+  request is not one). One documentation-only follow-up stays allowed with an
+  unchanged Snapshot/Policy after a documentation-only FAIL.
+- **Size.** More than eight tasks is a warning; add T9 rather than folding new
+  work into a completed task.
+- `pre-review --dry-run` runs the gate and prints the snapshot without recording.
+  `review_snapshot.py diff <slug> --previous G<n>` lists changes since a round.
 
 ## Reading order
 
-Load only what the current step needs — do not front-load every reference
-below before RED. Controller front-loading (not the reviewer, which
-`subagent-routing.md` already scopes) was independently measured as a larger
-raw read-token cost than the reviewer subagent itself in at least one traced
-session.
+Load only what the current step needs; do not front-load references before RED.
 
 | Reference | Read it when | Not before |
 |---|---|---|

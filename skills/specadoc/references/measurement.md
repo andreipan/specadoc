@@ -24,6 +24,9 @@ manifest replaces re-running checks, not judgement.
 
 The reviewer dispatch example in `subagent-routing.md` is this shape in use.
 
+`accept` records a task's Evidence and Evidence hash. To record them by hand,
+compute the hash with `validate_change.py --files-hash "<Files: value>"`.
+
 Record execution totals by Specadoc mode: `explore`, `propose`, `apply`, and
 `archive`. A mode that did not run is absent, never zero.
 
@@ -53,7 +56,9 @@ python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|propose|ap
 
 Each backend reads what its harness records:
 
-- **claude** — `~/.claude/projects/<slug>/<session>.jsonl`. One API response is
+- **claude** — `~/.claude/projects/<slug>/<session>.jsonl`; with no path the
+  collector uses this project's newest session and says which. Pass only the
+  session file, not its `subagents/` files. One API response is
   written as several lines, one per content block, each repeating the same usage:
   the collector deduplicates on `requestId`. Child agents are picked up from
   `<session>/subagents/`, and their role comes from the sibling `.meta.json`.
@@ -62,12 +67,31 @@ Each backend reads what its harness records:
   fields are disjoint. Codex records no parent link; attribute child runs by `cwd`
   and time window.
 - **opencode** — `~/.local/share/opencode/opencode.db`, table `session`, which
-  carries `parent_id`, `agent`, and a `cost` column, so the controller-to-child
-  link is native.
+  carries legacy `session` and V2 `session_v2` tables. V2 is authoritative when
+  both contain the same id. Full ids preserve controller-to-child attribution.
+  Supply `--session <controller-id>` (repeat for resumed roots) to include only
+  that controller and descendants. Omitting it warns and counts the whole directory,
+  not necessarily this change. Use `--db <read-only-snapshot>` when auditing a live
+  store that needs a backup under the host's rules.
 - **external runs** (`run_role.py`) — Codex runs are `--ephemeral` and Claude runs
   keep no session, so neither leaves a transcript: read the `usage` totals that a
   successful `result` writes into `runs/<name>.<role>.run.json`, in the runtime's
-  own field names.
+   own field names.
+
+Pass each settled external record explicitly with `--external-run <run.json>`;
+it may belong to a different runtime than the controller. Keep native and
+external input sets disjoint when a runtime also persisted that external session.
+Repeated paths/children and streaming Claude responses are deduplicated; partial
+usage blocks do not replace a later final counter. Missing external usage warns,
+never masquerades as an execution with zero tokens.
+
+Collections include `collected_at`, ledger owner and `status=provisional` by
+default. Collect again after corrective reviews; use `--final` only for the
+completed execution set; warnings about skipped/missing/unscoped inputs block
+that label rather than silently producing a partial final. It marks an as-of snapshot, not proof that future turns
+or archive work cost nothing. `--append` replaces only this mode/owner ledger,
+preserving other harness ledgers; archived records are never rewritten. Keep
+historical worker reports and earlier provider semantics intact.
 
 The aggregate is reported context volume, not provider billing. Plan, pricing, and
 cache-rate semantics are not available from a transcript, so do not convert it to

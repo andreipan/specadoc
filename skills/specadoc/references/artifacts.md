@@ -189,8 +189,10 @@ Each behavioral requirement must map to at least one acceptance scenario. No unr
 which is normative: editing that template changes this gate. Delete only the
 sections its own placeholder text marks as conditional.
 
-A normal change carries three to eight ordered tasks. Each must be an
-independently verifiable outcome, not a vague activity or an entire subsystem.
+A normal change usually carries three to eight ordered tasks; this is a sizing
+heuristic, not a hard count gate. Each must be independently verifiable, not a
+vague activity or an entire subsystem. Retain corrective tasks as separate tasks
+with their dependencies; do not fold T9 into completed T8 to satisfy a number.
 
 Immediately before review, `## Review scope` lists the actual executable diff
 as repository-relative literal file paths, one backticked bullet per path. It
@@ -201,6 +203,13 @@ expressions, directories, absolute paths, and paths containing `..`.
 Task ownership values are `controller` or `worker`. Verification ownership is
 `worker` or `controller`. Overall high risk does not prevent a
 low-decision task from using a worker.
+
+Before worker dispatch, record its bounded Decisions, Interfaces, Depends on,
+and any Test context or explicit TDD exception. Include required composition-root
+wiring, exports, lockfiles and dependent tests in Files. A low-decision label
+does not replace closing architecture/compatibility decisions. Accepted result
+is the compact current handoff after controller corrections; worker reports are
+historical claims. Optional Evidence hash may remain Pending until verification.
 
 Before implementation, present the plan as a concise task table or equivalent
 preview showing outcome, files or symbols, owner and model, implementation

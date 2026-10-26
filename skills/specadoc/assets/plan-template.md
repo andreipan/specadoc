@@ -72,6 +72,10 @@ section otherwise.>
 
 - [ ] Complete
 - **Requirements:** R1
+- **Depends on:** None
+- **Decisions:** <settled technical choices needed for this task; reference only relevant design sections>
+- **Interfaces:** <current contracts, exemplar paths and required wiring/exports/lockfiles/tests>
+- **Open decisions:** None
 - **Risk:** __RISK__
 - **Decision risk:** <low|medium|high>
 - **Owner:** <controller|worker>
@@ -81,8 +85,12 @@ section otherwise.>
   one-file, one-cycle fix exception). Delete this field for any other
   Owner/Decision-risk combination.>
 - **Files:** <backticked paths, directories, or globs; symbols in parentheses after a path>
+- **Derived files:** None; optional — backticked generated or wiring paths the task may also
+  touch (barrel exports, lockfiles of other ecosystems). Changes there are listed, not violations.
 - **Test first:** <specific behavioral test>
 - **Expected RED:** <why it initially fails>
+- **TDD exception:** None; optional — an approved mechanical/documentation exception and its
+  deterministic check. Keep None for behavior-changing work.
 - **Implementation:** <minimum technical direction>
 - **Verification:** `<exact command>`
 - **Test context:** <optional: verified test exemplar, bootstrap/login helper,
@@ -96,6 +104,7 @@ section otherwise.>
 - **Evidence hash:** Pending; optional — `validate_change.py --files-hash "<Files: value>"`
   computed when Evidence is recorded, so a later change to the same files before
   review is caught instead of trusted silently.
+- **Accepted result:** None; `specadoc_step.py accept` records the delivered result.
 
 ## Requirement-to-check matrix
 
@@ -165,6 +174,7 @@ un-indent it to four spaces less when you add the first real entry:
     - **Remaining findings:** documentation-only (only when code fixes passed and just evidence/handoff prose remains)
     - **Scope:** documentation-only (only for the one extra documentation follow-up)
     - **Round cap override:** Pending
+    - **Review decision:** <only for a user-authorized extra re-review; actual decision plus bounded scope, never an inferred archive waiver>
     - **Snapshot waiver:** Pending (only for a technical read failure; never for a manifest mismatch)
 
     <details><summary>Manifest</summary>

@@ -58,6 +58,10 @@ and obtaining the approvals required for the revised scope.
 - Keep contexts narrow: no repeated reads, raw successful logs, equivalent graph
   calls, or broad repository summaries. Keep one active change;
   see `references/model-routing.md` → Session boundaries.
+- A dispatch is not acceptance: `accept` validates the report, runs Verification
+  and records the accepted result before the next task. Save review results
+  before asking the user; do not relabel corrective rounds or fold follow-ups
+  into completed tasks.
 - Follow the host's command conventions (for example a required command prefix
   in repository or harness instructions) for every shell command shown or run.
 - `<skill-root>` in references means this skill's directory

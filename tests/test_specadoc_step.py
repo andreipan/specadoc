@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -160,13 +161,20 @@ class SpecadocStepTest(unittest.TestCase):
         change.joinpath('plan.md').write_text(PLAN)
         self.project.joinpath('label.py').write_text('def label():\n    return "old"\n')
         self.project.joinpath('check_label.py').write_text('from label import label\nassert label() == "ready"\n')
+        runs = change / 'runs'
+        runs.mkdir(exist_ok=True)
+        report = dict(status='DONE', summary='Ready label', files_changed=['label.py'],
+                      tests=dict(red='old label failed', green='ready label passed'), concerns=[],
+                      report='docs/specadoc/demo/runs/T1-report.md')
+        (runs / 'T1-report.md').write_text('```json\n' + json.dumps(report) + '\n```\n')
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def script(self, name, *args):
         return subprocess.run(
-            [sys.executable, '-B', str(SCRIPTS / name), *args], cwd=self.project, capture_output=True, text=True
+            [sys.executable, '-B', str(SCRIPTS / name), *args], cwd=self.project, capture_output=True, text=True,
+            env={k: v for k, v in dict(os.environ, PYTHONDONTWRITEBYTECODE='1').items() if k != 'CLAUDE_CODE_SESSION_ID'}
         )
 
     def step(self, *args, expected):
@@ -196,8 +204,19 @@ class SpecadocStepTest(unittest.TestCase):
         fields, _ = self.step('dispatch', 'demo', 'T1', '--controller-runtime', 'claude', expected=0)
         self.assertIn('resolved worker codex/test-model/low', fields['checked'])
         role.write_text('model = "changed-model"\nmodel_reasoning_effort = "high"\n')
+        self.step('amend', 'demo', 'T1', '--controller-path', '.codex/agents/worker.toml',
+                  '--reason', 'User changed the worker binding for this retry', expected=0)
         fields, _ = self.step('dispatch', 'demo', 'T1', '--controller-runtime', 'claude', expected=0)
         self.assertIn('resolved worker codex/changed-model/high', fields['checked'])
+
+    def test_template_optional_fields_never_fail_the_plan_gate(self):
+        fresh = self.script('init_change.py', 'fresh', '--risk', 'low')
+        self.assertEqual(0, fresh.returncode, fresh.stderr)
+        result = self.script('validate_change.py', 'fresh', '--phase', 'plan')
+        output = result.stdout + result.stderr
+        for field in ('TDD exception', 'Accepted result', 'Derived files', 'Evidence hash', 'Evidence:', 'Checkpoint'):
+            self.assertNotIn(field, output)
+        self.assertNotIn('delete until accepted', output)
 
     def test_binding_file_is_a_usage_error(self):
         for step in (('dispatch', 'demo', 'T1'), ('pre-review', 'demo')):
@@ -212,7 +231,7 @@ class SpecadocStepTest(unittest.TestCase):
     def test_accept_flags_out_of_scope_change(self):
         self.step('dispatch', 'demo', 'T1', expected=0)
         self.project.joinpath('other.py').write_text('x = 1\n')
-        fields, _ = self.step('accept', 'demo', 'T1', expected=1)
+        fields, _ = self.step('accept', 'demo', 'T1', '--scope-only', expected=1)
         self.assertIn('other.py', fields['changed files'])
 
     def test_accept_runs_verification(self):
@@ -223,11 +242,12 @@ class SpecadocStepTest(unittest.TestCase):
         self.project.joinpath('label.py').write_text('def label():\n    return "ready"\n')
         fields, _ = self.step('accept', 'demo', 'T1', '--verify', expected=0)
         self.assertEqual('check-scope; python3 check_label.py; check-scope after verification', fields['checked'])
+        self.assertEqual('ACCEPTED', fields['result'])
 
     def test_successful_accept_lists_actual_delta(self):
         self.step('dispatch', 'demo', 'T1', expected=0)
         self.project.joinpath('label.py').write_text('def label():\n    return "ready"\n')
-        fields, _ = self.step('accept', 'demo', 'T1', expected=0)
+        fields, _ = self.step('accept', 'demo', 'T1', '--scope-only', expected=0)
         self.assertEqual('label.py', fields['changed files'])
 
     def test_ambiguous_verification_does_not_execute_inline_spans(self):
@@ -249,7 +269,7 @@ class SpecadocStepTest(unittest.TestCase):
         plan = self.project / 'docs/specadoc/demo/plan.md'
         plan.write_text(PLAN.replace('`label.py`, `check_label.py`', 'the label implementation'))
         self.step('dispatch', 'demo', 'T1', expected=1)
-        self.step('accept', 'demo', 'T1', expected=2)
+        self.step('accept', 'demo', 'T1', '--scope-only', expected=2)
 
     def test_malformed_baseline_is_blocked_without_traceback(self):
         self.step('dispatch', 'demo', 'T1', expected=0)
@@ -263,8 +283,11 @@ class SpecadocStepTest(unittest.TestCase):
         old.rename(self.project / 'changes')
         spec = self.project / 'changes/demo/spec.md'
         spec.write_text(SPEC.replace('docs/specadoc', 'changes'))
+        report = self.project / 'changes/demo/runs/T1-report.md'
+        report.write_text(report.read_text().replace('docs/specadoc', 'changes'))
+        self.project.joinpath('label.py').write_text('def label():\n    return "ready"\n')
         self.step('--root', 'changes', 'dispatch', 'demo', 'T1', expected=0)
-        self.step('--root', 'changes', 'accept', 'demo', 'T1', expected=0)
+        self.step('--root', 'changes', 'accept', 'demo', 'T1', '--verify', expected=0)
         self.step('--root', 'changes', 'pre-review', 'demo', expected=0)
 
     def test_new_and_legacy_plans_pass_plan_and_pre_review(self):
@@ -274,14 +297,14 @@ class SpecadocStepTest(unittest.TestCase):
                 plan.write_text(content)
                 result = self.script('validate_change.py', 'demo', '--phase', 'plan')
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                self.step('pre-review', 'demo', expected=0)
+                self.step('pre-review', 'demo', '--dry-run', expected=0)
 
     def test_unfilled_legacy_fields_never_fail_a_gate(self):
         plan = self.project / 'docs/specadoc/demo/plan.md'
         plan.write_text(PARTIAL_LEGACY_PLAN)
         result = self.script('validate_change.py', 'demo', '--phase', 'plan')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.step('pre-review', 'demo', expected=0)
+        self.step('pre-review', 'demo', '--dry-run', expected=0)
         final = self.script('validate_change.py', 'demo', '--phase', 'final')
         output = final.stdout + final.stderr
         self.assertEqual(1, final.returncode, output)
@@ -307,7 +330,7 @@ class SpecadocStepTest(unittest.TestCase):
         self.assertIn(f'snapshot: {digest}', output)
 
     def test_documentation_followup_refuses_changed_disk_snapshot_before_dispatch(self):
-        _, output = self.step('pre-review', 'demo', expected=0)
+        _, output = self.step('pre-review', 'demo', '--dry-run', expected=0)
         digest = next(line.split(': ', 1)[1] for line in output.splitlines() if line.startswith('snapshot: '))
         policy = next(line.split(': ', 1)[1] for line in output.splitlines() if line.startswith('policy snapshot: '))
         rounds = ('### G1\n- **Type:** initial\n- **Outcome:** FAIL\n'
@@ -319,9 +342,9 @@ class SpecadocStepTest(unittest.TestCase):
                   f'- **Snapshot:** {digest}\n- **Policy snapshot:** {policy}\n')
         plan = self.project / 'docs/specadoc/demo/plan.md'
         plan.write_text(PLAN.replace('## Archive summary', rounds + '\n## Archive summary'))
-        self.step('pre-review', 'demo', expected=0)
+        self.step('pre-review', 'demo', '--dry-run', expected=0)
         self.project.joinpath('label.py').write_text('def label():\n    return "changed"\n')
-        fields, _ = self.step('pre-review', 'demo', expected=1)
+        fields, _ = self.step('pre-review', 'demo', '--dry-run', expected=1)
         self.assertIn('documentation-only', fields['blocking reason'])
 
     def test_routed_reviewer_resolution_is_reported_before_pre_review(self):

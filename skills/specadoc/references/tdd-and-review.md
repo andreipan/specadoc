@@ -63,7 +63,9 @@ A missing convenient test harness is not automatically an exception. Prefer addi
 ## Verification cadence
 
 - A worker runs the focused and neighboring checks for its own task. The
-  controller runs and classifies the final affected-only set.
+  controller runs and classifies the final affected-only set. Reuse successful
+  evidence only when its relevant files, commands and environment are unchanged;
+  independent judgement does not require repeating every successful broad suite.
 - During implementation, run the smallest deterministic check for the current
   task. Do not repeatedly run the same broad suite after edits outside its
   scope.
@@ -140,14 +142,30 @@ Classify findings:
 
 Fix every confirmed finding, `MINOR` included, inside the same apply run. Leave a
 finding open only when fixing it would leave the approved scope or contradict
-`spec.md`, and record that reason next to the finding. When any fix was made,
-dispatch the one targeted re-review immediately, without waiting for the user;
-the explicit `specadoc apply` invocation already authorizes it. Stop and report
-instead of fixing again if the re-review returns new BLOCKER or IMPORTANT
-findings. A cap on new-diff review rounds is enforced via `plan.md`'s `### G<n>`
-round log at `--phase pre-review` — before the next reviewer is dispatched, not
-only noticed afterward; it is not a completion gate after an allowed round has
-passed. See `apply.md`.
+`spec.md`, or when the user explicitly accepts a bounded deferral; record the
+decision next to the finding. After a FAIL, dispatch the one targeted re-review
+immediately, without waiting for the user; the explicit `specadoc apply`
+invocation already authorizes it. Stop and report instead of fixing again if a
+re-review returns new BLOCKER or IMPORTANT findings. The cap on new-diff review
+rounds is enforced at `pre-review`, before the next reviewer is dispatched; it is
+not a completion gate after an allowed round has passed. See `apply.md`.
+
+A PASS with only MINOR findings closes the review. Fix the MINOR findings:
+- changes only to tests or prose (test directories, `*_test.go`, `*.test.*`/`*.spec.*`
+  scripts, `*.md`/`*.rst`/`*.adoc`) need
+  no new round; the final gate accepts them and asks you to name them in the
+  Archive summary;
+- executable fixes take one `re-review`, recorded as `minor-fixes`; it does not
+  count toward the cap and is never chained. MINOR findings it returns are
+  recorded as residual risks.
+
+Correction rounds stay `re-review`; new user requirements or polish use a
+justified `initial` round. Persist each result with `review-result` before asking
+the user. A blanket archive request is not a round-cap override. Extra-round
+decisions are consumed by the named round. If code or approval changes during
+review, the returned verdict is saved as stale/FAIL against the original
+manifest; reconcile Review scope and start the next round without restoring old
+code.
 
 ## Completion gate
 

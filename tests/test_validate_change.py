@@ -358,11 +358,38 @@ class ValidateChangeTest(unittest.TestCase):
 
     def test_plan_over_max_tasks_suggests_separate_change(self) -> None:
         messages = self.plan_messages(self.numbered_plan(9))
-        self.assertTrue(any("separate change" in message for message in messages), messages)
+        self.assertFalse(any("separate change" in message for message in messages), messages)
 
     def test_plan_under_min_tasks_keeps_count_only_message(self) -> None:
         messages = [m for m in self.plan_messages(self.numbered_plan(2)) if "tasks; a normal change" in m]
-        self.assertEqual(["2 tasks; a normal change carries 3 to 8"], messages)
+        self.assertEqual([], messages)
+
+    def test_pending_optional_hash_is_allowed_until_evidence_is_recorded(self):
+        messages = self.plan_messages(self.numbered_plan(3, extra='- **Evidence hash:** Pending\n'))
+        self.assertFalse(any('Evidence hash' in message for message in messages), messages)
+
+    def test_targeted_review_allowed_after_three_initial_rounds(self):
+        module = load_module()
+        plan = self.document('plan.md', '## Review result\n' + ''.join(
+            f'### G{i}\n- **Type:** initial\n- **Outcome:** FAIL\n' for i in range(1, 4)))
+        self.assertEqual([], module.check_review_round_cap(plan, next_type='re-review'))
+
+    def test_extra_code_re_review_needs_explicit_decision_not_relabelling(self):
+        module = load_module()
+        rounds = ('## Review result\n### G1\n- **Type:** initial\n- **Outcome:** FAIL\n'
+                  '### G2\n- **Type:** re-review\n- **Outcome:** PASS\n'
+                  '### G3\n- **Type:** re-review\n- **Previous:** G2\n'
+                  '- **Review decision:** User approved one bounded round for two newly found MINOR tests.\n'
+                  '- **Outcome:** PASS\n')
+        self.assertEqual([], module.check_review_round_structure(self.document('plan.md', rounds)))
+        bad = rounds.replace('**Type:** re-review\n- **Previous:** G2', '**Type:** initial\n- **Reason:** corrections\n- **Previous:** G2')
+        self.assertTrue(module.check_review_round_structure(self.document('plan.md', bad)))
+
+    def test_ui_pass_punctuation_does_not_invalidate_evidence(self):
+        module = load_module()
+        plan = self.document('plan.md', '## Tasks\n### T1 — UI\n- [x] Complete\n'
+            '- **Surface:** ui\n- **Evidence:** Build: PASS. Typecheck: PASS. Browser: URL: /events; State: mobile-ready.\n')
+        self.assertEqual([], module.check_review_readiness(plan))
 
     def test_plan_optional_checkpoint_field_is_accepted(self) -> None:
         messages = self.plan_messages(self.numbered_plan(3, extra="- **Checkpoint:** commit after schema\n"))

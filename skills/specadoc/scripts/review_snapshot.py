@@ -48,6 +48,9 @@ from validate_change import (  # noqa: E402
 
 CONTRACT_SECTIONS = ("Requirements", "Acceptance scenarios", "Constraints", "Affected capabilities")
 CONTRACT_KEY = "spec.md#contract"
+# Paths whose post-review MINOR fixes cannot change runtime behavior: tests and prose.
+NON_EXECUTABLE = re.compile(
+    r"(?:^|/)(?:tests?|__tests__)/|_test\.go$|\.(?:test|spec)\.[cm]?[jt]sx?$|\.(?:md|rst|adoc)$")
 DELETED_DIGEST = "deleted"
 SCOPE_ENTRY = re.compile(r"^\s*-\s+`(?P<path>[^`]+)`\s*$")
 NON_LITERAL = re.compile(r"[*?\[\]{}]")
@@ -230,6 +233,52 @@ def task_scope(plan: Document, task_id: str) -> tuple[list[str], list[str]]:
     return files_patterns(files)
 
 
+def frozen_contract(plan: Document, task_id: str) -> dict[str, str]:
+    """Plan facts a worker must not change: its Verification and the plan approval."""
+    from validate_change import review_policy_hash
+    blocks = {identifier: (start, end) for identifier, start, end in plan.blocks("Tasks", "T")}
+    fields = task_fields(plan, *blocks[task_id]) if task_id in blocks else {}
+    return {"verification": " ".join(fields.get("Verification", "").split()),
+            "approval": review_policy_hash(plan)}
+
+
+def task_derived(plan: Document, task_id: str) -> tuple[list[str], list[str]]:
+    """Return (path patterns, uncheckable items) of a task's optional `Derived files:`."""
+    blocks = {identifier: (start, end) for identifier, start, end in plan.blocks("Tasks", "T")}
+    if task_id not in blocks:
+        raise ScopeError(f"plan.md has no task {task_id}")
+    derived = task_fields(plan, *blocks[task_id]).get("Derived files", "")
+    if not derived.strip() or re.match(r"(?:none|n/a|-)\b", derived.strip(), re.I):
+        return [], []
+    return files_patterns(derived)
+
+
+# A lockfile follows its manifest: it is derived when a matching manifest in its
+# directory, or in a workspace package below it, is in scope.
+# A `<stem>.lock` follows a same-stem manifest; anything else goes under `Derived files:`.
+LOCKFILES = {"package-lock.json": "package.json", "npm-shrinkwrap.json": "package.json",
+             "pnpm-lock.yaml": "package.json", "yarn.lock": "package.json", "bun.lock": "package.json",
+             "bun.lockb": "package.json", "go.sum": "go.mod"}
+
+
+def is_derived(path: str, patterns: list[str], derived: list[str]) -> bool:
+    if in_scope(path, derived):
+        return True
+    directory, _, name = path.rpartition("/")
+    prefix = f"{directory}/" if directory else ""
+    scoped = [p for p in (*patterns, *derived) if not any(c in p for c in "*?")]
+    if (manifest := LOCKFILES.get(name)) is not None:
+        # The manifest beside the lockfile, or one in a workspace package below it.
+        return any(p.startswith(prefix) and p.rsplit("/", 1)[-1] == manifest for p in scoped)
+    if name.endswith(".lock"):
+        # `<stem>.lock` follows a manifest with the same stem in its directory
+        # (`<stem>.json`, `<stem>.toml`, or an extensionless `<stem>`).
+        stem = name.removesuffix(".lock")
+        return any(p.startswith(prefix) and "/" not in p[len(prefix):]
+                   and p[len(prefix):].split(".", 1)[0] == stem for p in scoped)
+    return False
+
+
 def in_scope(path: str, patterns: list[str]) -> bool:
     for pattern in patterns:
         if path == pattern or path.startswith(pattern + "/"):
@@ -240,17 +289,27 @@ def in_scope(path: str, patterns: list[str]) -> bool:
 
 
 def scope_violations(
-    baseline: Manifest, current: Manifest, patterns: list[str], artifact_root: str
+    baseline: Manifest, current: Manifest, patterns: list[str], artifact_root: str,
+    derived: list[str] | None = None, exempt: tuple[str, ...] = (),
 ) -> list[dict[str, str]]:
+    """Changes outside Files. Derived files and the controller's own plan are not violations."""
     delta = diff(baseline, current)
     violations = []
     for kind in ("changed", "added", "removed"):
         for path in delta[kind]:
+            if path in exempt:
+                continue
             if _under(path, artifact_root):
                 violations.append({"path": path, "change": kind, "reason": "artifact root is controller-owned"})
-            elif not in_scope(path, patterns):
+            elif not in_scope(path, patterns) and not is_derived(path, patterns, derived or []):
                 violations.append({"path": path, "change": kind, "reason": "outside the task's Files"})
     return violations
+
+
+def derived_changes(baseline: Manifest, current: Manifest, patterns: list[str], derived: list[str]) -> list[str]:
+    delta = diff(baseline, current)
+    return sorted(path for paths in delta.values() for path in paths
+                  if not in_scope(path, patterns) and is_derived(path, patterns, derived))
 
 
 def latest_round(plan: Document) -> tuple[str, dict[str, str], Manifest | None] | None:
@@ -290,11 +349,37 @@ def verify_latest(plan: Document, change: Path, repo_root: Path) -> list[str]:
     delta = diff(stored_manifest, current)
     if not any(delta.values()):
         return []
+    from validate_change import minor_only_pass
+    paths = sorted({path for values in delta.values() for path in values})
+    minor = minor_only_pass(plan, round_id)
+    if minor and CONTRACT_KEY not in paths and all(NON_EXECUTABLE.search(path) for path in paths):
+        print(f"warning: {round_id} PASS covers post-review MINOR fixes in non-executable files: "
+              f"{', '.join(paths)}; name them in Archive summary", file=sys.stderr)
+        return []
+    if minor and fields.get("Reason", "").strip().lower() == "minor-fixes":
+        hint = ("revert it and record the remaining MINOR findings as residual risks, "
+                "or ask the user for a --review-decision on one more round")
+    elif minor:
+        hint = "run pre-review --review-type re-review --reason minor-fixes for the executable MINOR fixes"
+    else:
+        hint = "return to apply for a new review"
     return [
         f"Review result: diff changed since {round_id}'s snapshot "
-        f"(changed={delta['changed']}, added={delta['added']}, removed={delta['removed']}); "
-        f"return to apply for a new review"
+        f"(changed={delta['changed']}, added={delta['added']}, removed={delta['removed']}); {hint}"
     ]
+
+
+def round_manifest(plan: Document, identifier: str) -> Manifest:
+    """The manifest recorded in plan.md's `### G<n>` review round."""
+    for found, start, end in plan.blocks("Review result", "G"):
+        if found == identifier:
+            text = "\n".join(plan.lines[start:end])
+            if "```json" in text:
+                payload = json.loads(text.split("```json", 1)[1].split("```", 1)[0])
+                if isinstance(payload, dict):
+                    return payload
+            raise ValueError(f"{identifier} has no recorded manifest")
+    raise ValueError(f"plan.md has no review round {identifier}")
 
 
 def _load_manifest(value: str) -> Manifest:
@@ -310,7 +395,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", help="Task id such as T3 (for baseline and check-scope)")
     parser.add_argument("--root", help="Artifact root relative to the current repository (default: resolved, see specadoc_root.py)")
     parser.add_argument("--stored", help="Stored manifest: a JSON file path or inline JSON (for verify)")
-    parser.add_argument("--previous", help="Previous-round manifest: a JSON file path or inline JSON (for diff)")
+    parser.add_argument("--previous", help="Previous round id (G<n>), or its manifest as a JSON file path or inline JSON (for diff)")
     return parser
 
 
@@ -350,7 +435,13 @@ def main() -> int:
     if not args.previous:
         print("error: --previous is required for diff", file=sys.stderr)
         return 2
-    print(json.dumps(diff(_load_manifest(args.previous), current), indent=2))
+    try:
+        previous = (round_manifest(Document(change / "plan.md", "plan.md"), args.previous)
+                    if re.fullmatch(r"G\d+", args.previous) else _load_manifest(args.previous))
+    except (OSError, ValueError) as exc:
+        print(f"unresolvable: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(diff(previous, current), indent=2))
     return 0
 
 
@@ -365,6 +456,8 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
     plan = Document(plan_path, str(plan_path))
     try:
         patterns, uncheckable = task_scope(plan, task)
+        derived, derived_uncheckable = task_derived(plan, task)
+        uncheckable += derived_uncheckable
     except ScopeError as exc:
         print(f"unresolvable: {exc}", file=sys.stderr)
         return 2
@@ -373,16 +466,67 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
 
     if action == "baseline":
         ensure_runs(baseline_path.parent)
-        payload = {"task": task, "hash": manifest_hash(current), "manifest": current}
-        baseline_path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
+        if baseline_path.exists():
+            # Retries must compare against the first attempt, never adopt its writes.
+            try:
+                original = json.loads(baseline_path.read_text(encoding="utf-8"))
+                manifest = original["manifest"]
+                if not isinstance(manifest, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in manifest.items()):
+                    raise ValueError("invalid baseline manifest")
+                if original.get("hash") != manifest_hash(manifest):
+                    raise ValueError("baseline hash mismatch; inspect original evidence, do not reset")
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                print(f"unresolvable: invalid existing baseline ({exc})", file=sys.stderr)
+                return 2
+            print(json.dumps({"baseline": str(baseline_path), "files": len(original["manifest"]),
+                              "uncheckable": uncheckable, "reused": True}))
+            return 0
+        from task_state import SCHEMA, save, timestamp
+        from validate_change import capability_deltas, capability_requirements
+        spec_path = change / "spec.md"
+        capabilities = {}
+        if spec_path.is_file():
+            spec = Document(spec_path, str(spec_path))
+            for _, path, _, _ in capability_deltas(spec, artifact_root):
+                capabilities[path] = {"present": Path(path).is_file(),
+                                      "requirements": sorted(capability_requirements(Path(path)))}
+        payload = {"schema": SCHEMA, "task": task, "hash": manifest_hash(current),
+                   "manifest": current, "scope": patterns, "derived": derived, "state": "dispatched",
+                   "frozen": frozen_contract(plan, task),
+                   "started": timestamp(), "capabilities": capabilities}
+        save(baseline_path, payload)
         print(json.dumps({"baseline": str(baseline_path), "files": len(current), "uncheckable": uncheckable}))
         return 0
 
     if not baseline_path.is_file():
         print(f"unresolvable: no baseline at {baseline_path}; run baseline before dispatch", file=sys.stderr)
         return 2
-    violations = scope_violations(_load_manifest(str(baseline_path)), current, patterns, artifact_root)
-    result = {"task": task, "violations": violations, "uncheckable": uncheckable}
+    record = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline = _load_manifest(str(baseline_path))
+    if record.get("hash") != manifest_hash(baseline):
+        print("unresolvable: baseline hash mismatch; do not reset the attempt", file=sys.stderr)
+        return 2
+    for path, digest in record.get("controller_changes", {}).items():
+        if digest == DELETED_DIGEST:
+            baseline.pop(path, None)
+        else:
+            baseline[path] = digest
+    frozen = record.get("scope", patterns)
+    frozen_derived = record.get("derived", derived)
+    # The controller owns this change's plan.md; the worker brief forbids editing it.
+    own_plan = Path(os.path.relpath(plan_path.resolve(), Path.cwd().resolve())).as_posix()
+    violations = scope_violations(baseline, current, frozen, artifact_root, frozen_derived, (own_plan,))
+    if set(patterns) != set(frozen) or set(derived) != set(frozen_derived):
+        violations.append({"path": own_plan, "change": "changed",
+                           "reason": "task scope differs from its baseline; use specadoc_step.py amend"})
+    contract = record.get("frozen")
+    if isinstance(contract, dict):
+        current_contract = frozen_contract(plan, task)
+        for key in sorted(k for k in contract if contract[k] != current_contract.get(k)):
+            violations.append({"path": own_plan, "change": "changed",
+                               "reason": f"task {key} changed since dispatch; the controller uses specadoc_step.py amend"})
+    result = {"task": task, "violations": violations, "uncheckable": uncheckable,
+              "derived": derived_changes(baseline, current, frozen, frozen_derived)}
     if violations:
         print(json.dumps(result, indent=2))
         return 1

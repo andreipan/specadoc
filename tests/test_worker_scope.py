@@ -80,16 +80,17 @@ class WorkerScopeTest(unittest.TestCase):
         violations = json.loads(result.stdout)["violations"]
         self.assertEqual([item["path"] for item in violations], ["src/Other.php"])
 
-    def test_ignored_artifact_edit_fails_but_runs_directory_is_free(self) -> None:
+    def test_ignored_artifact_edit_fails_but_runs_directory_and_own_plan_are_free(self) -> None:
         self.baseline()
         (self.change / "plan.md").write_text(PLAN + "\nedited\n", encoding="utf-8")
+        (self.change / "spec.md").write_text("edited spec\n", encoding="utf-8")
         (self.change / "runs" / "T1-report.md").write_text("report\n", encoding="utf-8")
 
         result = self.run_cli("check-scope", "demo", "--task", "T1")
 
         self.assertEqual(result.returncode, 1)
         violations = json.loads(result.stdout)["violations"]
-        self.assertEqual([item["path"] for item in violations], ["docs/specadoc/demo/plan.md"])
+        self.assertEqual([item["path"] for item in violations], ["docs/specadoc/demo/spec.md"])
         self.assertEqual(violations[0]["reason"], "artifact root is controller-owned")
 
     def test_deleted_file_outside_scope_fails(self) -> None:

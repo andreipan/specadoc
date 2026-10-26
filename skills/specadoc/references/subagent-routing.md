@@ -48,6 +48,12 @@ tasks into one when they share files and one Verification command, and keep
 tasks with different risk areas separate. Never merge a task into the
 reviewer's work.
 
+Before dispatch, check that Decisions/Interfaces are settled and Files covers
+required wiring, exports, lockfiles and dependent tests. Record `Depends on`
+and reuse the dependencies' **Accepted result**, not a stale historical report.
+If an upstream catalog, contrast target, ownership boundary or compatibility
+choice is unresolved, the controller decides before assigning `Decision risk: low`.
+
 Use `reviewer` after implementation when:
 - the complete diff and specification are available;
 - verification evidence has been collected;
@@ -193,23 +199,28 @@ paste the whole runbook or invent a new handoff system.
 Use this for every worker dispatch when the scripts are available, and always
 for a worker on another runtime (see `runners.md`):
 
-1. `python3 <skill-root>/scripts/specadoc_step.py dispatch <slug> T<n>` runs
-   `review_snapshot.py baseline`, which records the whole working tree, and
-   `task_brief.py`, which writes `runs/T<n>-brief.md`. FAIL lists `Files:`
-   items that are not paths; fix them in the plan before dispatching. The
+1. `python3 <skill-root>/scripts/specadoc_step.py dispatch <slug> T<n>` checks
+   plan approval, dependency readiness and bounded decisions, records the original
+   whole-tree baseline and writes `runs/T<n>-brief.md`. Retries retain the baseline.
+   FAIL lists invalid `Files:` items or unapproved changes; resolve them before dispatch. The
    dispatch prompt is then only: the brief path, the report path
    `runs/T<n>-report.md`, and any context added after a previous NEEDS_CONTEXT.
-2. After the worker returns and before reading its report, run
-   `python3 <skill-root>/scripts/specadoc_step.py accept <slug> T<n> --verify`.
-   It runs `review_snapshot.py check-scope`; FAIL lists every change outside
-   the task's `Files:` or under the artifact root: revert or justify each
-   before acceptance; never widen `Files:` after the fact to make the check
-   pass. Inspect Verification and obtain any host-required approvals first:
-   `--verify` executes shell commands with the caller's permissions. The field
-   must contain only exact backticked commands, separated by semicolons; prose
-   with inline code returns BLOCKED for manual verification. Scope is checked
-   again after verification. The worker's report is a claim, not evidence.
-   Without `--verify`, PASS covers scope only, not task acceptance.
+2. Read the worker report and its concerns, then run
+   `python3 <skill-root>/scripts/specadoc_step.py accept <slug> T<n>`.
+   Obtain any host-required approvals first: it executes the task's Verification
+   with the caller's permissions. The field must contain only exact backticked
+   commands separated by semicolons; prose returns BLOCKED for manual checks.
+   `accept` validates the report JSON, runs Verification (reused automatically
+   when Files content and commands are unchanged), and checks scope before and
+   after. One call reports scope violations and check results together.
+   `derived:` lists Derived-file and lockfile changes; they are not violations.
+   **ACCEPTED** records Evidence, Evidence hash and Accepted result in `plan.md`.
+   Concerns return **NEEDS_DECISION**; rerun with `--note '<actual decision>'`,
+   which also records controller corrections. `--scope-only` gives **CHECKED**,
+   never acceptance. For a required out-of-scope path use
+   `amend --allow <path>` or `--derived <path>` with `--reason`; controller edits
+   outside the artifact root use `--controller-path`. Preserve the original
+   baseline and report; never silently widen Files.
 
 Every step prints the same five fields (`checked`, `result`, `changed files`,
 `blocking reason`, `next`) and only the tail of a failing command. The
@@ -239,3 +250,10 @@ Keep work in the controller, or advise a stronger role binding (`model-routing.m
 - Review findings conflict with the specification.
 
 After a failed delegation, add missing context, split the task, revise the plan, or escalate. Never repeat an unchanged delegation prompt.
+
+Distinguish transport failure from task failure. First inspect the existing
+session, report and diff; a lost response may accompany finished work. Resume the
+same native session with its original baseline. For external processes, inspect
+`run_role.py status` before waiting, stopping or starting a named retry. A
+buffered Claude log is not evidence of a stall. Record introduced integration
+debt and the task that closes it; do not call it an unrelated pre-existing failure.

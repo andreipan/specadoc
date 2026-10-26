@@ -11,7 +11,8 @@ Load this reference only for `specadoc propose`.
    operations in `spec.md`.
 4. Run `validate_change.py <slug> --phase spec` and clear violations. Record
    the risk. Do not stop for model approval: Specadoc fixes no model level.
-5. Complete three to eight independently verifiable tasks and the
+5. Complete a small ordered set of independently verifiable tasks (usually
+   three to eight, a heuristic rather than a hard limit) and the
    requirement-to-check matrix in `plan.md`.
    Use an installed architecture-design companion only for unresolved interface
    choices; use domain modeling when meanings or invariants need sharpening.

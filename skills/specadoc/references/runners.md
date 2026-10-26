@@ -59,15 +59,38 @@ writes its full report to `runs/T<n>-report.md`.
 ```text
 python3 <skill-root>/scripts/run_role.py start --role worker --runtime <runtime> \
   --model <model> --effort <effort> --prompt-file <root>/<slug>/runs/T<n>-brief.md --name T<n>
-python3 <skill-root>/scripts/run_role.py wait <run-file> --timeout 540 --follow   # exit 3: still running, wait again
+python3 <skill-root>/scripts/run_role.py status <run-file>
+python3 <skill-root>/scripts/run_role.py wait <run-file> --timeout 110 --shell-budget 120 --follow
 python3 <skill-root>/scripts/run_role.py result <run-file>
 ```
+
+In a project with routing in `.specadoc.json`, replace `--runtime/--model/--effort`
+with `--controller-runtime <codex|claude|opencode>`; `start` refuses to guess it.
 
 `start` returns immediately with the run file; `wait` blocks for at most the
 timeout, so a shell tool with a per-command limit waits in slices. `result`
 exits 1 when the CLI failed or the JSON breaks the schema; read the log named
 in the run file before retrying, and never resend an unchanged prompt. Use
 `stop <run-file>` to abandon a run.
+
+`wait` reserves headroom below `--shell-budget`; timeout (exit 3) is not a role
+failure. Keep waiting on the same run rather than starting another writer.
+`wait` exits 1 only for a terminal transport error. `status` separates
+running/completed/failed/no-progress, transport diagnostics, role status and
+elapsed time. Reconnect notices and errors the stream recovered from are
+`warnings`, not failure; exit 0 with a result is `completed`. No-progress uses observable stream activity and
+does not kill a process. Claude's buffered JSON silence is **unobservable**, not
+proof it stalled. Set `--no-progress-timeout` only as an escalation threshold;
+inspect the existing diff/report before an explicit stop or retry.
+
+Repeated `start` with the same name and unchanged invocation reuses the existing
+run, including completed output; conflicting prompts/bindings or uncertain legacy
+records require inspection and a new explicit name. It never erases exit/result
+files. A named retry is not permission to replace the task's original baseline.
+Completion timestamps, elapsed time and usage are retained in the existing run
+record; no per-progress artifact tree is created.
+Short record updates and log settlement share one advisory directory lock, so a
+concurrent status/wait cannot replace settled usage with an older snapshot.
 
 The prompt file goes to the CLI as is; no copy is written. A successful `result`
 saves the final JSON as the result file, records the summed token `usage` and the
@@ -92,8 +115,8 @@ confirmation prompt from the host itself (for example the Codex approval policy)
 is not controlled by Specadoc.
 
 For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
-`specadoc_step.py dispatch` before `start`, `specadoc_step.py accept --verify`
-after `result`. Status handling is the same as for a native worker.
+`specadoc_step.py dispatch` before `start`, `specadoc_step.py accept` after
+`result` (pass `--result-file` when the JSON is only in the run's result file). Status handling is the same as for a native worker.
 
 ## Runtime notes
 

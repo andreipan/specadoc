@@ -12,6 +12,7 @@ dispatch prompt only needs that path and the run survives a context reset.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -27,6 +28,13 @@ SCHEMA = Path(__file__).resolve().parent.parent / "assets" / "worker-result.sche
 class BriefError(RuntimeError):
     pass
 
+
+
+def optional(value: str | None) -> str | None:
+    """An optional field left at its template default (`None; ...`) is absent."""
+    if not value or re.match(r"(?:none|n/a|-)\b", value.strip(), re.I):
+        return None
+    return value
 
 def _block(document: Document, section: str, prefix: str, identifier: str) -> list[str]:
     for found, start, end in document.blocks(section, prefix):
@@ -57,6 +65,11 @@ def build_brief(change: Path, task_id: str) -> str:
     requirements = ids_in(fields.get("Requirements", ""), "R")
     if not requirements:
         raise BriefError(f"{task_id}: Requirements names no requirement")
+    # Include explicit transitive references, not the entire specification.
+    for requirement in requirements:
+        for related in ids_in("\n".join(_block(spec, "Requirements", "R", requirement)), "R"):
+            if related not in requirements:
+                requirements.append(related)
     coverage = _coverage(spec)
     scenarios: list[str] = []
     for requirement in requirements:
@@ -70,13 +83,16 @@ def build_brief(change: Path, task_id: str) -> str:
         "",
         "## Contract",
         "",
-        "- Work only on the task below. Change only paths named in its **Files:** field.",
-        "- Do not edit `spec.md`, `plan.md`, or anything else under the artifact root, except your report.",
+        "- Work only on the task below. Change only paths named in its **Files:** field, plus its **Derived files:** and the lockfile of a manifest in Files.",
+        f"- Do not edit `spec.md`, `plan.md`, baseline or other briefs/reports. Only your report and `{runs}/{task_id}-*.log` diagnostics may change under the artifact root.",
         "- Do not commit, push, stash, reset, or switch branches. Do not start other agents.",
         "- Follow the repository agent instructions (for example AGENTS.md or CLAUDE.md) that apply to the files you touch.",
-        "- Test first: write the failing test, show it fail (RED), implement, show it pass (GREEN).",
+        (f"- Approved TDD exception: {fields['TDD exception']}" if optional(fields.get("TDD exception"))
+         else "- Test first: write the failing test, show it fail (RED), implement, show it pass (GREEN)."),
         f"- Write the full report to `{runs / f'{task_id}-report.md'}` using the worker report sections.",
-        f"- Return JSON matching `{SCHEMA.name}`: status DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, or BLOCKED.",
+        f"- Return JSON matching `{SCHEMA.resolve()}`: status DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, or BLOCKED. Embed the same JSON as the last fenced block of your report so native and external results can both be validated.",
+        "- Run focused task checks; the controller owns the final integration suite. Save a failure once, then inspect that log instead of rerunning it for a different output view.",
+        "- Stop at NEEDS_CONTEXT before required wiring, exports or dependent tests outside Files and Derived files; stop at BLOCKED for a new architecture, compatibility or catalog decision, or when requirements conflict. Never weaken a test, threshold or requirement to make it pass. Disclosing a deviation is not approval to make it.",
         "",
         "## Task",
         "",
@@ -85,6 +101,16 @@ def build_brief(change: Path, task_id: str) -> str:
         "## Requirements",
         "",
     ]
+    context = []
+    for dependency in ids_in(fields.get("Depends on", ""), "T"):
+        block = _block(plan, "Tasks", "T", dependency)
+        position = next(start for found, start, _ in plan.blocks("Tasks", "T") if found == dependency)
+        result = optional(task_fields(plan, position, position + len(block)).get("Accepted result"))
+        context.append(f"- {dependency}: {result or 'accepted result not recorded; ask the controller for its current interfaces.'}")
+    if not fields.get("Decisions"):
+        context.extend(line for _, line in plan.body("Confirmed decisions") if task_id in ids_in(line, "T"))
+    if context:
+        lines[-2:-2] = ["## Accepted dependency context", "", *context, ""]
     for requirement in requirements:
         lines += _block(spec, "Requirements", "R", requirement) + [""]
     if scenarios:

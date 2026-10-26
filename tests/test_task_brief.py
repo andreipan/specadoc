@@ -98,6 +98,29 @@ class TaskBriefTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("no T7", result.stderr)
 
+    def test_related_requirements_and_task_decisions_are_carried_without_a_full_plan(self):
+        self.change.joinpath('spec.md').write_text(SPEC.replace('Skip invoices reminded today.', 'Skip using R2 rules.'))
+        self.change.joinpath('plan.md').write_text(PLAN.replace('- **Requirements:** R1',
+            '- **Requirements:** R1\n- **Decisions:** Preserve the existing adapter; no new port.\n'
+            '- **Interfaces:** `src/Reminders.php` caller contract\n- **Depends on:** T2', 1)
+            .replace('### T2 — Other', '### T2 — Other\n- **Accepted result:** Existing adapter is wired and verified.'))
+        result = self.run_cli('demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stderr)
+        brief = self.change.joinpath('runs/T1-brief.md').read_text()
+        self.assertIn('### R2 — Unrelated', brief)
+        self.assertIn('Existing adapter is wired and verified.', brief)
+        self.assertIn('Preserve the existing adapter', brief)
+        self.assertNotIn('### T2 — Other', brief)
+
+    def test_mechanical_exception_overrides_generic_red_instruction(self):
+        self.change.joinpath('plan.md').write_text(PLAN.replace('- **Requirements:** R1',
+            '- **Requirements:** R1\n- **TDD exception:** Mechanical equivalent-signature export; typecheck verifies it.', 1))
+        self.assertEqual(0, self.run_cli('demo', 'T1').returncode)
+        brief = self.change.joinpath('runs/T1-brief.md').read_text()
+        self.assertNotIn('Test first: write the failing test', brief)
+        self.assertIn('Mechanical equivalent-signature export', brief)
+        self.assertIn(str(SCRIPT.parent.parent / 'assets/worker-result.schema.json'), brief)
+
     def test_optional_test_context_is_task_local_without_loading_runbooks(self) -> None:
         context = "- **Test context:** `tests/Browser/Example.php`; `docs/testing/browser.md#login`; test-only DB.\n"
         (self.change / "plan.md").write_text(PLAN.replace("### T2", context + "\n### T2"), encoding="utf-8")
