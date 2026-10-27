@@ -18,7 +18,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from package_plugin import ROOT, SKILLS, build
+from package_plugin import EXPLICIT_SKILLS, ROOT, SKILLS, build
 
 VERSION = json.loads((ROOT / 'plugin.json').read_text())['version']
 
@@ -113,9 +113,10 @@ def pilot():
         assert {s['name'] for s in found['skills']} == expected
         assert all(Path(s['path']).is_relative_to(cache) and s['enabled'] for s in found['skills'])
         report['skills'] = sorted(expected)
-        report['checks'].append('Fresh ephemeral chat and four cache-backed skills: PASS')
-        policy = cache / 'skills/specadoc/agents/openai.yaml'
-        assert 'allow_implicit_invocation: false' in policy.read_text()
+        report['checks'].append(f'Fresh ephemeral chat and {len(SKILLS)} cache-backed skills: PASS')
+        for name in EXPLICIT_SKILLS:
+            policy = cache / f'skills/{name}/agents/openai.yaml'
+            assert 'allow_implicit_invocation: false' in policy.read_text()
         report['checks'].append('Installed explicit-only policy preserved: PASS (configuration, not model routing)')
         scripts = cache / 'skills/specadoc/scripts'
         for script in sorted(scripts.glob('*.py')):

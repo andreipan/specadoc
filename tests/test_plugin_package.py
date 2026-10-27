@@ -47,6 +47,22 @@ class PluginPackageTest(unittest.TestCase):
         (self.root / 'skills/specadoc/references/roles/reviewer.md').unlink()
         self.assertTrue(load('package_plugin').validate(self.root))
 
+    def test_management_modes_cannot_become_implicit(self):
+        for name in ('foreman', 'orchestrator'):
+            with self.subTest(skill=name):
+                path = self.root / f'skills/{name}/agents/openai.yaml'
+                original = path.read_text()
+                path.write_text(original.replace('allow_implicit_invocation: false',
+                                                 'allow_implicit_invocation: true'))
+                self.assertIn(f'{name}: must remain explicit-only',
+                              load('package_plugin').validate(self.root))
+                path.write_text(original)
+
+    def test_missing_management_reference_is_rejected(self):
+        (self.root / 'skills/orchestrator/references/checkpoints.md').unlink()
+        errors = load('package_plugin').validate(self.root)
+        self.assertTrue(any('missing references/checkpoints.md' in e for e in errors))
+
     def test_zip_is_reproducible_and_contains_only_portable_resources(self):
         module = load('package_plugin')
         a, b = self.base / 'a.zip', self.base / 'b.zip'
@@ -58,6 +74,9 @@ class PluginPackageTest(unittest.TestCase):
             self.assertIn('plugin.json', names)
             for name in module.SKILLS:
                 self.assertIn(f'skills/{name}/SKILL.md', names)
+            for name in ('foreman', 'orchestrator'):
+                self.assertIn(f'skills/{name}/agents/openai.yaml', names)
+                self.assertTrue(any(n.startswith(f'skills/{name}/evals/') for n in names))
             self.assertIn('skills/specadoc/references/roles/reviewer.md', names)
             self.assertFalse(any(n.startswith(('agents/', '.git', '.agents/', '.claude-plugin/', 'tests/', 'scripts/')) for n in names))
             self.assertFalse(any('__pycache__' in n or n.endswith('.pyc') for n in names))

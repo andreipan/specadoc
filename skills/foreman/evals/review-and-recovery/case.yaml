@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: review-and-recovery
+expected_outcome: |
+  Reconciles worker-42 status and artifacts before retry or replacement, does not
+  trust the title, requires the full failure-horizon check after restart and
+  independent review, and reports unverified work instead of acceptance.

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: continue-executor
+expected_outcome: |
+  Continues worker-17 with a bounded correction brief, quotes the unchanged public
+  error-format invariant, rejects the scope expansion, and preserves the full
+  repetition check and independent review. Does not claim implementation is done.

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Orchestrator"
+  short_description: "Coordinate independent Specadoc controllers and integration"
+policy:
+  allow_implicit_invocation: false

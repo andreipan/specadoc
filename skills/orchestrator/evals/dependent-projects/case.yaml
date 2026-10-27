@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: dependent-projects
+expected_outcome: |
+  Keeps independent UI reconnaissance possible, pauses dependent implementation
+  on contract conflict, rejects silently breaking old clients, routes decisions
+  through controllers, and defines end-to-end evidence beyond local review PASS.

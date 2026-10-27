@@ -1,0 +1,5 @@
+interface:
+  display_name: "Foreman"
+  short_description: "Manage one persistent executor and verify its results"
+policy:
+  allow_implicit_invocation: false

@@ -1,8 +1,8 @@
 {
   "name": "specadoc",
   "version": "0.1.1",
-  "description": "Explicit engineering lifecycle (explore, propose, apply, archive) with bounded scout, worker, and reviewer roles and deterministic artifact gates.",
+  "description": "Explicit engineering lifecycle (explore, propose, apply, archive) with bounded scout, worker, and reviewer roles and deterministic artifact gates, plus explicit Foreman and Orchestrator management modes.",
   "author": { "name": "Andrei Paulovich" },
   "license": "MIT",
-  "keywords": ["workflow", "spec", "planning", "tdd", "review", "subagents"]
+  "keywords": ["workflow", "spec", "planning", "tdd", "review", "subagents", "orchestration"]
 }

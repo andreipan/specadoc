@@ -52,6 +52,33 @@ step they own and record which one ran:
 Specadoc bundles standalone, opt-in companions for cleanup, architecture design,
 and domain modeling (see the README); any equivalent host skill may take their place.
 
+## Explicit management modes
+
+The bundled Foreman and Orchestrator skills are separate opt-in management
+modes, not automatic companions at a lifecycle step. Do not invoke them just
+because Specadoc or several workers are in use.
+
+- **Foreman** keeps one persistent executor under a main session. Do not insert
+  it into an existing Specadoc controller automatically or replace bounded worker
+  dispatch, acceptance, task verification, or independent review with its reports.
+  Resolve incompatible executor contracts before combining workflows.
+- **Orchestrator** coordinates independent Specadoc controllers across repositories
+  or isolated changes. Each controller keeps its own authoritative spec/plan,
+  approvals, workers, final verification, and reviewer. The orchestrator owns
+  shared contracts, dependencies, and end-to-end acceptance, not another local
+  lifecycle or duplicate task tree. It talks to controllers, not their workers.
+
+Ordinary local plan approval stays with the user unless an explicit user mandate
+delegates it and host/repository rules permit that delegation. Record the real
+mandate and approver; do not invent user approval or waive evidence gates. If
+existing approval fields cannot truthfully represent it, obtain direct approval.
+Coordination authority does not grant tool permissions or authorize deployment,
+production changes, publication, or other external effects.
+
+Both modes preserve installed role bindings and host execution/delivery rules.
+Missing continuation, nesting, independent review, or monitoring is a capability
+limitation to disclose, not a reason to silently change the workflow or claim PASS.
+
 ## Host conventions
 
 Hosts often add rules Specadoc must honor without naming them: a required

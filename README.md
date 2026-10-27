@@ -59,7 +59,7 @@ session from a checkout, run `claude --plugin-dir <path>`.
 
 This checkout includes a portable root `plugin.json` and a repo marketplace at
 `.agents/plugins/marketplace.json`. The plugin is version **0.1.1** and installs
-all four skills. No MCP, authentication, lifecycle hooks, project agent files,
+all six skills. No MCP, authentication, lifecycle hooks, project agent files,
 or automatic host configuration is required. Python 3.9+ is needed to run the
 lifecycle helpers. Installing a plugin does not install Python.
 
@@ -148,6 +148,57 @@ not required for any lifecycle gate.
 Install its Agent Skills folder using your host's normal skill installation
 method (for plain skills, link or copy it as shown above).
 
+## Optional management modes
+
+These are explicit opt-in skills, not new lifecycle modes or required agent
+roles. Installing them does not activate them or change existing role bindings.
+
+| Skill | Use | Boundary |
+|---|---|---|
+| `foreman` | One persistent executor for a long coding, research, browser, or data task. | Main session owns decisions and acceptance; executor does the hands-on work. Standalone, no Specadoc dependency. |
+| `orchestrator` | Several independent Specadoc controllers contributing to one outcome. | Main session owns shared contracts, dependencies, and integration; each controller owns its local lifecycle. |
+
+Examples of explicit requests (Claude plugin skills are `specadoc:foreman` and
+`specadoc:orchestrator`; plain installations use the unqualified skill names):
+
+> Use foreman: investigate the intermittent import failure through one persistent
+> executor. Preserve the public error format and verify the original failure case.
+
+> Use orchestrator: coordinate separate Specadoc controllers for the service,
+> SDK, and portal. Agree the API contract before dependent implementation and
+> verify the whole flow. You may accept ordinary local plans within this scope;
+> ask me about changed requirements or external effects. Do not deploy or publish.
+
+Foreman requires an executor that can be continued; Orchestrator requires
+independent controllers capable of using their own workers and reviewer. A
+generic child agent may not support this nesting. Both skills preflight actual
+capabilities and report missing support rather than inventing APIs, timers, or
+independent review. Follow the host's foreground/background and ACP delivery
+rules; durable unattended monitoring is optional, not promised.
+
+Use installed project/host model and effort bindings. Neither skill pins a model,
+selects a model tier, edits role settings, or silently substitutes a requested
+unavailable model. Model comparisons and billed pilot runs are separate work.
+
+Do not wrap every controller in Foreman: existing Specadoc task boundaries,
+approval gates, verification, and independent review remain authoritative.
+Orchestrator accepts ordinary local plan checkpoints only under an explicit
+user mandate allowed by host/repository rules. Coordination is not permission
+to deploy, run production migrations, publish, or bypass a tool denial.
+
+Keep long-running coordination notes in an authorized workspace, linking local
+Specadoc plans rather than copying them. One writer owns each checkout; shared
+databases, ports, and other resources also need owners. Local review PASS is not
+end-to-end success. Recovery checks actual sessions and artifacts before any
+retry, replacement, or response to a stale checkpoint.
+
+Each management skill includes three simulation cases under its `evals/`
+directory, with prompts and trace graders. They cover continuation, unavailable
+capabilities, authority, dependency conflicts, and lost-event recovery. Static
+tests check their presence and package contracts; they do not prove runtime
+behavior. Run billed with-skill/baseline evaluations and live host pilots only
+with an agreed model/budget; no live results are implied by these fixtures.
+
 ## Roles and overrides
 
 Without `.specadoc.json` routing, Specadoc resolves each role in this order
@@ -219,7 +270,7 @@ python3 scripts/smoke_codex.py --report dist/codex-pilot.json # opt-in offline p
 ```
 
 The checkout-only build tools are not bundled in the release ZIP. The ZIP has a
-portable manifest, all four skill folders and their resources, this README,
+portable manifest, all six skill folders and their resources, this README,
 LICENSE and third-party notices. It excludes tests, marketplace catalogs,
 Claude adapters, caches and Git data. Sorted entries, fixed timestamps and modes
 make repeat builds byte-identical in the same Python/zlib environment. Unpack

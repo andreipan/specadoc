@@ -10,7 +10,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILLS = ('specadoc', 'tidy', 'codebase-design', 'domain-modeling')
+SKILLS = ('specadoc', 'tidy', 'codebase-design', 'domain-modeling', 'foreman', 'orchestrator')
+EXPLICIT_SKILLS = ('specadoc', 'foreman', 'orchestrator')
 TOP_FILES = ('plugin.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')
 
 
@@ -82,9 +83,10 @@ def validate(root: Path = ROOT) -> list[str]:
                     base = path.parent if ref.startswith('roles/') else skill
                     if not (base / ref).is_file():
                         errors.append(f'{path.relative_to(root)}: missing {ref}')
-        policy = (root / 'skills/specadoc/agents/openai.yaml').read_text()
-        if not re.search(r'allow_implicit_invocation:\s*false\b', policy):
-            errors.append('Specadoc must remain explicit-only')
+        for name in EXPLICIT_SKILLS:
+            policy = (root / f'skills/{name}/agents/openai.yaml').read_text()
+            if not re.search(r'allow_implicit_invocation:\s*false\b', policy):
+                errors.append(f'{name}: must remain explicit-only')
         for role in ('scout', 'worker', 'reviewer'):
             if not (root / f'skills/specadoc/references/roles/{role}.md').is_file():
                 errors.append(f'missing portable {role} contract')
