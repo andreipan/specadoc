@@ -22,6 +22,12 @@ Send a relevant brief/decision into each controller's accessible work area or
 message rather than granting broad filesystem access. Shared databases, ports,
 services, and deployment targets need explicit owners too.
 
+Append transitions and decisions as dated entries instead of rewriting earlier
+lines in place; keep one short current-state block at the top. The orchestrator
+reads verdicts, not raw evidence: delegate bulk searches over controller
+artifacts, integration runs, and field-by-field contract comparison to a bounded
+scout or worker, then inspect the cited lines it returns.
+
 Update after a transition. After compaction, read back this record, inspect actual
 controller states and referenced evidence, reconcile unacknowledged/stale events,
 then continue. A note saying "ready" is not compatibility evidence. Avoid replaying

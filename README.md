@@ -169,6 +169,11 @@ Examples of explicit requests (Claude plugin skills are `specadoc:foreman` and
 > verify the whole flow. You may accept ordinary local plans within this scope;
 > ask me about changed requirements or external effects. Do not deploy or publish.
 
+Orchestrator never activates implicitly. When a plan you approve will launch
+two or more Specadoc controllers in different repositories, invoke it by name;
+otherwise the session coordinates without a recorded mandate, the routing guard,
+or a coordination record.
+
 Foreman requires an executor that can be continued; Orchestrator requires
 independent controllers capable of using their own workers and reviewer. A
 generic child agent may not support this nesting. Both skills preflight actual

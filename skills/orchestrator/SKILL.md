@@ -21,6 +21,8 @@ Foreman inside them. For one local change, prefer one ordinary controller.
    sessions, continuation, nested worker/reviewer capability, delivery, permission
    boundaries, and model bindings. No model names or levels are fixed by this
    skill. Use installed project/host routing; never silently change bindings.
+   Show each repository's routed roles beside the runtime/model you will launch;
+   on a mismatch ask the user. Never edit routing or role files yourself.
 4. Read `references/state.md`. Reuse or create a compact authorized coordination
    record. It tracks relationships and shared decisions, not duplicate local
    specifications, task lists, or verification logs.
@@ -70,6 +72,9 @@ Require each local handoff to include repository/work area, change slug, current
 phase, exact diff/commit identifier when available, verification evidence,
 independent review result tied to that diff, unresolved limitations, and producer
 contract readiness. A commit is not required or authorized just by this handoff.
+When the change produces or consumes a shared contract, the handoff also maps
+every field to its source of truth, a test asserts the exact field set, and the
+reviewer checks that map. Review PASS on behavior does not prove field names.
 
 Inspect the artifacts rather than accepting a summary alone. Local review PASS
 does not establish integration success. Run the agreed end-to-end scenario in

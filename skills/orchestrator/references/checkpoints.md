@@ -20,6 +20,11 @@ orchestrator decision with its artifact revision. Do not fabricate a user quote
 or mark an approval as directly given by the user when it was delegated. Use
 existing Specadoc approval fields; if their validation cannot represent the
 delegation faithfully, stop and obtain direct approval rather than bypassing a gate.
+Keep `**Status:**` a plain `Approved`: the gate rejects negations there, such as
+"not a direct user approval". Put provenance on its own line, for example
+`**Approval provenance:** orchestrator decision under user mandate D<n>, artifact
+revision <ref>`. Give controllers this wording in the brief so they never record
+an orchestrator decision as an explicit user instruction.
 
 An explicit uninterrupted-execution request is handled by existing Specadoc
 rules. It does not waive specifications, testing, review, or completion evidence.
@@ -33,6 +38,7 @@ rules. It does not waive specifications, testing, review, or completion evidence
 | Ordinary local plan checkpoint | User unless explicitly delegated and accepted by host/repository rules |
 | New product behavior, incompatible contract, added repository, or material risk/scope change | User unless that exact choice was already explicitly authorized |
 | Production, destructive migration, secrets, money, system changes, external publication, push/deployment | User's explicit authorization for the action; never inferred from a plan mandate |
+| Runtime/model routing, role files, `.specadoc.json`, or a controller's runtime | User; show the mismatch and ask, never edit to make a launch fit |
 | Independent review result | Independent reviewer; neither controller nor orchestrator may invent PASS |
 
 Use the simplest reversible option within the mandate. For an escalation, give

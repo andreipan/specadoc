@@ -25,7 +25,15 @@ not permission to edit a role or substitute a requested unavailable model.
 
 - **BB or another thread host:** each controller is an independent resumable
   thread in its assigned repository. Use installed host instructions, not hardcoded
-  command guesses. Confirm the underlying runtime's tools and delivery too.
+  command guesses. Confirm the underlying runtime's tools and delivery too. In BB,
+  wait with one background `bb thread wait <id>` per active controller and read
+  `bb thread output <id>` only after it returns; a Monitor or `while` loop over
+  `bb thread list` is improvised monitoring.
+- **Cross-runtime CLI controllers** (for example Codex started from a Claude
+  shell): the child inherits the launcher's environment. Remove the launcher's
+  session variables, at least `CLAUDE_CODE_SESSION_ID`, so Specadoc context checks
+  measure the controller, and pass `--controller-runtime` on every routed step.
+  Write logs to the coordination directory and wake on process completion.
 - **Native child sessions:** verify nesting depth and delegation tools. A
   resumable child alone does not prove it can act as a controller.
 - **ACP:** obey foreground requirements for sequential dependent work. Do not

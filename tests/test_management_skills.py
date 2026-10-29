@@ -62,6 +62,18 @@ class ManagementSkillsTest(unittest.TestCase):
         self.assertIn("explicit user mandate", checkpoints)
         self.assertIn("does not create permission", checkpoints)
 
+    def test_orchestrator_guards_found_in_pilot_runs(self) -> None:
+        root = SKILLS / "orchestrator"
+        text = (root / "SKILL.md").read_text()
+        self.assertIn("Never edit routing or role files yourself", text)
+        self.assertIn("test asserts the exact field set", text)
+        controllers = (root / "references/controllers.md").read_text()
+        self.assertIn("bb thread wait <id>", controllers)
+        self.assertIn("CLAUDE_CODE_SESSION_ID", controllers)
+        checkpoints = (root / "references/checkpoints.md").read_text()
+        self.assertIn("**Approval provenance:**", checkpoints)
+        self.assertIn("`.specadoc.json`", checkpoints)
+
     def test_capabilities_and_recovery_are_not_assumed(self) -> None:
         for name in MANAGEMENT:
             paths = [SKILLS / name / "SKILL.md", *sorted((SKILLS / name / "references").glob("*.md"))]
