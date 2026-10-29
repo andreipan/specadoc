@@ -263,6 +263,8 @@ def start(args: argparse.Namespace) -> int:
     # optional suffix instead of a rewritten copy.
     script = '{ cat "$SPECADOC_PROMPT"; printf %s "$SPECADOC_SUFFIX"; } | "$@" > "$SPECADOC_LOG" 2>&1; echo $? > "$SPECADOC_EXIT"'
     env = dict(os.environ)
+    # The role is a separate session; the launcher's id would misattribute its context.
+    env.pop("CLAUDE_CODE_SESSION_ID", None)
     suffix = ""
     if args.runtime == "opencode":
         env["OPENCODE_CONFIG_CONTENT"] = opencode_config(args.role)

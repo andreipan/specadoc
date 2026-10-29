@@ -328,6 +328,13 @@ class ApplyReliabilityTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn('context 40000 tokens (reported)', result.stdout)
 
+    def test_dispatch_ignores_inherited_claude_session_for_other_runtimes(self):
+        env = self.claude_session(170000)
+        for runtime in ('codex', 'opencode'):
+            result = self.run_step_env(env, 'dispatch', 'demo', 'T1', '--controller-runtime', runtime)
+            self.assertNotIn('context budget', result.stdout)
+            self.assertNotIn('session-1.jsonl', result.stdout)
+
     def test_accept_lists_amendments(self):
         self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
         self.repo.joinpath('wiring.py').write_text('x = 1\n')

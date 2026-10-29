@@ -118,7 +118,9 @@ def reopen_attempt(change: Path, task: str, reason: str) -> list[dict]:
 def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
              context_tokens: int | None = None, reopen: str | None = None) -> int:
     context_source = "reported"
-    if context_tokens is None:
+    # A Codex/OpenCode controller started from a Claude shell inherits its session
+    # id; that transcript measures the launcher, not this controller.
+    if context_tokens is None and controller in (None, "claude"):
         from collect_tokens import claude_context_tokens, current_claude_transcript
         if (transcript := current_claude_transcript()) is not None:
             context_tokens, context_source = claude_context_tokens(transcript), f"read from {transcript.name}"

@@ -283,6 +283,14 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
             self.assertEqual(output.returncode, 0 if role == "worker" else 1)
             self.assertEqual(json.loads(output.stdout)["result"], payload)
 
+    def test_role_does_not_inherit_launcher_claude_session(self) -> None:
+        fake = self.bin / "codex"
+        fake.write_text(FAKE_CODEX.replace("cat > prompt.seen", 'cat > prompt.seen\nprintf %s "${CLAUDE_CODE_SESSION_ID-unset}" > session.seen'))
+        with patch.dict(os.environ, CLAUDE_CODE_SESSION_ID="launcher"):
+            self.start({"status": "DONE", "summary": "ok", "files_changed": [],
+                        "tests": {"red": "fails", "green": "passes"}, "concerns": [], "report": "runs/report.md"})
+        self.assertEqual("unset", (self.repo / "session.seen").read_text())
+
     def test_opencode_rejects_conflicting_variant(self) -> None:
         output = self.run_cli("start", "--role", "worker", "--runtime", "opencode", "--model", "openai/m#high",
                               "--effort", "low", "--prompt-file", str(self.brief), "--name", "T1", "--dry-run")
