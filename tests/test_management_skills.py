@@ -74,6 +74,14 @@ class ManagementSkillsTest(unittest.TestCase):
         self.assertIn("**Approval provenance:**", checkpoints)
         self.assertIn("`.specadoc.json`", checkpoints)
 
+    def test_integration_verifier_reports_and_never_fixes(self) -> None:
+        text = (SKILLS / "orchestrator/references/roles/integration-verifier.md").read_text()
+        self.assertEqual(1, text.count("<!-- specadoc:tooling:begin -->"))
+        self.assertIn("fix a defect", text.split("Do not:", 1)[1])
+        for heading in ("## Verdict", "## Contract map", "## Failures", "## Changes since last round"):
+            self.assertIn(heading, text)
+        self.assertIn("Never place Foreman inside a controller", (SKILLS / "orchestrator/SKILL.md").read_text())
+
     def test_capabilities_and_recovery_are_not_assumed(self) -> None:
         for name in MANAGEMENT:
             paths = [SKILLS / name / "SKILL.md", *sorted((SKILLS / name / "references").glob("*.md"))]

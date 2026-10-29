@@ -46,6 +46,18 @@ attention. Cancel it when finished or waiting solely for the user. Without one,
 use supported event/foreground waiting and state the limitation. Never improvise
 durable monitoring with shell sleep or duplicate watcher processes.
 
+## Integration verifier
+
+The integration verifier is the orchestrator's executor, not a controller. It
+sits beside the controllers, not inside them. Launch it once, in the
+orchestrator's harness, as a continuable session: a native subagent you can
+message again, or a host thread. Brief it with the acceptance scenario,
+component revisions, the coordination directory, and contract snapshots. Save
+external sources such as wiki pages there as files first, because the verifier
+may lack the connector. Its role binding belongs to the installed harness;
+`.specadoc.json` does not route it. Route each failure it reports to the owning
+controller.
+
 ## Report and decision envelope
 
 Ask controllers to end a turn at checkpoints rather than wait mid-run for a reply:

@@ -76,6 +76,11 @@ When the change produces or consumes a shared contract, the handoff also maps
 every field to its source of truth, a test asserts the exact field set, and the
 reviewer checks that map. Review PASS on behavior does not prove field names.
 
+Give integration runs and field comparison to one persistent integration
+verifier (`references/roles/integration-verifier.md`), continued across rounds
+like a Foreman executor; keep its verdicts, not its logs. It reports and never
+fixes. Never place Foreman inside a controller.
+
 Inspect the artifacts rather than accepting a summary alone. Local review PASS
 does not establish integration success. Run the agreed end-to-end scenario in
 the authorized environment with compatible component versions. If integration
