@@ -5,17 +5,15 @@ description: Explicit engineering lifecycle with explore, propose, apply, and co
 
 # Specadoc
 
-Specadoc is the single lifecycle tool for this workflow. It does not install,
-invoke, mirror, or maintain an OpenSpec workflow beside its own artifacts.
+Specadoc owns this lifecycle; do not install or mirror OpenSpec beside it.
 
-Repository instructions, explicit user decisions, and specialized domain skills
-remain authoritative. An implementation-discipline skill, when installed, owns
-how code is written; Specadoc owns lifecycle state, approvals, routing, and
-evidence.
+Repository instructions, user decisions and domain skills remain authoritative.
+An installed implementation skill owns coding discipline; Specadoc owns state,
+approvals, routing and evidence.
 
 ## Route the request
 
-An explicit mode always wins:
+Explicit modes win:
 
 - `explore <request>` — establish facts and stress-test the idea without files;
   read `references/explore.md`.
@@ -51,26 +49,22 @@ and obtaining the approvals required for the revised scope.
 - Keep one bounded `scout`, fully specified low-decision `worker` tasks, and one
   final read-only `reviewer` per stable executable diff in `apply`. The
   controller owns all final verification.
-- Treat role startup, symbol-aware tooling availability, and code-graph
-  availability as independent capabilities. Failure of one never implies failure of the others. Distinguish
-  absence after tool discovery from a failed exposed call; cite the exact call
-  and error only for a call that was actually attempted.
-- Keep contexts narrow: no repeated reads, raw successful logs, equivalent graph
-  calls, or broad repository summaries. Keep one active change;
+- Role startup, symbol-aware tools and code graphs are independent capabilities.
+  Distinguish absence after discovery from a failed exposed call; cite a call
+  and error only when actually attempted.
+- Keep contexts narrow: no repeated reads, raw success logs, duplicate graph
+  calls or repository tours. One active change;
   see `references/model-routing.md` → Session boundaries.
-- A dispatch is not acceptance: `accept` validates the report, runs Verification
-  and records the accepted result before the next task. Save review results
-  before asking the user; do not relabel corrective rounds or fold follow-ups
-  into completed tasks.
-- A failed gate is diagnostic evidence, not permission to rewrite a baseline,
-  weaken frozen Verification, hide completed work, or change approval records
-  merely to pass. Use the documented amendment, reopen, or explicitly authorized
-  exception path; if none applies, report the blocker. (#2259, #2271, #2314)
+- Dispatch is not acceptance: `accept` validates reports, runs Verification and
+  records acceptance before the next task. Save reviews before user questions;
+  do not relabel corrective rounds or hide follow-ups in completed tasks.
+- Failed gates do not authorize baseline rewrites, weaker frozen Verification,
+  hidden completed work or altered approvals. Use amendment, reopen or an
+  authorized exception; otherwise report the blocker.
 - When a required check is reserved for the user, keep its task unaccepted until
   the user supplies the result. Static checks do not replace that evidence.
-  Give the exact command and prerequisites, record the observed result, and
-  resume the same change; do not claim final completion while it is pending.
-  (#1521, #1524)
+  Give the command/prerequisites and resume this change with the observed result;
+  do not claim completion while it is pending.
 - Follow the host's command conventions (for example a required command prefix
   in repository or harness instructions) for every shell command shown or run.
 - `<skill-root>` in references means this skill's directory
@@ -78,21 +72,18 @@ and obtaining the approvals required for the revised scope.
 
 ## Continuity of an active change
 
-Once Specadoc has been explicitly selected for a change, follow-up work on the
-same change remains inside that lifecycle, including small visual corrections,
-verification fixes, and resumed implementation. Reuse the accepted `spec.md`,
-`plan.md`, scout evidence, and approvals while the behavioral requirements stay
-unchanged. Record the follow-up evidence in the existing plan.
+Once explicitly selected, keep follow-ups in this lifecycle, including small
+visual/verification fixes and resumed implementation. Reuse accepted spec/plan,
+scout evidence and approvals while behavioral requirements are unchanged; append
+evidence to the existing plan.
 
-Controller execution of a bounded follow-up may replace a worker dispatch when
-the routing rules favour it, but it does not remove the required final
-verification or independent review for a new executable diff. A recorded PASS
-remains valid for `archive`: changes only to `plan.md`, capability documents,
-archive summary, execution-accounting evidence, or the archive record do not need another
-reviewer. Return to final `apply` when production code, tests, migrations,
-executable configuration, a public contract, or the approved requirements
-change. Start a new lifecycle only when the follow-up changes the behavioral
-contract or belongs to a different change.
+A bounded controller follow-up may replace a worker under the routing rules,
+not final verification or independent review of a new executable diff. PASS
+remains valid for `archive` after only plan, capability, archive-summary,
+accounting or archive-record edits. Production code, tests, migrations,
+executable config, public contracts or approved requirements changing requires
+final `apply`. Start a new lifecycle only for a changed behavioral contract or
+a different change.
 
 ## Progressive references
 

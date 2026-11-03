@@ -239,6 +239,9 @@ def frozen_contract(plan: Document, task_id: str) -> dict[str, str]:
     blocks = {identifier: (start, end) for identifier, start, end in plan.blocks("Tasks", "T")}
     fields = task_fields(plan, *blocks[task_id]) if task_id in blocks else {}
     return {"verification": " ".join(fields.get("Verification", "").split()),
+            "verification inputs": fields.get("Verification inputs", ""),
+            "owner": fields.get("Owner", ""),
+            "controller justification": fields.get("Controller justification", ""),
             "approval": review_policy_hash(plan)}
 
 

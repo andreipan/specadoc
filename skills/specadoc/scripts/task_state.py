@@ -45,8 +45,11 @@ def readiness(plan: Document, task: str) -> list[str]:
     if error := approval_error(plan):
         errors.append(error)
     _, _, fields = task_block(plan, task)
-    if fields.get("Owner", "").lower() != "worker":
-        errors.append(f"{task}: dispatch requires Owner: worker")
+    owner = fields.get("Owner", "").lower()
+    if owner not in ("worker", "controller"):
+        errors.append(f"{task}: dispatch requires Owner: worker or controller")
+    if owner == "controller" and not fields.get("Controller justification", "").strip():
+        errors.append(f"{task}: controller execution requires Controller justification")
     if fields.get("Decision risk", "").lower() != "low":
         errors.append(f"{task}: resolve material decisions before worker dispatch")
     open_decisions = fields.get("Open decisions", "None").strip()

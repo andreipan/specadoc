@@ -93,6 +93,9 @@ section otherwise.>
   deterministic check. Keep None for behavior-changing work.
 - **Implementation:** <minimum technical direction>
 - **Verification:** `<exact command>`
+- **Verification inputs:** None; optional — backticked read-only configs, test helpers,
+  runtime/tool paths and dependency manifests used by Verification. Include ignored
+  configs explicitly; this field grants no write permission.
 - **Test context:** <optional: verified test exemplar, bootstrap/login helper,
   test-only environment and one runbook section; delete when not needed>
 - **Surface:** <code|ui|mixed>

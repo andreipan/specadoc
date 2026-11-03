@@ -92,6 +92,8 @@ def build_brief(change: Path, task_id: str) -> str:
         f"- Write the full report to `{runs / f'{task_id}-report.md'}` using the worker report sections.",
         f"- Return JSON matching `{SCHEMA.resolve()}`: status DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, or BLOCKED. Embed the same JSON as the last fenced block of your report so native and external results can both be validated.",
         "- Run focused task checks; the controller owns the final integration suite. Save a failure once, then inspect that log instead of rerunning it for a different output view.",
+        "- Use the exact Verification commands and project configuration in Test context. Verification inputs are read-only dependencies, not additional write scope. Report missing context instead of guessing a default formatter or broad test suite.",
+        f"- Before handing off, `python3 {Path(__file__).with_name('specadoc_step.py').resolve()} manifest {change.name} {task_id}` prints actual changed paths and Review scope suggestions; pass `--root` before the subcommand for a custom artifact root. Inspect them; the command does not write or accept the report.",
         "- Stop at NEEDS_CONTEXT before required wiring, exports or dependent tests outside Files and Derived files; stop at BLOCKED for a new architecture, compatibility or catalog decision, or when requirements conflict. Never weaken a test, threshold or requirement to make it pass. Disclosing a deviation is not approval to make it.",
         "",
         "## Task",

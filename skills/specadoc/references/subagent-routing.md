@@ -47,6 +47,7 @@ Size each worker task so its startup is worth it: merge adjacent mechanical
 tasks into one when they share files and one Verification command, and keep
 tasks with different risk areas separate. Never merge a task into the
 reviewer's work.
+Apply this before dispatch; do not fold corrective work into a completed task.
 
 Before dispatch, check that Decisions/Interfaces are settled and Files covers
 required wiring, exports, lockfiles and dependent tests. Record `Depends on`
@@ -79,6 +80,10 @@ Keep work in the controller when:
   overhead exceeds the expected context savings. This is mandatory for a small
   UI follow-up: one controller, one final build, and one browser check; do not
   fan out browser screenshots or parallel visual investigations.
+- Record that exception with `Owner: controller` and `Controller justification`.
+  `dispatch` prepares the same baseline and result contract without routing a
+  worker; `accept` still verifies the report, scope and exact checks. It does not
+  waive approval, TDD, final verification or independent review.
 
 ## Scout dispatch example
 
@@ -195,6 +200,10 @@ For browser tasks, put a bounded `Test context` in the task: a verified test
 exemplar, bootstrap/login helper, test-only environment, exact focused command,
 and relevant runbook section. The brief already carries task fields; do not
 paste the whole runbook or invent a new handoff system.
+For every task, reuse known exact commands/configuration and permission limits
+in `Test context`. Optional `Verification inputs` names read-only config, helpers
+and tool paths needed by the checks; it grants no write scope. Do not probe an
+unknown wrapper with `--help` if that might execute its default gate.
 
 Use this for every worker dispatch when the scripts are available, and always
 for a worker on another runtime (see `runners.md`):
@@ -211,7 +220,7 @@ for a worker on another runtime (see `runners.md`):
    with the caller's permissions. The field must contain only exact backticked
    commands separated by semicolons; prose returns BLOCKED for manual checks.
    `accept` validates the report JSON, runs Verification (reused automatically
-   when Files content and commands are unchanged), and checks scope before and
+    when owned files, verification inputs, commands and environment are unchanged), and checks scope before and
    after. One call reports scope violations and check results together.
    `derived:` lists Derived-file and lockfile changes; they are not violations.
    **ACCEPTED** records Evidence, Evidence hash and Accepted result in `plan.md`.
@@ -220,7 +229,11 @@ for a worker on another runtime (see `runners.md`):
    never acceptance. For a required out-of-scope path use
    `amend --allow <path>` or `--derived <path>` with `--reason`; controller edits
    outside the artifact root use `--controller-path`. Preserve the original
-   baseline and report; never silently widen Files.
+    baseline and report; never silently widen Files.
+3. `specadoc_step.py manifest <slug> T<n>` prints actual baseline-relative changed
+   paths and literal Review scope bullets for the report, without editing either.
+   Run it before acceptance/next dispatch; preserve unrelated dirty files and
+   inspect the proposed paths. Scope violations fail instead of being adopted.
 
 Every step prints the same five fields (`checked`, `result`, `changed files`,
 `blocking reason`, `next`) and only the tail of a failing command. The

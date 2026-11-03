@@ -2,7 +2,7 @@
 
 Load this reference only for `specadoc apply <slug>`.
 
-1. Refuse edits until spec/plan validation and explicit plan approval are recorded.
+1. Require validated spec/plan and recorded explicit approval before edits.
    Start apply in a fresh session after propose. `dispatch` blocks at roughly 150k
    controller context: save a compact handoff and resume `apply <slug>` in a new
    session. Claude Code sessions are read automatically; other hosts pass the
@@ -14,23 +14,27 @@ Load this reference only for `specadoc apply <slug>`.
    is in scope: `package.json` in its directory or a workspace package below it,
    `go.mod` for `go.sum`, or a same-stem manifest for `<stem>.lock`. A `low` label does not authorize architecture,
    catalog, contrast or compatibility decisions.
-3. `specadoc_step.py dispatch <slug> T<n>` checks readiness, records the task
-   baseline and writes the brief. Retries keep the original baseline. Delegate one
+3. `specadoc_step.py dispatch <slug> T<n>` validates readiness, paths, commands
+   and routing before writing baseline/brief; it executes no Verification.
+   Optional `preflight <slug> T<n>` checks without writes; do not repeat it before
+   dispatch. Retries keep the original baseline. Delegate one
    fully specified task at a time; serialize overlapping writers. Routed projects
-   pass `--controller-runtime`; see `subagent-routing.md`.
+   pass `--controller-runtime`; see `subagent-routing.md`. One-file, one-cycle
+   controller corrections use these gates with `Owner: controller` and
+   `Controller justification`, without a worker.
 4. Worker uses RED-GREEN-REFACTOR; an explicit `TDD exception` names the
    deterministic check for mechanical work. REFACTOR may include
    optional behavior-preserving cleanup (`interoperability.md`). Worker checks
    are focused; the full suite runs once in Final verification.
 5. Read the report, then `specadoc_step.py accept <slug> T<n>`. It validates the
-   report JSON, runs Verification (reused automatically for unchanged Files and
-   commands), checks scope, and on **ACCEPTED** records Evidence, Evidence hash
+   report JSON, runs Verification (reused only for unchanged content inputs,
+   commands and environment), checks scope, and on **ACCEPTED** records Evidence, Evidence hash
    and Accepted result. One call reports both scope violations and check results.
    Concerns return **NEEDS_DECISION**: rerun with `--note '<decision>'`.
    A returned status is a claim, not evidence.
-6. The controller runs the final affected-only verification once, records observed
-   Build/Typecheck PASS and Browser URL/state for UI tasks, and fills Review
-   scope from the actual executable diff (literal paths, `!path` for deletion).
+6. Controller runs final affected-only checks once, records observed Build/Typecheck
+   PASS and Browser URL/state for UI, and fills literal Review scope from the
+   executable diff (`!path` means deleted).
 7. On a stable diff, `specadoc_step.py pre-review <slug>` records the pending
    round; then run one independent read-only `reviewer`.
    On return run `specadoc_step.py review-result <slug> --result-file <json>`
@@ -69,7 +73,7 @@ Load this reference only for `specadoc apply <slug>`.
 
 ## Reading order
 
-Load only what the current step needs; do not front-load references before RED.
+Load references when needed, not all before RED.
 
 | Reference | Read it when | Not before |
 |---|---|---|

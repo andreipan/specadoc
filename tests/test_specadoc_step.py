@@ -253,9 +253,10 @@ class SpecadocStepTest(unittest.TestCase):
     def test_ambiguous_verification_does_not_execute_inline_spans(self):
         plan = self.project / 'docs/specadoc/demo/plan.md'
         plan.write_text(PLAN.replace('`python3 check_label.py`', 'Check `label.py` with `python3 check_label.py`'))
-        self.step('dispatch', 'demo', 'T1', expected=0)
-        fields, _ = self.step('accept', 'demo', 'T1', '--verify', expected=2)
+        fields, _ = self.step('dispatch', 'demo', 'T1', expected=2)
+        self.assertFalse((self.project / 'docs/specadoc/demo/runs/T1-baseline.json').exists())
         self.assertIn('Verification', fields['blocking reason'])
+        self.step('accept', 'demo', 'T1', '--verify', expected=2)
 
     def test_scope_is_checked_again_after_verification(self):
         plan = self.project / 'docs/specadoc/demo/plan.md'

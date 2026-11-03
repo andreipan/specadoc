@@ -633,7 +633,7 @@ def files_patterns(files_field: str) -> tuple[list[str], list[str]]:
         if not item:
             continue
         found = [
-            match.group("pattern").strip().strip("/")
+            match.group("pattern").strip().rstrip("/")
             for match in FILES_PATH.finditer(item)
         ]
         found = [entry for entry in found if entry and "::" not in entry and "(" not in entry]
@@ -653,27 +653,49 @@ def files_field_hash(files_field: str) -> str | None:
     addition to content edits. Returns None only when the field names no
     candidate at all.
     """
-    digests: list[str] = []
-    for raw in re.split(r"[,\n]", files_field):
-        candidate = raw.strip().strip("`")
-        if not candidate:
-            continue
-        path = Path(candidate)
-        state = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
-        digests.append(f"{candidate}\0{state}")
+    digests = [f"{path}\0{state}" for path, state in files_field_digests(files_field).items()]
     if not digests:
         return None
     return hashlib.sha256("\n".join(sorted(digests)).encode("utf-8")).hexdigest()
 
 
-def files_field_digests(files_field: str) -> dict[str, str]:
-    """Per-path content digests (or `missing`) for the literal paths in a `Files:` field."""
+def files_field_digests(files_field: str, *, repository_only: bool = False) -> dict[str, str]:
+    """Content/presence digests; directories and globs include their actual children.
+
+    Keep literal absolute paths for the legacy --files-hash utility. Apply tasks
+    validate repository-relative patterns separately before using this helper.
+    """
+    import glob
+    def check(path: Path) -> None:
+        if repository_only and not path.resolve().is_relative_to(Path.cwd().resolve()):
+            raise ValueError(f"verification path leaves repository: {path}")
     digests: dict[str, str] = {}
-    for raw in re.split(r"[,\n]", files_field):
-        candidate = raw.strip().strip("`")
-        if candidate:
-            path = Path(candidate)
-            digests[candidate] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
+    candidates, invalid = files_patterns(files_field)
+    if "`" not in files_field:
+        # Legacy --files-hash accepts bare paths, including absolute ones.
+        candidates = [path for raw in FILES_SPLIT.split(files_field) if raw.strip()
+                      for path in _expand_braces(raw.strip())]
+        invalid = []
+    if invalid:
+        raise ValueError("Files items are not paths: " + ", ".join(invalid))
+    for candidate in candidates:
+        # Brackets are literal route segments, not character classes. Escape them
+        # even in patterns such as app/[slug]/*.tsx; only * and ? are wildcards.
+        glob_pattern = "".join(glob.escape(char) if char in "[]" else char for char in candidate)
+        matches = sorted(glob.glob(glob_pattern, recursive=True)) if any(c in candidate for c in "*?") else [candidate]
+        if not matches:
+            digests[candidate] = "missing"
+        for match in matches:
+            path = Path(match)
+            check(path)
+            if path.is_dir():
+                digests[path.as_posix()] = "directory"
+                for child in sorted(path.rglob("*")):
+                    check(child)
+                    if ".git" not in child.parts and child.is_file():
+                        digests[child.as_posix()] = hashlib.sha256(child.read_bytes()).hexdigest()
+            else:
+                digests[path.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "missing"
     return digests
 
 
@@ -691,7 +713,20 @@ def evidence_is_current(runs: Path, task: str, files_field: str) -> bool | None:
     recorded = (record.get("verification") or {}).get("files") if isinstance(record, dict) else None
     if not isinstance(recorded, dict) or record.get("state") != "accepted":
         return None
-    current = files_field_digests(files_field)
+    inputs = (record.get("verification") or {}).get("inputs")
+    if not isinstance(inputs, dict) or inputs.get("version") != 1:
+        return False  # Older acceptance records must be reverified, never upgraded by assumption.
+    from verification_inputs import capture
+    plan = Document(runs.parent / "plan.md", "plan.md")
+    fields = next((task_fields(plan, start, end) for identifier, start, end in plan.blocks("Tasks", "T")
+                   if identifier == task), {})
+    if " ".join(fields.get("Verification", "").split()) != record.get("frozen", {}).get("verification"):
+        return False
+    root = runs.parent.parent.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    current_inputs = capture(fields, root)
+    current = current_inputs["owned"]
+    if any(current_inputs.get(key) != inputs.get(key) for key in ("declared", "python", "environment_hash")):
+        return False
     if set(current) != set(recorded):
         return False
     owned: dict[str, set[str]] = {}
@@ -705,7 +740,15 @@ def evidence_is_current(runs: Path, task: str, files_field: str) -> bool | None:
         if isinstance(state, dict) and state.get("state") == "accepted":
             for path, value in ((state.get("verification") or {}).get("files") or {}).items():
                 owned.setdefault(path, set()).add(value)
-    return all(current[path] == recorded[path] or current[path] in owned.get(path, ()) for path in current)
+    if not all(current[path] == recorded[path] or current[path] in owned.get(path, ()) for path in current):
+        return False
+    previous_checks = inputs.get("checks", {})
+    current_checks = current_inputs["checks"]
+    # Later accepted work may independently verify overlapping inputs. Other
+    # config/source/context drift must invalidate dependency evidence as well.
+    return all(current_checks.get(path, "missing") == previous_checks.get(path, "missing")
+               or current_checks.get(path, "missing") in owned.get(path, ())
+               for path in previous_checks.keys() | current_checks.keys())
 
 
 def repeated_verification_warnings(plan: Document) -> list[str]:
@@ -1024,7 +1067,7 @@ def check_review_readiness(plan: Document) -> list[Violation]:
 
         evidence_hash = fields.get("Evidence hash", "").strip()
         current_evidence = evidence_is_current(plan.path.parent / "runs", identifier, fields.get("Files", ""))
-        if evidence_hash and not PENDING.search(evidence_hash) and current_evidence is not True:
+        if current_evidence is False or (evidence_hash and not PENDING.search(evidence_hash) and current_evidence is not True):
             current_hash = files_field_hash(fields.get("Files", ""))
             if current_evidence is False or (current_hash is not None and current_hash != evidence_hash):
                 violations.append(

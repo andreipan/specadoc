@@ -12,8 +12,12 @@ Load this reference only for `specadoc propose`.
 4. Run `validate_change.py <slug> --phase spec` and clear violations. Record
    the risk. Do not stop for model approval: Specadoc fixes no model level.
 5. Complete a small ordered set of independently verifiable tasks (usually
-   three to eight, a heuristic rather than a hard limit) and the
-   requirement-to-check matrix in `plan.md`.
+    three to eight, a heuristic rather than a hard limit) and the
+    requirement-to-check matrix in `plan.md`.
+    Merge adjacent mechanical steps with shared files/checks before dispatch;
+    use the existing controller exception for a one-file, one-cycle correction.
+    Reuse exact verifier commands, explicit project configs, baseline failures
+    and DB/live permission limits in each task's bounded `Test context`.
    Use an installed architecture-design companion only for unresolved interface
    choices; use domain modeling when meanings or invariants need sharpening.
    The controller decides; bounded workers do not choose architecture. Preserve

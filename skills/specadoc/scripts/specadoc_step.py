@@ -14,11 +14,14 @@ script outputs:
 
 Steps:
 
-- `dispatch <slug> T<n>` — worker baseline plus brief, before dispatch.
-- `accept <slug> T<n> [--verify]` — scope check after the worker returns and,
-  with `--verify`, exact Verification commands, then a second scope check.
+- `preflight <slug> T<n>` — read-only task validation, no Verification execution.
+- `dispatch <slug> T<n>` — preflight, task baseline and brief; also supports a
+  justified controller microfix without launching a worker.
+- `manifest <slug> T<n>` — JSON actual changed paths and suggested review bullets.
+- `accept <slug> T<n>` — scope check, report validation, exact Verification
+  commands, then a second scope check.
   Commands must occupy the entire field, backticked and separated by semicolons.
-  Run from the repository root; --verify executes shell commands with the
+  Run from the repository root; accept executes shell commands with the
   caller's permissions. Inspect them first and follow host approval rules.
 - `pre-review <slug>` — the pre-review gate plus the snapshot manifest to record
   in the new `### G<n>` round.
@@ -39,7 +42,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import resolve_root  # noqa: E402
-from validate_change import Document, task_fields, review_policy_hash, files_field_hash, files_field_digests  # noqa: E402
+from validate_change import Document, task_fields, review_policy_hash  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
 
@@ -115,6 +118,58 @@ def reopen_attempt(change: Path, task: str, reason: str) -> list[dict]:
     return attempts
 
 
+def preflight_checks(slug: str, task: str, root: str | None, controller: str | None) -> tuple[list[str], list[str]]:
+    """Read-only validation. Collect errors before freezing any task state."""
+    plan_path = Path(resolve_root(root).path) / slug / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    checked = ["apply readiness", "Files/Derived files", "Verification inputs", "Verification", "validate plan"]
+    errors = readiness(plan, task)
+    _, _, fields = task_block(plan, task)
+    from verification_inputs import patterns
+    for name in ("Files", "Derived files", "Verification inputs"):
+        try:
+            resolved = patterns(fields.get(name, ""))
+            if name == "Files" and not resolved:
+                errors.append("Files: at least one valid path is required")
+        except ValueError as exc:
+            errors.append(f"{name}: {exc}")
+    try:
+        verification_commands(slug, task, root)
+    except ValueError as exc:
+        errors.append(str(exc))
+    try:
+        if fields.get("Owner", "").lower() == "controller":
+            from specadoc_config import load_config
+            config = load_config(Path.cwd())
+            if "roles" in config and not controller:
+                raise ValueError("routed controller execution requires --controller-runtime")
+            expected = config.get("roles", {}).get("controller", {}).get("runtime")
+            if expected and expected != controller:
+                raise ValueError(f"controller runtime is {controller}, binding expects {expected}")
+            checked.append("controller execution; no worker dispatch")
+        else:
+            checked += binding_check("worker", controller)
+    except ValueError as exc:
+        errors.append(str(exc))
+    gate = run_script("validate_change.py", slug, "--phase", "plan", *root_args(root))
+    if gate.returncode:
+        errors.append(tail(gate.stderr + gate.stdout))
+    # Build in memory as well, so a missing requirement cannot leave a baseline.
+    from task_brief import build_brief
+    try:
+        build_brief(plan_path.parent, task)
+    except (OSError, ValueError, RuntimeError) as exc:
+        errors.append(str(exc))
+    return checked, list(dict.fromkeys(errors))
+
+
+def preflight(slug: str, task: str, root: str | None, controller: str | None) -> int:
+    checked, errors = preflight_checks(slug, task, root, controller)
+    return emit(checked, "FAIL" if errors else "PASS", [], "; ".join(errors),
+                "fix all reported task inputs before dispatch" if errors else
+                "inputs valid; no commands executed and no state written")
+
+
 def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
              context_tokens: int | None = None, reopen: str | None = None) -> int:
     context_source = "reported"
@@ -130,12 +185,10 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
                     "save the current handoff and resume apply in a fresh session before another dispatch")
     plan_path = Path(resolve_root(root).path) / slug / "plan.md"
     plan = Document(plan_path, str(plan_path))
-    if errors := readiness(plan, task):
-        return emit(["apply readiness"], "BLOCKED", [], "; ".join(errors), "resolve approval, dependencies and decisions before dispatch")
-    gate = run_script("validate_change.py", slug, "--phase", "plan", *root_args(root))
-    if gate.returncode:
-        return emit(["validate plan"], "BLOCKED", [], tail(gate.stderr + gate.stdout), "fix the plan before dispatch")
-    checked = binding_check("worker", controller)
+    checked, errors = preflight_checks(slug, task, root, controller)
+    if errors:
+        return emit(checked, "FAIL" if any("paths" in error for error in errors) else "BLOCKED", [],
+                    "; ".join(errors), "resolve all preflight errors before dispatch; no baseline written")
     checked.append(f"context {context_tokens} tokens ({context_source})" if context_tokens is not None
                    else "context not reported (pass --context-tokens from the host's observed count)")
     attempts = previous_manifest = None
@@ -169,7 +222,10 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     _, failure = check_scope(slug, task, root, checked)
     if failure is not None:
         return failure
-    return emit(checked, "PASS", [], "", f"dispatch the worker with brief {brief_path} and report {report}")
+    owner = task_block(plan, task)[2].get("Owner", "worker").lower()
+    next_step = (f"execute the justified controller task using {brief_path}; record result in {report}" if owner == "controller"
+                 else f"dispatch the worker with brief {brief_path} and report {report}")
+    return emit(checked, "PASS", [], "", next_step)
 
 
 def verification_commands(slug: str, task: str, root: str | None) -> list[str]:
@@ -285,11 +341,13 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     baseline_path = change / "runs" / f"{task}-baseline.json"
     record = json.loads(baseline_path.read_text())
     _, _, fields = task_block(plan, task)
-    file_hash = files_field_hash(fields.get("Files", ""))
+    from verification_inputs import capture, content_hash
+    inputs = capture(fields, resolve_root(root).path)
     prior = record.get("verification", {})
-    # Verification is reused automatically only for byte-identical Files and commands.
-    reuse = (file_hash is not None and prior.get("files_hash") == file_hash
-             and prior.get("commands") == commands and prior.get("passed") is True)
+    # A legacy Files hash alone cannot establish verifier input equivalence.
+    reuse = (prior.get("inputs") == inputs
+              and prior.get("commands") == commands and prior.get("passed") is True)
+    logs = []
     for command in ([] if reuse else commands):
         checked.append(command)
         try:
@@ -298,7 +356,8 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
             return emit(checked, "BLOCKED", violations, f"verification timed out after {verification_timeout:g}s",
                         "inspect the existing process/log before retrying; keep the same baseline")
         log = change / "runs" / f"{task}-verify.log"
-        log.write_text(result.stdout + result.stderr, encoding="utf-8")
+        logs.append(f"$ {command}\n" + result.stdout + result.stderr)
+        log.write_text("\n".join(logs), encoding="utf-8")
         if result.returncode != 0:
             detail = tail(result.stdout + result.stderr)
             reason = f"`{command}` exited {result.returncode}"
@@ -312,8 +371,15 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     if failure is not None:
         return failure
     violations = list(dict.fromkeys([*violations, *after]))
-    record["verification"] = {"commands": commands, "files_hash": files_field_hash(fields.get("Files", "")),
-                              "files": files_field_digests(fields.get("Files", "")), "passed": True, "at": timestamp()}
+    after_inputs = capture(fields, resolve_root(root).path)
+    if after_inputs != inputs:
+        record.pop("verification", None)
+        save(baseline_path, record)
+        return emit(checked, "FAIL" if violations else "BLOCKED", violations or changed,
+                    "verification inputs changed while commands ran" + ("; also changes outside scope" if violations else ""),
+                    "inspect generated changes, then rerun verification on the stable inputs")
+    record["verification"] = {"commands": commands, "files_hash": content_hash(inputs["owned"]),
+                               "files": inputs["owned"], "inputs": inputs, "passed": True, "at": timestamp()}
     if violations:
         save(baseline_path, record)
         return emit(checked, "FAIL", violations, "verification passed, but changes are outside the task scope", scope_next)
@@ -333,7 +399,7 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
                 and re.match(r"(?:build|typecheck|browser):", part, re.I)]
         if kept:
             evidence += "; " + "; ".join(kept)
-    values = {"Evidence": evidence, "Evidence hash": files_field_hash(fields.get("Files", "")) or "Not recorded",
+    values = {"Evidence": evidence, "Evidence hash": content_hash(inputs["owned"]),
               "Accepted result": payload["summary"] + (f"; controller: {note}" if note else "")}
     plan_path.write_text(update_task(plan, task, values, complete=True), encoding="utf-8")
     record.update(state="accepted", accepted_at=timestamp(), accepted_result=values["Accepted result"],
@@ -387,6 +453,22 @@ def amend(slug: str, task: str, root: str | None, allowed: list[str], controller
     return emit(["explicit controller amendment"], "CHECKED", paths, "", "retry the same task; original baseline is retained")
 
 
+def task_manifest(slug: str, task: str, root: str | None) -> int:
+    """Suggest literal deltas, never edit reports, scope or acceptance decisions."""
+    changed, violations, _, failure = scope_state(slug, task, root, ["task manifest"])
+    if failure is not None:
+        return failure
+    if violations:
+        return emit(["task manifest"], "FAIL", violations, "changes outside the task scope",
+                    "resolve the scope violation; no paths adopted automatically")
+    artifact_root = resolve_root(root).path
+    from review_snapshot import _under
+    paths = [path for path in changed if not _under(path, artifact_root)]
+    print(json.dumps({"task": task, "files_changed": paths,
+                      "review_scope": [f"- `{path if Path(path).is_file() else '!' + path}`" for path in paths]}, indent=2))
+    return 0
+
+
 def pre_review(slug: str, root: str | None, controller: str | None = None, *,
                review_type: str = "initial", reason: str | None = None,
                decision: str | None = None, record_round: bool = False) -> int:
@@ -418,7 +500,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", help="Artifact root (default: resolved, see specadoc_root.py)")
     steps = parser.add_subparsers(dest="step", required=True)
-    for name in ("dispatch", "accept", "amend"):
+    for name in ("preflight", "dispatch", "accept", "amend", "manifest"):
         step = steps.add_parser(name)
         step.add_argument("change_slug")
         step.add_argument("task", help="Task id such as T3")
@@ -447,17 +529,21 @@ def build_parser() -> argparse.ArgumentParser:
     settled = steps.add_parser("review-result")
     settled.add_argument("change_slug")
     settled.add_argument("--result-file", required=True)
-    for step in (steps.choices["dispatch"], review):
+    for step in (steps.choices["preflight"], steps.choices["dispatch"], review):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.step in ("dispatch", "accept", "amend") and not re.fullmatch(r"T\d+", args.task):
+    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest") and not re.fullmatch(r"T\d+", args.task):
         print("error: task must look like T<n>", file=sys.stderr)
         return 2
     try:
+        if args.step == "preflight":
+            return preflight(args.change_slug, args.task, args.root, args.controller_runtime)
+        if args.step == "manifest":
+            return task_manifest(args.change_slug, args.task, args.root)
         if args.step == "dispatch":
             return dispatch(args.change_slug, args.task, args.root, args.controller_runtime, args.context_tokens,
                             args.reopen)
