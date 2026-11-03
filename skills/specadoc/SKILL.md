@@ -62,6 +62,15 @@ and obtaining the approvals required for the revised scope.
   and records the accepted result before the next task. Save review results
   before asking the user; do not relabel corrective rounds or fold follow-ups
   into completed tasks.
+- A failed gate is diagnostic evidence, not permission to rewrite a baseline,
+  weaken frozen Verification, hide completed work, or change approval records
+  merely to pass. Use the documented amendment, reopen, or explicitly authorized
+  exception path; if none applies, report the blocker. (#2259, #2271, #2314)
+- When a required check is reserved for the user, keep its task unaccepted until
+  the user supplies the result. Static checks do not replace that evidence.
+  Give the exact command and prerequisites, record the observed result, and
+  resume the same change; do not claim final completion while it is pending.
+  (#1521, #1524)
 - Follow the host's command conventions (for example a required command prefix
   in repository or harness instructions) for every shell command shown or run.
 - `<skill-root>` in references means this skill's directory
