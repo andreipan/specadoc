@@ -99,10 +99,23 @@ def inspect_routing(cwd: Path, controller: str, which=None,
     return findings
 
 
+def plan_roles(plan_path: Path) -> set[str]:
+    """Roles an approved plan dispatches: one final reviewer, and a worker when a task names one."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from validate_change import Document, task_fields
+    plan = Document(plan_path, str(plan_path))
+    owners = {task_fields(plan, start, end).get("Owner", "").strip().lower()
+              for _, start, end in plan.blocks("Tasks", "T")}
+    return {"reviewer"} | ({"worker"} if "worker" in owners else set())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cwd", type=Path, default=Path.cwd())
     parser.add_argument("--role", choices=ROLES)
+    parser.add_argument("--change", metavar="SLUG",
+                        help="Check only the roles this change's plan uses; other roles' errors become warnings")
+    parser.add_argument("--root", help="Artifact root for --change (default: resolved)")
     parser.add_argument("--controller-runtime", choices=RUNTIMES, required=True)
     parser.add_argument("--dry-run", action="store_true", help="read-only; this command never launches agents")
     parser.add_argument("--check-cli", action="store_true")
@@ -110,17 +123,32 @@ def main() -> int:
     args = parser.parse_args()
     args.cwd = args.cwd.resolve()
     try:
-        roles = [args.role] if args.role else ROLES
-        routes = [resolve_role(args.cwd, role, args.controller_runtime) for role in roles]
-        findings = inspect_routing(args.cwd, args.controller_runtime, resolved=routes) if args.check_cli else []
-        if args.compact:
-            keys = ("role", "runtime", "model", "effort", "dispatch")
-            routes = [{key: route[key] for key in keys} for route in routes]
-        print(json.dumps({"routes": routes, "findings": findings}, indent=None if args.compact else 2))
-        return int(any(row["level"] == "ERROR" for row in findings))
+        roles = [args.role] if args.role else list(ROLES)
+        used = set(roles)
+        if args.change:
+            from specadoc_root import resolve_root
+            used = plan_roles(args.cwd / resolve_root(args.root, cwd=args.cwd).path / args.change / "plan.md")
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    # One broken role file must not hide the bindings that a plan actually uses.
+    routes, findings = [], []
+    for role in roles:
+        try:
+            routes.append(resolve_role(args.cwd, role, args.controller_runtime))
+        except (ValueError, OSError) as exc:
+            findings.append({"level": "ERROR" if role in used else "WARN", "role": role,
+                             "message": str(exc) + ("" if role in used else "; unused by this plan")})
+    if not routes and findings and all(row["level"] == "ERROR" for row in findings) and len(roles) == 1:
+        print(f"error: {findings[0]['message']}", file=sys.stderr)
+        return 2
+    if args.check_cli:
+        findings += inspect_routing(args.cwd, args.controller_runtime, resolved=routes)
+    if args.compact:
+        keys = ("role", "runtime", "model", "effort", "dispatch")
+        routes = [{key: route[key] for key in keys} for route in routes]
+    print(json.dumps({"routes": routes, "findings": findings}, indent=None if args.compact else 2))
+    return int(any(row["level"] == "ERROR" for row in findings))
 
 
 if __name__ == "__main__":

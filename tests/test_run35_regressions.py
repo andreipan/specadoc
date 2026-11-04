@@ -364,5 +364,42 @@ class PlanGrowthTest(unittest.TestCase):
         self.assertLess(len(result.stdout.splitlines()), 12)
 
 
+class SmallFrictionTest(unittest.TestCase):
+    """3.5 small items: controller runtime default, 'pending' in a real reason, prose Verification."""
+    setUp = reliability.ApplyReliabilityTest.setUp
+    tearDown = reliability.ApplyReliabilityTest.tearDown
+    run_step = reliability.ApplyReliabilityTest.run_step
+    report = reliability.ApplyReliabilityTest.report
+    validate = ExternalVerificationTest.validate
+
+    def test_reason_may_mention_pending_but_not_be_a_placeholder(self):
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        self.repo.joinpath('wiring.py').write_text('x = 1\n')
+        result = self.run_step('amend', 'demo', 'T1', '--allow', 'wiring.py',
+                               '--reason', 'Integration wiring; external run pending user authorization')
+        self.assertEqual(0, result.returncode, result.stdout)
+        for placeholder in ('pending', 'TBD.', 'n/a', ' '):
+            result = self.run_step('amend', 'demo', 'T1', '--allow', 'wiring.py', '--reason', placeholder)
+            self.assertEqual(2, result.returncode, (placeholder, result.stdout))
+
+    def test_controller_runtime_defaults_to_the_project_binding(self):
+        self.repo.joinpath('.claude/agents').mkdir(parents=True)
+        self.repo.joinpath('.claude/agents/worker.md').write_text('---\nmodel: host\neffort: low\n---\nworker\n')
+        self.repo.joinpath('.specadoc.json').write_text(json.dumps(
+            {'version': 1, 'roles': {'controller': {'runtime': 'claude'}, 'worker': {'runtime': 'claude'}}}))
+        result = self.run_step('dispatch', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('controller runtime claude from .specadoc.json', result.stdout)
+        self.assertIn('resolved worker claude/host/low', result.stdout)
+
+    def test_prose_verification_fails_at_plan_time_not_dispatch(self):
+        self.plan.write_text(PLAN.replace('- [x] Complete', '- [ ] Complete', 1).replace(
+            '- **Verification:** `python3 check_label.py`',
+            '- **Verification:** `python3 check_label.py`; integration suite after review PASS', 1))
+        result = self.validate('plan')
+        self.assertIn('T1: Verification must be exact backticked commands', result.stdout + result.stderr)
+        self.assertIn('External verification', result.stdout + result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

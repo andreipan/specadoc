@@ -119,9 +119,12 @@ class ApplyReliabilityTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_context_boundary_prevents_another_dispatch(self):
-        result = self.run_step('dispatch', 'demo', 'T1', '--context-tokens', '160000')
+        result = self.run_step('dispatch', 'demo', 'T1', '--context-tokens', '210000')
         self.assertNotEqual(0, result.returncode)
         self.assertIn('handoff', result.stdout.lower())
+        self.assertIn('at least 200k', result.stdout)
+        result = self.run_step('dispatch', 'demo', 'T1', '--context-tokens', '160000')
+        self.assertEqual(0, result.returncode, result.stdout)
 
     def test_capability_application_does_not_break_resumed_dispatch(self):
         self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
@@ -319,17 +322,17 @@ class ApplyReliabilityTest(unittest.TestCase):
                               cwd=self.repo, env=env, capture_output=True, text=True)
 
     def test_dispatch_reads_this_claude_sessions_context(self):
-        env = self.claude_session(170000)
+        env = self.claude_session(210000)
         result = self.run_step_env(env, 'dispatch', 'demo', 'T1')
         self.assertNotEqual(0, result.returncode, result.stdout)
-        self.assertIn('170000', result.stdout)
+        self.assertIn('210000', result.stdout)
         self.assertIn('session-1.jsonl', result.stdout)
         result = self.run_step_env(env, 'dispatch', 'demo', 'T1', '--context-tokens', '40000')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn('context 40000 tokens (reported)', result.stdout)
 
     def test_dispatch_ignores_inherited_claude_session_for_other_runtimes(self):
-        env = self.claude_session(170000)
+        env = self.claude_session(210000)
         for runtime in ('codex', 'opencode'):
             result = self.run_step_env(env, 'dispatch', 'demo', 'T1', '--controller-runtime', runtime)
             self.assertNotIn('context budget', result.stdout)

@@ -3,7 +3,7 @@
 Load this reference only for `specadoc apply <slug>`.
 
 1. Require validated spec/plan and recorded explicit approval before edits.
-   Start apply in a fresh session after propose. `dispatch` blocks at roughly 150k
+   Start apply in a fresh session after propose. `dispatch` blocks at roughly 200k
    controller context: save session notes with `specadoc_step.py handoff <slug>
    --file -` (overwrites `runs/handoff.md`; never append them to plan.md) and
    resume `apply <slug>` in a new session from `specadoc_step.py status <slug>`. Claude Code sessions are read automatically; other hosts pass the
@@ -24,7 +24,9 @@ Load this reference only for `specadoc apply <slug>`.
    dispatch. Retries keep the original baseline. A controller
    task uses the same gates without a worker and need not read its brief.
    Delegate one fully specified worker task at a time; serialize overlapping
-   writers. Routed projects pass `--controller-runtime`; see `subagent-routing.md`.
+   writers. Routed projects pass `--controller-runtime`, or `specadoc_step.py`
+   takes `roles.controller.runtime` from `.specadoc.json` and says so in
+   `checked:`; see `subagent-routing.md`.
 4. The implementer, controller or worker, uses RED-GREEN-REFACTOR; an explicit `TDD exception` names the
    deterministic check for mechanical work. REFACTOR may include
    optional behavior-preserving cleanup (`interoperability.md`). Task checks

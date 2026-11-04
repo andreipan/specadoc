@@ -150,6 +150,24 @@ class RoutingTest(unittest.TestCase):
         self.assertNotIn("config", data["routes"][0])
         self.assertNotIn("fingerprint", data["routes"][0])
 
+    def test_unused_broken_role_does_not_fail_the_plan_check(self):
+        # 3.5: an unused worker with `effort: meduim` failed the global binding check.
+        self.role("claude", "worker", "host", "meduim")
+        for role in ("scout", "reviewer"):
+            self.role("claude", role, "rev", "medium")
+        plan = self.repo / "docs/specadoc/demo/plan.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# Plan\n## Tasks\n### T1 — One\n- [ ] Complete\n- **Owner:** controller\n")
+        code, data = self.cli("--change", "demo", "--compact")
+        self.assertEqual(code, 0, data)
+        self.assertEqual({"scout", "reviewer"}, {row["role"] for row in data["routes"]})
+        self.assertEqual([("WARN", "worker")], [(row["level"], row["role"]) for row in data["findings"]])
+        self.assertIn("unused by this plan", data["findings"][0]["message"])
+        plan.write_text(plan.read_text().replace("controller", "worker"))
+        code, data = self.cli("--change", "demo", "--compact")
+        self.assertEqual(code, 1)
+        self.assertEqual([("ERROR", "worker")], [(row["level"], row["role"]) for row in data["findings"]])
+
     def test_edited_role_file_effort_applies_to_next_resolution(self):
         self.role("claude", "reviewer", "rev", "medium")
         self.assertEqual(resolve_role(self.repo, "reviewer", "claude")["effort"], "medium")

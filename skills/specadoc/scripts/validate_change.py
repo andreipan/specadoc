@@ -71,6 +71,8 @@ TASK_FIELDS = (
 WORKER_ONLY_FIELDS = ("Verification owner",)
 PLAN_SIZE_WARNING = 32 * 1024
 HANDOFF_SECTION_WARNING = 2 * 1024
+# `accept` executes Verification, so it holds only exact commands.
+VERIFICATION_COMMANDS = re.compile(r"\s*`[^`\n]+`(?:\s*;\s*`[^`\n]+`)*\s*")
 
 OWNERS = ("controller", "worker")
 VERIFICATION_OWNERS = ("worker", "controller")
@@ -816,8 +818,7 @@ def controller_routing_warnings(plan: Document) -> list[str]:
                 or fields.get("Decision risk", "").strip().lower() != "low"
                 or not NO_VALUE.match(fields.get("Open decisions", "None").strip() or "None")):
             continue
-        verification = fields.get("Verification", "")
-        if not re.fullmatch(r"\s*`[^`\n]+`(?:\s*;\s*`[^`\n]+`)*\s*", verification):
+        if not VERIFICATION_COMMANDS.fullmatch(fields.get("Verification", "")):
             continue
         paths, uncheckable = files_patterns(fields.get("Files", ""))
         if paths and not uncheckable:
@@ -910,6 +911,18 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                         + "; ".join(uncheckable),
                     )
                 )
+        verification = fields.get("Verification", "")
+        if (not complete and verification.strip() and not PENDING.search(verification)
+                and not re.search(r"<[^>]+>", verification) and not VERIFICATION_COMMANDS.fullmatch(verification)):
+            violations.append(
+                Violation(
+                    plan.display,
+                    start + 1,
+                    f"{identifier}: Verification must be exact backticked commands separated by semicolons, "
+                    "because accept executes them; move manual or reserved checks to External verification "
+                    "and conditions to Done when",
+                )
+            )
         verification_owner = fields.get("Verification owner", "").strip().lower()
         if verification_owner and verification_owner not in VERIFICATION_OWNERS:
             violations.append(

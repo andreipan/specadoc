@@ -59,8 +59,16 @@ from task_state import approval_error, digest, readiness, safe_path, save, task_
 
 COMMAND = re.compile(r"`([^`]+)`")
 AUTO_EVIDENCE = re.compile(r"`[^`]+` — PASS")
-PENDING_REASON = re.compile(r"\b(?:pending|TBD|N/A)\b", re.I)
+# A placeholder instead of a decision. Words such as "pending" inside a real
+# reason ("integration pending user authorization") are allowed.
+PLACEHOLDER = re.compile(r"\s*(?:pending|tbd|n/?a|none|todo|-|\?+)?\s*[.!]?\s*", re.I)
+
+
+def placeholder(text: str | None) -> bool:
+    return text is None or bool(PLACEHOLDER.fullmatch(text))
 TAIL_LINES = 30
+# Controller context at which dispatch stops for a session boundary.
+CONTEXT_GUARD = 200_000
 
 
 def run_script(script: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -91,15 +99,30 @@ def root_args(root: str | None) -> list[str]:
     return ["--root", root] if root else []
 
 
+DEFAULTED_CONTROLLER: list[str] = []
+
+
+def default_controller(controller: str | None) -> str | None:
+    """`--controller-runtime`, else the project's `roles.controller.runtime`; never a guess."""
+    if controller:
+        return controller
+    from specadoc_config import load_config
+    configured = ((load_config(Path.cwd()).get("roles") or {}).get("controller") or {}).get("runtime")
+    if configured:
+        DEFAULTED_CONTROLLER.append(f"controller runtime {configured} from .specadoc.json "
+                                    "(pass --controller-runtime when this session runs elsewhere)")
+    return configured
+
+
 def binding_check(role: str, controller: str | None) -> list[str]:
     from specadoc_config import load_config
     if not (controller or "roles" in load_config(Path.cwd())):
         return []  # Legacy host/plugin registry fallback, unchanged.
     if not controller:
-        raise ValueError("routed dispatch requires --controller-runtime")
+        raise ValueError("routed dispatch requires --controller-runtime or roles.controller.runtime")
     from role_routing import resolve_role
     route = resolve_role(Path.cwd(), role, controller)
-    return [f"resolved {role} {route['runtime']}/{route['model']}/{route['effort']}"]
+    return [*DEFAULTED_CONTROLLER, f"resolved {role} {route['runtime']}/{route['model']}/{route['effort']}"]
 
 
 def reopen_attempt(change: Path, task: str, reason: str) -> list[dict]:
@@ -108,7 +131,7 @@ def reopen_attempt(change: Path, task: str, reason: str) -> list[dict]:
     Retries keep the original baseline; a reopen is the explicit exception for
     corrective work after later tasks have changed the tree.
     """
-    if not reason.strip() or PENDING_REASON.search(reason):
+    if placeholder(reason):
         raise ValueError("reopen needs the controller's concrete reason")
     baseline_path = change / "runs" / f"{task}-baseline.json"
     if not baseline_path.is_file():
@@ -153,7 +176,7 @@ def preflight_checks(slug: str, task: str, root: str | None, controller: str | N
             from specadoc_config import load_config
             config = load_config(Path.cwd())
             if "roles" in config and not controller:
-                raise ValueError("routed controller execution requires --controller-runtime")
+                raise ValueError("routed controller execution requires --controller-runtime or roles.controller.runtime")
             expected = config.get("roles", {}).get("controller", {}).get("runtime")
             if expected and expected != controller:
                 raise ValueError(f"controller runtime is {controller}, binding expects {expected}")
@@ -190,10 +213,11 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
         from collect_tokens import claude_context_tokens, current_claude_transcript
         if (transcript := current_claude_transcript()) is not None:
             context_tokens, context_source = claude_context_tokens(transcript), f"read from {transcript.name}"
-    if context_tokens is not None and context_tokens >= 150000:
+    if context_tokens is not None and context_tokens >= CONTEXT_GUARD:
         return emit([f"context budget ({context_source})"], "BLOCKED", [],
-                    f"controller context is {context_tokens} tokens, at least 150k",
-                    "save the current handoff and resume apply in a fresh session before another dispatch")
+                    f"controller context is {context_tokens} tokens, at least {CONTEXT_GUARD // 1000}k",
+                    f"save the current handoff (specadoc_step.py handoff {slug} --file -) and resume apply in a "
+                    f"fresh session from specadoc_step.py status {slug}")
     plan_path = Path(resolve_root(root).path) / slug / "plan.md"
     plan = Document(plan_path, str(plan_path))
     checked, errors = preflight_checks(slug, task, root, controller)
@@ -270,7 +294,7 @@ def write_report(slug: str, task: str, root: str | None, status: str, summary: s
                "files_changed": [path for path in changed if not _under(path, artifact_root)],
                "tests": {"red": " ".join(red.split()), "green": " ".join(green.split())},
                "concerns": concerns, "report": report.as_posix()}
-    if not payload["summary"] or PENDING_REASON.fullmatch(payload["summary"]):
+    if placeholder(payload["summary"]):
         raise ValueError("--summary must describe the delivered result")
     if errors := schema_errors(payload, json.loads(schema_path("worker").read_text())):
         raise ValueError("invalid worker result: " + "; ".join(errors))
@@ -299,8 +323,10 @@ def verification_commands(slug: str, task: str, root: str | None) -> list[str]:
     if task not in blocks:
         raise ValueError(f"plan.md has no task {task}")
     field = task_fields(plan, *blocks[task]).get("Verification", "")
-    if not re.fullmatch(r"\s*`[^`\n]+`(?:\s*;\s*`[^`\n]+`)*\s*", field):
-        raise ValueError("Verification must contain only exact backticked commands separated by semicolons; run prose checks manually")
+    from validate_change import VERIFICATION_COMMANDS
+    if not VERIFICATION_COMMANDS.fullmatch(field):
+        raise ValueError("Verification must contain only exact backticked commands separated by semicolons; "
+                         "move manual or reserved checks to External verification (amend the plan)")
     return COMMAND.findall(field)
 
 
@@ -397,7 +423,7 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
         return emit(checked, "CHECKED", changed, "", "scope only; not accepted: run accept without --scope-only")
     if verification_timeout <= 0:
         raise ValueError("verification timeout must be positive")
-    if note is not None and (not note.strip() or PENDING_REASON.search(note)):
+    if note is not None and placeholder(note):
         raise ValueError("--note must name the actual decision or accepted result")
 
     change = Path(resolve_root(root).path) / slug
@@ -496,7 +522,7 @@ def external_result(slug: str, task: str, root: str | None, outcome: str, eviden
     """Record the result of a task's External verification; final requires PASS."""
     from validate_change import evidence_staleness
     checked = ["external verification state"]
-    if not evidence.strip() or PENDING_REASON.search(evidence):
+    if placeholder(evidence):
         raise ValueError("--evidence must name the actual run and its result")
     change = Path(resolve_root(root).path) / slug
     baseline_path = change / "runs" / f"{task}-baseline.json"
@@ -680,7 +706,7 @@ def status(slug: str, root: str | None) -> int:
 
 def amend(slug: str, task: str, root: str | None, allowed: list[str], controller_paths: list[str], reason: str,
           derived: list[str] | None = None) -> int:
-    if not reason.strip() or re.search(r"\b(?:pending|TBD|N/A)\b", reason, re.I):
+    if placeholder(reason):
         raise ValueError("scope amendment needs the controller's concrete reason")
     change = Path(resolve_root(root).path) / slug
     baseline_path = change / "runs" / f"{task}-baseline.json"
@@ -833,6 +859,8 @@ def main() -> int:
         print("error: task must look like T<n>", file=sys.stderr)
         return 2
     try:
+        if hasattr(args, "controller_runtime"):
+            args.controller_runtime = default_controller(args.controller_runtime)
         if args.step == "preflight":
             return preflight(args.change_slug, args.task, args.root, args.controller_runtime)
         if args.step == "manifest":

@@ -67,9 +67,11 @@ All dispatches remain subject to the host's delegation policy and capabilities.
 
 The plan preview shows one line per role: controller, scout, worker and
 reviewer, each with runtime/model/effort and its source file. Read them with
-`role_routing.py --controller-runtime <runtime> --dry-run --compact --check-cli`,
-or name the registered or embedded role when nothing is routed. Record the line
-in `## Plan approval` → `Bindings shown`. It is evidence of what would run, not
+`role_routing.py --controller-runtime <runtime> --change <slug> --dry-run --compact
+--check-cli`: only roles the plan uses (reviewer; worker when a task names one)
+fail it; a broken unused role file is a warning. When nothing is routed, name
+the registered or embedded role. Record the line in `## Plan approval` →
+`Bindings shown`. It is evidence of what would run, not
 an approval of a profile. Light shows the controller and reviewer in chat.
 
 ## Binding advice
@@ -94,7 +96,7 @@ A fresh session can lose useful cache, so it is not mandatory at every phase:
 - For another slug, archive, or branch work, prefer a bounded handoff from
   `plan.md` or `record.md`; do not split short clarifications mechanically.
 - In `apply`, record each accepted task's result in `plan.md` before the next
-  task. When the controller context exceeds roughly 150k tokens, stop at a task
+  task. When the controller context exceeds roughly 200k tokens, stop at a task
   boundary, write session notes with `specadoc_step.py handoff`, and recommend
   resuming in a new session from `specadoc_step.py status <slug>`.
 - Use an observed host context count, never token-volume totals as an estimate

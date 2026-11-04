@@ -49,7 +49,7 @@ Follow the host's shell prefix convention for all commands below.
 To show the bindings at plan approval, run this read-only command from the checkout root:
 
 ```text
-python3 <skill-root>/scripts/role_routing.py --controller-runtime <invoking-runtime> --dry-run --compact --check-cli
+python3 <skill-root>/scripts/role_routing.py --controller-runtime <invoking-runtime> --change <slug> --dry-run --compact --check-cli
 ```
 
 Always supply the invoking controller runtime explicitly. Never infer it from the
