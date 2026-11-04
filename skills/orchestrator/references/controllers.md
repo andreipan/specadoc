@@ -84,6 +84,13 @@ may lack the connector. Its role binding belongs to the installed harness;
 `.specadoc.json` does not route it. Route each failure it reports to the owning
 controller.
 
+A Specadoc task whose integration run belongs to the verifier carries
+`External verification:`. Its controller accepts the local Verification
+(EXTERNAL-PENDING) and may open review; it does not wait for the run. Hand the
+verifier's result to that controller, which records it with
+`specadoc_step.py external-result`; the final gate needs the PASS. The order of
+review and integration is then the user's authorization, not a gate deadlock.
+
 ## Report and decision envelope
 
 Ask controllers to end a turn at checkpoints rather than wait mid-run for a reply:

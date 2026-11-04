@@ -23,6 +23,9 @@ Steps:
   Commands must occupy the entire field, backticked and separated by semicolons.
   Run from the repository root; accept executes shell commands with the
   caller's permissions. Inspect them first and follow host approval rules.
+- `external-result <slug> T<n> --outcome PASS|FAIL --evidence '<run>'` — record
+  the result of a task's `External verification:`. Its `accept` ends in
+  EXTERNAL-PENDING: review may open, `--phase final` requires a PASS.
 - `refresh <slug>` — re-accept every settled task whose evidence went stale after
   later tasks, in dependency order, with the same report and frozen Verification.
 - `pre-review <slug>` — the pre-review gate plus the snapshot manifest to record
@@ -44,7 +47,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import resolve_root  # noqa: E402
-from validate_change import Document, task_fields, review_policy_hash  # noqa: E402
+from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
 
@@ -75,7 +78,7 @@ def emit(checked: list[str], result: str, changed: list[str], reason: str, next_
     print(f"next: {next_step}")
     if detail:
         print(detail)
-    return {"PASS": 0, "CHECKED": 0, "ACCEPTED": 0, "FAIL": 1}.get(result, 2)
+    return {"PASS": 0, "CHECKED": 0, "ACCEPTED": 0, "EXTERNAL-PENDING": 0, "FAIL": 1}.get(result, 2)
 
 
 def root_args(root: str | None) -> list[str]:
@@ -410,14 +413,62 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
             evidence += "; " + "; ".join(kept)
     values = {"Evidence": evidence, "Evidence hash": content_hash(inputs["owned"]),
               "Accepted result": payload["summary"] + (f"; controller: {note}" if note else "")}
-    plan_path.write_text(update_task(plan, task, values, complete=True), encoding="utf-8")
-    record.update(state="accepted", accepted_at=timestamp(), accepted_result=values["Accepted result"],
-                  report_hash=digest(report), concerns=concerns, note=note)
+    external = external_verification(fields)
+    prior = record.get("external") or {}
+    # A recorded external PASS holds while the task's own content is unchanged.
+    awaiting = bool(external) and not (prior.get("outcome") == "PASS"
+                                       and prior.get("files_hash") == values["Evidence hash"])
+    plan_path.write_text(update_task(plan, task, values, complete=not awaiting, reopen=awaiting), encoding="utf-8")
+    record.update(state="external-pending" if awaiting else "accepted", accepted_at=timestamp(),
+                  accepted_result=values["Accepted result"], report_hash=digest(report), concerns=concerns, note=note)
     save(baseline_path, record)
+    if awaiting:
+        return emit(checked, "EXTERNAL-PENDING", changed, "",
+                    f"local evidence saved; review may open. After the external run ({external}), record it: "
+                    f"specadoc_step.py external-result {slug} {task} --outcome PASS|FAIL --evidence '<run and result>'")
     return emit(checked, "ACCEPTED", changed, "", "task evidence and accepted result saved; continue with the next ready task")
 
 
-SETTLED_STATES = ("accepted", "external-pending")
+def external_result(slug: str, task: str, root: str | None, outcome: str, evidence: str, log: str | None = None) -> int:
+    """Record the result of a task's External verification; final requires PASS."""
+    from validate_change import evidence_staleness
+    checked = ["external verification state"]
+    if not evidence.strip() or PENDING_REASON.search(evidence):
+        raise ValueError("--evidence must name the actual run and its result")
+    change = Path(resolve_root(root).path) / slug
+    baseline_path = change / "runs" / f"{task}-baseline.json"
+    if not baseline_path.is_file():
+        raise ValueError(f"{task} has no task state; dispatch and accept it first")
+    record = json.loads(baseline_path.read_text(encoding="utf-8"))
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    _, _, fields = task_block(plan, task)
+    if not external_verification(fields):
+        raise ValueError(f"{task} has no External verification field")
+    if record.get("state") != "external-pending":
+        return emit(checked, "BLOCKED", [], f"{task} state is {record.get('state')}, not external-pending",
+                    f"accept {task} first; its local Verification must pass before the external result")
+    fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
+    if fresh is False:
+        return emit(checked, "BLOCKED", [], f"{task} local evidence is stale ({reason})",
+                    "run specadoc_step.py refresh, then rerun the external verification on that content")
+    if log:
+        safe_path(log, allow_missing=False, allow_absolute=True)
+    files_hash = (record.get("verification") or {}).get("files_hash")
+    text = " ".join(evidence.split())
+    record["external"] = {"outcome": outcome, "evidence": text, "log": log, "at": timestamp(), "files_hash": files_hash}
+    value = f"{outcome}: {text}" + (f" (log `{log}`)" if log else "")
+    if outcome == "PASS":
+        plan_path.write_text(update_task(plan, task, {"External evidence": value}, complete=True), encoding="utf-8")
+        record["state"] = "accepted"
+        save(baseline_path, record)
+        return emit(checked + ["external PASS recorded"], "ACCEPTED", [], "",
+                    "external evidence saved; continue with review or the final gate")
+    plan_path.write_text(update_task(plan, task, {"External evidence": value}, reopen=True), encoding="utf-8")
+    record["state"] = "dispatched"
+    save(baseline_path, record)
+    return emit(checked + ["external FAIL recorded"], "FAIL", [], f"external verification failed: {text}",
+                f"fix it with dispatch {slug} {task} --reopen '<reason>', accept, then rerun the external verification")
 
 
 def dependency_order(plan: Document) -> list[str]:
@@ -600,6 +651,12 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--review-decision", help="Actual user decision authorizing a bounded extra round")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
+    external = steps.add_parser("external-result", help="Record a task's External verification result")
+    external.add_argument("change_slug")
+    external.add_argument("task", help="Task id such as T6")
+    external.add_argument("--outcome", choices=("PASS", "FAIL"), required=True)
+    external.add_argument("--evidence", required=True, help="The actual run (command, run id) and its result")
+    external.add_argument("--log", help="Repository path of the run log")
     refreshed = steps.add_parser("refresh", help="Re-verify stale accepted task evidence without --reopen")
     refreshed.add_argument("change_slug")
     refreshed.add_argument("--verification-timeout", type=float, default=600)
@@ -613,7 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest") and not re.fullmatch(r"T\d+", args.task):
+    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest", "external-result") and not re.fullmatch(r"T\d+", args.task):
         print("error: task must look like T<n>", file=sys.stderr)
         return 2
     try:
@@ -630,6 +687,8 @@ def main() -> int:
                           verification_timeout=args.verification_timeout)
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
+        if args.step == "external-result":
+            return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log)
         if args.step == "refresh":
             return refresh(args.change_slug, args.root, args.verification_timeout)
         if args.step == "review-result":

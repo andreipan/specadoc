@@ -215,6 +215,9 @@ does not replace closing architecture/compatibility decisions. Accepted result
 is the compact current handoff after controller corrections; worker reports are
 historical claims. Optional Evidence hash may remain Pending until verification.
 
+A run the controller may not execute goes in `External verification:`; keep a
+local exact `Verification`, never the external command (`apply.md`).
+
 Before implementation, present the plan as a concise task table or equivalent
 preview showing outcome, files or symbols, owner and model, implementation
 direction, and exact verification. Record the user's plan approval in

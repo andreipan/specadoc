@@ -7,8 +7,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from validate_change import (Document, PENDING, TASK_CHECKBOX, evidence_staleness, files_field_hash, ids_in,
-                             task_fields)
+from validate_change import (Document, PENDING, SETTLED_STATES, TASK_CHECKBOX, evidence_staleness,
+                             files_field_hash, ids_in, task_fields)
 
 SCHEMA = "specadoc.task/v2"
 
@@ -66,15 +66,23 @@ def readiness(plan: Document, task: str) -> list[str]:
         for dependency in ids_in(task_fields(plan, start, end).get("Depends on", ""), "T"):
             if dependency in blocks:
                 a, b = blocks[dependency]
-                marks = [m["mark"] for line in plan.lines[a:b] if (m := TASK_CHECKBOX.match(line))]
-                if not marks or any(mark == " " for mark in marks):
-                    errors.append(f"{task}: dependency {dependency} is not complete")
                 state_path = plan.path.parent / "runs" / f"{dependency}-baseline.json"
+                # A dependency awaiting only its external run passed local Verification.
+                awaiting_external = False
+                if state_path.is_file():
+                    try:
+                        awaiting_external = json.loads(state_path.read_text(encoding="utf-8")).get(
+                            "state") == "external-pending"
+                    except (OSError, ValueError, AttributeError):
+                        pass
+                marks = [m["mark"] for line in plan.lines[a:b] if (m := TASK_CHECKBOX.match(line))]
+                if not awaiting_external and (not marks or any(mark == " " for mark in marks)):
+                    errors.append(f"{task}: dependency {dependency} is not complete")
                 if state_path.is_file():
                     try:
                         state = json.loads(state_path.read_text(encoding="utf-8"))
                         if state.get("schema") == SCHEMA:
-                            if state.get("state") != "accepted":
+                            if state.get("state") not in SETTLED_STATES:
                                 errors.append(f"{task}: dependency {dependency} has not been accepted")
                             else:
                                 files = task_fields(plan, a, b).get("Files", "")

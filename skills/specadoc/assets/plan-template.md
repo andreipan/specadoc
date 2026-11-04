@@ -98,6 +98,9 @@ section otherwise.>
 - **Surface:** <code|ui|mixed>
 - **Delivery verification:** <For ui/mixed: final build, typecheck, and Browser URL/state check; for code: N/A>
 - **Done when:** <objective condition>
+- **External verification:** None; optional — a run the controller may not execute
+  (integration on a shared database, a check allowed only after review): who runs it and
+  when. Review may open before it; the final gate needs its recorded PASS.
 - **Checkpoint:** None; optional — name an intermediate commit point after this
   task. It adds no review round; one final review still covers the diff.
 - **Evidence:** Pending; keep final evidence to one or two lines.

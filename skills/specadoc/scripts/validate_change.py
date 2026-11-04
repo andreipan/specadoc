@@ -702,6 +702,19 @@ def files_field_digests(files_field: str, *, repository_only: bool = False) -> d
     return digests
 
 
+# Task states whose local evidence is settled. `external-pending` passed its local
+# Verification and awaits a run the controller may not execute (integration on
+# a shared database, a manual check); review may open, `final` may not.
+SETTLED_STATES = ("accepted", "external-pending")
+NO_VALUE = re.compile(r"(?:none|n/a|-)(?:\b|;|$)", re.I)
+
+
+def external_verification(fields: dict[str, str]) -> str | None:
+    """The task's `External verification:` description, or None."""
+    value = " ".join(fields.get("External verification", "").split())
+    return None if not value or NO_VALUE.match(value) else value
+
+
 def evidence_is_current(runs: Path, task: str, files_field: str) -> bool | None:
     """Whether a task's accepted evidence still covers its Files.
 
@@ -719,7 +732,7 @@ def evidence_staleness(runs: Path, task: str, files_field: str) -> tuple[bool | 
     except (OSError, ValueError):
         return None, ""
     recorded = (record.get("verification") or {}).get("files") if isinstance(record, dict) else None
-    if not isinstance(recorded, dict) or record.get("state") != "accepted":
+    if not isinstance(recorded, dict) or record.get("state") not in SETTLED_STATES:
         return None, ""
     inputs = (record.get("verification") or {}).get("inputs")
     if not isinstance(inputs, dict) or inputs.get("version") != 1:
@@ -752,7 +765,7 @@ def evidence_staleness(runs: Path, task: str, files_field: str) -> tuple[bool | 
             state = json.loads(other.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(state, dict) and state.get("state") == "accepted":
+        if isinstance(state, dict) and state.get("state") in SETTLED_STATES:
             for path, value in ((state.get("verification") or {}).get("files") or {}).items():
                 owned.setdefault(path, set()).add(value)
     drifted = sorted(path for path in current
@@ -1050,15 +1063,26 @@ def check_review_round_structure(plan: Document) -> list[Violation]:
     return violations
 
 
-def check_review_readiness(plan: Document) -> list[Violation]:
-    """Require completed, current task evidence for review and completion."""
+def check_review_readiness(plan: Document, *, allow_external_pending: bool = False) -> list[Violation]:
+    """Require completed, current task evidence for review and completion.
+
+    Review may open while a task awaits only its external verification; the
+    final gate requires that result.
+    """
     violations: list[Violation] = []
     for identifier, start, end in plan.blocks("Tasks", "T"):
         state_path = plan.path.parent / "runs" / f"{identifier}-baseline.json"
+        awaiting_external = False
         if state_path.is_file():
             try:
                 state = json.loads(state_path.read_text(encoding="utf-8"))
-                if state.get("schema") == "specadoc.task/v2" and state.get("state") != "accepted":
+                current = state.get("state")
+                awaiting_external = current == "external-pending"
+                if state.get("schema") == "specadoc.task/v2" and awaiting_external and not allow_external_pending:
+                    violations.append(Violation(plan.display, start + 1,
+                        f"{identifier}: external verification result missing; record it with "
+                        f"specadoc_step.py external-result"))
+                elif state.get("schema") == "specadoc.task/v2" and current not in SETTLED_STATES:
                     violations.append(Violation(plan.display, start + 1,
                         f"{identifier}: task has not reached report-aware ACCEPTED; settle its result before review"))
             except (OSError, ValueError, TypeError, AttributeError):
@@ -1068,7 +1092,7 @@ def check_review_readiness(plan: Document) -> list[Violation]:
             for index in range(start, end)
             if (match := TASK_CHECKBOX.match(plan.lines[index]))
         ]
-        if any(mark == " " for mark in marks):
+        if any(mark == " " for mark in marks) and not awaiting_external:
             violations.append(Violation(plan.display, start + 1, f"{identifier}: not complete"))
 
         fields = task_fields(plan, start, end)
@@ -1123,7 +1147,7 @@ def check_review_readiness(plan: Document) -> list[Violation]:
 def check_pre_review(plan: Document, *, next_type: str = "initial", decision: str | None = None) -> list[Violation]:
     """Validate readiness and refuse only a new reviewer dispatch past the cap."""
     return (
-        check_review_readiness(plan)
+        check_review_readiness(plan, allow_external_pending=True)
         + check_review_round_structure(plan)
         + check_review_round_cap(plan, next_type=next_type, decision=decision)
     )

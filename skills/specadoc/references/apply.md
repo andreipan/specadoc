@@ -32,6 +32,11 @@ Load this reference only for `specadoc apply <slug>`.
    commands and environment), checks scope, and on **ACCEPTED** records Evidence, Evidence hash
    and Accepted result. One call reports both scope violations and check results.
    Concerns return **NEEDS_DECISION**: rerun with `--note '<decision>'`.
+   A task with `External verification:` (integration on a shared database, a
+   check allowed only after review) returns **EXTERNAL-PENDING**: dependents
+   may start and review may open. Record the run with `external-result <slug>
+   T<n> --outcome PASS|FAIL --evidence '<run and result>'`; `--phase final`
+   needs a PASS on the current content. FAIL returns the task to work.
    A returned status is a claim, not evidence.
 6. Controller runs final affected-only checks once, records observed Build/Typecheck
    PASS and Browser URL/state for UI, and fills literal Review scope from the

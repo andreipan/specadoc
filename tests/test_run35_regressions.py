@@ -95,5 +95,97 @@ class StaleEvidenceAfterLaterTasksTest(unittest.TestCase):
         self.assertIn('--reopen', result.stdout)
 
 
+EXTERNAL_PLAN = PLAN.replace(
+    '- **Verification:** `python3 check_label.py`\n',
+    '- **Verification:** `python3 check_label.py`\n'
+    '- **External verification:** Parent runs the MySQL integration suite after the user allows it.\n', 1)
+
+
+class ExternalVerificationTest(unittest.TestCase):
+    """3.5 deadlock: review needed T6 accepted, T6 needed an integration run allowed only after review."""
+    setUp = reliability.ApplyReliabilityTest.setUp
+    tearDown = reliability.ApplyReliabilityTest.tearDown
+    run_step = reliability.ApplyReliabilityTest.run_step
+    report = reliability.ApplyReliabilityTest.report
+    state = StaleEvidenceAfterLaterTasksTest.state
+
+    def validate(self, phase):
+        import os
+        import subprocess
+        import sys
+        from test_specadoc_step import SCRIPTS
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
+        env.pop('SPECADOC_ROOT', None)
+        return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'validate_change.py'), 'demo', '--phase', phase],
+                              cwd=self.repo, env=env, capture_output=True, text=True)
+
+    def accept_local(self):
+        self.plan.write_text(EXTERNAL_PLAN)
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        self.report()
+        result = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+        return result
+
+    def t1_block(self):
+        text = self.plan.read_text()
+        return text.split('### T1', 1)[1].split('### T2', 1)[0]
+
+    def test_accept_waits_for_external_result_but_review_may_open(self):
+        result = self.accept_local()
+        self.assertIn('result: EXTERNAL-PENDING', result.stdout)
+        self.assertIn('external-result demo T1', result.stdout)
+        self.assertEqual('external-pending', self.state('T1')['state'])
+        self.assertIn('- [ ] Complete', self.t1_block())
+        self.assertIn('**Evidence:** `python3 check_label.py` — PASS', self.t1_block())
+        review = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertEqual(0, review.returncode, review.stdout)
+        final = self.validate('final')
+        self.assertIn('T1: external verification result missing', final.stdout + final.stderr)
+
+    def test_external_pass_completes_the_task(self):
+        self.accept_local()
+        result = self.run_step('external-result', 'demo', 'T1', '--outcome', 'PASS',
+                               '--evidence', 'it-3.5-2: 12 tests OK on adraptor_it_testing')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual('accepted', self.state('T1')['state'])
+        self.assertIn('- [x] Complete', self.t1_block())
+        self.assertIn('**External evidence:** PASS: it-3.5-2', self.t1_block())
+        final = self.validate('final')
+        self.assertNotIn('T1: external verification', final.stdout + final.stderr)
+        # Unchanged content keeps the external PASS on a later re-accept ...
+        again = self.run_step('accept', 'demo', 'T1')
+        self.assertIn('result: ACCEPTED', again.stdout)
+        # ... changed content needs a new external run.
+        self.repo.joinpath('label.py').write_text('def label():\n    return "ready"  # changed\n')
+        changed = self.run_step('accept', 'demo', 'T1')
+        self.assertIn('result: EXTERNAL-PENDING', changed.stdout)
+
+    def test_external_fail_returns_task_to_work(self):
+        self.accept_local()
+        result = self.run_step('external-result', 'demo', 'T1', '--outcome', 'FAIL',
+                               '--evidence', 'it-3.5-1: replay assertion failed')
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertEqual('dispatched', self.state('T1')['state'])
+        self.assertIn('--reopen', result.stdout)
+        self.assertIn('- [ ] Complete', self.t1_block())
+
+    def test_external_result_needs_real_evidence_and_pending_state(self):
+        self.accept_local()
+        result = self.run_step('external-result', 'demo', 'T1', '--outcome', 'PASS', '--evidence', 'pending')
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertEqual('external-pending', self.state('T1')['state'])
+        result = self.run_step('external-result', 'demo', 'T2', '--outcome', 'PASS', '--evidence', 'run 1 OK')
+        self.assertEqual(2, result.returncode, result.stdout)
+
+    def test_dependent_task_may_start_while_external_run_waits(self):
+        self.accept_local()
+        self.plan.write_text(self.plan.read_text().replace(
+            '### T2 — String result\n- [x] Complete\n- **Requirements:** R1',
+            '### T2 — String result\n- [ ] Complete\n- **Depends on:** T1\n- **Requirements:** R1'))
+        result = self.run_step('dispatch', 'demo', 'T2')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
