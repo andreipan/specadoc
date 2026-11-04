@@ -10,8 +10,12 @@
 
 **Plan checkpoint:** Not ready
 
+Session notes go to `runs/handoff.md` via `specadoc_step.py handoff` (overwritten,
+at most 4 KiB); never append them here.
+
 ### Read before continuing
 
+- `specadoc_step.py status <slug>` output, then `runs/handoff.md` when it exists
 - `spec.md`
 - `plan.md`
 - <`design.md` or `research.md` when they exist>

@@ -70,6 +70,7 @@ TASK_FIELDS = (
 
 WORKER_ONLY_FIELDS = ("Verification owner",)
 PLAN_SIZE_WARNING = 32 * 1024
+HANDOFF_SECTION_WARNING = 2 * 1024
 
 OWNERS = ("controller", "worker")
 VERIFICATION_OWNERS = ("worker", "controller")
@@ -829,11 +830,16 @@ def controller_routing_warnings(plan: Document) -> list[str]:
 
 def plan_size_warnings(plan: Document) -> list[str]:
     """plan.md is re-read at every task and review; size multiplies its cost."""
+    warnings = []
+    handoff = len("\n".join(line for _, line in plan.body("Handoff")).encode("utf-8"))
+    if handoff > HANDOFF_SECTION_WARNING:
+        warnings.append(f"plan.md Handoff is {handoff} bytes (> {HANDOFF_SECTION_WARNING}): keep the checkpoint "
+                        "and one Continue line; session notes go to runs/handoff.md via specadoc_step.py handoff")
     size = len("\n".join(plan.lines).encode("utf-8"))
-    if size <= PLAN_SIZE_WARNING:
-        return []
-    return [f"plan.md is {size} bytes (> {PLAN_SIZE_WARNING}): keep only decisions, tasks, "
-            "one-line evidence and current state; move bulky evidence to research.md or drop it"]
+    if size > PLAN_SIZE_WARNING:
+        warnings.append(f"plan.md is {size} bytes (> {PLAN_SIZE_WARNING}): keep only decisions, tasks, "
+                        "one-line evidence and current state; move bulky evidence to research.md or drop it")
+    return warnings
 
 
 def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
@@ -1197,6 +1203,32 @@ def minor_only_pass(plan: Document, identifier: str) -> bool:
     return False
 
 
+ROUND_MANIFEST_FILE = re.compile(r"`?(runs/G\d+-manifest\.json)`?")
+
+
+def round_block_manifest(plan: Document, start: int, end: int) -> dict[str, str] | None:
+    """A review round's manifest: `runs/G<n>-manifest.json`, or an inline fence (older plans)."""
+    fields = task_fields(plan, start, end)
+    payload: object = None
+    if match := ROUND_MANIFEST_FILE.fullmatch(fields.get("Manifest", "").strip()):
+        try:
+            payload = json.loads((plan.path.parent / match[1]).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    else:
+        block_text = "\n".join(plan.lines[start:end])
+        if GATE_JSON_FENCE not in block_text:
+            return None
+        try:
+            payload = json.loads(block_text.split(GATE_JSON_FENCE, 1)[1].split("```", 1)[0])
+        except json.JSONDecodeError:
+            return None
+    if isinstance(payload, dict) and all(isinstance(path, str) and isinstance(digest, str)
+                                         for path, digest in payload.items()):
+        return payload
+    return None
+
+
 def latest_review_round(
     plan: Document,
 ) -> tuple[str, dict[str, str], dict[str, str] | None] | None:
@@ -1204,22 +1236,7 @@ def latest_review_round(
     if not rounds:
         return None
     identifier, start, end = rounds[-1]
-    fields = task_fields(plan, start, end)
-    block_text = "\n".join(plan.lines[start:end])
-    manifest: dict[str, str] | None = None
-    if GATE_JSON_FENCE in block_text:
-        fenced = block_text.split(GATE_JSON_FENCE, 1)[1]
-        payload_text = fenced.split("```", 1)[0]
-        try:
-            payload = json.loads(payload_text)
-        except json.JSONDecodeError:
-            payload = None
-        if isinstance(payload, dict) and all(
-            isinstance(path, str) and isinstance(digest, str)
-            for path, digest in payload.items()
-        ):
-            manifest = payload
-    return identifier, fields, manifest
+    return identifier, task_fields(plan, start, end), round_block_manifest(plan, start, end)
 
 
 def check_final(spec: Document, plan: Document) -> list[Violation]:

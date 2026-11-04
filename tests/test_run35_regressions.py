@@ -264,5 +264,105 @@ class WorkerResultTest(unittest.TestCase):
         self.assertNotIn('set Owner: worker', self.validate('plan').stderr)
 
 
+class PlanGrowthTest(unittest.TestCase):
+    """3.5: plan.md reached 68 KB; two inline round manifests were 16 KB, session notes 7.5 KB."""
+    setUp = reliability.ApplyReliabilityTest.setUp
+    tearDown = reliability.ApplyReliabilityTest.tearDown
+    run_step = reliability.ApplyReliabilityTest.run_step
+    report = reliability.ApplyReliabilityTest.report
+    validate = ExternalVerificationTest.validate
+
+    def accepted(self):
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        self.report()
+        result = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+    def latest(self):
+        import sys
+        from test_specadoc_step import SCRIPTS
+        sys.path.insert(0, str(SCRIPTS))
+        from validate_change import Document, latest_review_round, review_manifest_hash
+        return latest_review_round(Document(self.plan, 'plan.md')), review_manifest_hash
+
+    def test_round_manifest_lives_in_runs_and_stays_hash_bound(self):
+        self.accepted()
+        result = self.run_step('pre-review', 'demo')
+        self.assertEqual(0, result.returncode, result.stdout)
+        text = self.plan.read_text()
+        self.assertNotIn('```json', text)
+        self.assertIn('- **Manifest:** `runs/G1-manifest.json`', text)
+        (identifier, fields, manifest), manifest_hash = self.latest()
+        self.assertEqual('G1', identifier)
+        self.assertIn('label.py', manifest)
+        self.assertEqual(fields['Snapshot'], manifest_hash(manifest))
+        path = self.change / 'runs/G1-manifest.json'
+        path.write_text(json.dumps({**manifest, 'label.py': '0' * 64}))
+        (_, fields, tampered), manifest_hash = self.latest()
+        self.assertNotEqual(fields['Snapshot'], manifest_hash(tampered))
+        path.unlink()
+        self.assertIsNone(self.latest()[0][2])
+
+    def test_inline_manifest_of_older_plans_is_still_read(self):
+        manifest = {'label.py': 'a' * 64}
+        self.plan.write_text(self.plan.read_text().replace(
+            '**Result:** Pending', '**Result:** Pending\n\n### G1\n\n- **Type:** initial\n- **Outcome:** Pending\n\n'
+            '<details><summary>Manifest</summary>\n\n```json\n' + json.dumps(manifest) + '\n```\n\n</details>\n'))
+        self.assertEqual(manifest, self.latest()[0][2])
+
+    def test_handoff_is_overwritten_and_bounded(self):
+        notes = self.repo / 'notes.md'
+        notes.write_text('T2 next; quality needs the unsandboxed shell.\n')
+        result = self.run_step('handoff', 'demo', '--file', 'notes.md')
+        self.assertEqual(0, result.returncode, result.stdout)
+        notes.write_text('T3 next.\n')
+        self.assertEqual(0, self.run_step('handoff', 'demo', '--file', 'notes.md').returncode)
+        handoff = self.change / 'runs/handoff.md'
+        self.assertEqual('T3 next.\n', handoff.read_text())
+        notes.write_text('x' * 5000)
+        result = self.run_step('handoff', 'demo', '--file', 'notes.md')
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertEqual('T3 next.\n', handoff.read_text())
+
+    def test_handoff_during_a_task_is_not_a_scope_violation(self):
+        import os
+        import subprocess
+        import sys
+        from test_specadoc_step import SCRIPTS
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
+        env.pop('SPECADOC_ROOT', None)
+        piped = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'specadoc_step.py'), 'handoff', 'demo', '--file', '-'],
+                               cwd=self.repo, env=env, input='mid-task notes\n', capture_output=True, text=True)
+        self.assertEqual(0, piped.returncode, piped.stdout)
+        self.report()
+        result = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+    def test_large_handoff_section_warns(self):
+        self.plan.write_text(self.plan.read_text().replace(
+            'Read spec.md and plan.md, then continue with the next task.',
+            'Read spec.md and plan.md, then continue with the next task.\n\n### Apply session notes\n\n'
+            + '- note about a finished task and its interfaces\n' * 60))
+        self.assertIn('plan.md Handoff is', self.validate('plan').stderr)
+
+    def test_status_names_task_states_and_next_step(self):
+        self.plan.write_text(PLAN.replace('Approved (synthetic test fixture)', 'Awaiting user approval'))
+        self.assertIn('next: obtain plan approval', self.run_step('status', 'demo').stdout)
+        self.plan.write_text(PLAN)
+        self.accepted()
+        result = self.run_step('status', 'demo')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('  T1 worker accepted', result.stdout)
+        self.assertIn('  T2 worker complete (no task state)', result.stdout)
+        self.assertIn('review: none', result.stdout)
+        self.assertIn('next: pre-review', result.stdout)
+        self.repo.joinpath('extra.py').write_text('drift\n')
+        result = self.run_step('status', 'demo')
+        self.assertIn('T1 worker accepted, stale: verification inputs changed: extra.py', result.stdout)
+        self.assertIn('next: specadoc_step.py refresh demo (T1)', result.stdout)
+        self.assertLess(len(result.stdout.splitlines()), 12)
+
+
 if __name__ == '__main__':
     unittest.main()

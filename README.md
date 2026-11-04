@@ -257,6 +257,7 @@ lifecycle gates.
 |---|---|
 | `init_change.py` | Create `spec.md` and `plan.md` from templates. |
 | `validate_change.py` | Phase gates: `spec`, `plan`, `pre-review`, `final`. |
+| `specadoc_step.py` | One call per apply step: `dispatch`, `report`, `accept`, `external-result`, `refresh`, `status`, `handoff`, `pre-review`. |
 | `review_snapshot.py` | Hash the review scope and verify a recorded PASS. |
 | `archive_change.py` | Compact a closed change into one bounded record. |
 | `migrate_archive.py` | Migrate legacy archives, with a verified backup. |

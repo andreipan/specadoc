@@ -95,11 +95,13 @@ A fresh session can lose useful cache, so it is not mandatory at every phase:
   `plan.md` or `record.md`; do not split short clarifications mechanically.
 - In `apply`, record each accepted task's result in `plan.md` before the next
   task. When the controller context exceeds roughly 150k tokens, stop at a task
-  boundary and recommend resuming in a new session from `plan.md`.
+  boundary, write session notes with `specadoc_step.py handoff`, and recommend
+  resuming in a new session from `specadoc_step.py status <slug>`.
 - Use an observed host context count, never token-volume totals as an estimate
   of the current window. Pass `--context-tokens` to dispatch when available.
   A boundary handoff lists accepted interfaces, the next ready task, relevant
-  decisions and exact evidence; do not copy the discussion or raw logs.
+  decisions and exact evidence in `runs/handoff.md`, overwritten each time; do
+  not copy the discussion or raw logs, and never append it to plan.md.
 - When the host can fork a session, a fork of a small base session is cheaper
   than a fresh session that re-reads the same context. The base loads only
   change-independent context (this skill, repository rules, tooling notes) and

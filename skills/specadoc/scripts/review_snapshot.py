@@ -426,13 +426,11 @@ def verify_latest(plan: Document, change: Path, repo_root: Path) -> list[str]:
 
 def round_manifest(plan: Document, identifier: str) -> Manifest:
     """The manifest recorded in plan.md's `### G<n>` review round."""
+    from validate_change import round_block_manifest
     for found, start, end in plan.blocks("Review result", "G"):
         if found == identifier:
-            text = "\n".join(plan.lines[start:end])
-            if "```json" in text:
-                payload = json.loads(text.split("```json", 1)[1].split("```", 1)[0])
-                if isinstance(payload, dict):
-                    return payload
+            if (payload := round_block_manifest(plan, start, end)) is not None:
+                return payload
             raise ValueError(f"{identifier} has no recorded manifest")
     raise ValueError(f"plan.md has no review round {identifier}")
 

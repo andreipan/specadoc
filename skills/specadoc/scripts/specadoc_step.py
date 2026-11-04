@@ -30,6 +30,10 @@ Steps:
   EXTERNAL-PENDING: review may open, `--phase final` requires a PASS.
 - `refresh <slug>` — re-accept every settled task whose evidence went stale after
   later tasks, in dependency order, with the same report and frozen Verification.
+- `status <slug>` — compact task states, latest review and the next allowed step;
+  read it instead of plan.md when resuming.
+- `handoff <slug> --file <path|->` — overwrite `runs/handoff.md` (at most 4 KiB);
+  session notes never accumulate in plan.md.
 - `pre-review <slug>` — the pre-review gate plus the snapshot manifest to record
   in the new `### G<n>` round.
 
@@ -592,6 +596,88 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600) -> i
     return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
 
 
+HANDOFF_LIMIT = 4096
+
+
+def write_handoff(slug: str, root: str | None, source: str) -> int:
+    """Overwrite the change's session handoff; plan.md keeps only its pointer."""
+    text = (sys.stdin.read() if source == "-"
+            else safe_path(source, allow_missing=False, allow_absolute=True).read_text(encoding="utf-8")).strip()
+    if not text:
+        raise ValueError("handoff is empty")
+    size = len((text + "\n").encode("utf-8"))
+    if size > HANDOFF_LIMIT:
+        return emit(["handoff size"], "FAIL", [], f"handoff is {size} bytes (> {HANDOFF_LIMIT})",
+                    "keep current state, next step and open risks; move settled decisions to plan.md "
+                    "Confirmed decisions and task results to Accepted result")
+    path = Path(resolve_root(root).path) / slug / "runs" / "handoff.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+    return emit(["handoff size", f"wrote {path} ({size} bytes)"], "CHECKED", [], "",
+                "a new session runs status, then reads this file instead of re-reading plan.md")
+
+
+def status(slug: str, root: str | None) -> int:
+    """Compact read-only state for a controller or orchestrator; replaces re-reading plan.md."""
+    from validate_change import TASK_CHECKBOX, evidence_staleness, latest_review_round
+    change = Path(resolve_root(root).path) / slug
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    approval = approval_error(plan)
+    handoff = change / "runs" / "handoff.md"
+    lines = [f"change: {slug}; plan.md {plan_path.stat().st_size} bytes; approval: {approval or 'approved'}",
+             f"handoff: {handoff} ({handoff.stat().st_size} bytes)" if handoff.is_file() else "handoff: none"]
+    working, stale, waiting, unstarted = [], [], [], []
+    for task, start, end in plan.blocks("Tasks", "T"):
+        fields = task_fields(plan, start, end)
+        owner = fields.get("Owner", "-").strip().lower() or "-"
+        state_path = change / "runs" / f"{task}-baseline.json"
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8")).get("state", "unknown")
+        except (OSError, ValueError, AttributeError):
+            state = None
+        if state is None:
+            marks = [m["mark"] for line in plan.lines[start:end] if (m := TASK_CHECKBOX.match(line))]
+            state = "complete (no task state)" if marks and " " not in marks else "not started"
+            if state == "not started":
+                unstarted.append(task)
+        elif state in SETTLED_STATES:
+            fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
+            if fresh is False:
+                stale.append(task)
+                state += f", stale: {reason}"
+            if state.startswith("external-pending"):
+                waiting.append(task)
+        else:
+            working.append(task)
+        lines.append(f"  {task} {owner} {state}")
+    latest = latest_review_round(plan)
+    outcome = latest[1].get("Outcome", "").strip() if latest else ""
+    lines.append(f"review: {latest[0]} {outcome or 'missing'} ({latest[1].get('Type', '-').strip()})" if latest
+                 else "review: none")
+    if approval:
+        next_step = "obtain plan approval"
+    elif working:
+        next_step = f"finish {working[0]}: report, then accept"
+    elif stale:
+        next_step = f"specadoc_step.py refresh {slug} ({', '.join(stale)})"
+    elif unstarted:
+        errors = readiness(plan, unstarted[0])
+        next_step = (f"dispatch {unstarted[0]}" if not errors
+                     else f"{unstarted[0]} not ready: {'; '.join(errors)}")
+    elif not latest or outcome.upper() == "FAIL":
+        next_step = "pre-review" + (" --review-type re-review after fixing the findings" if latest else "")
+    elif outcome.upper() not in ("PASS", "FAIL"):
+        next_step = f"run the reviewer for {latest[0]}, then review-result"
+    elif waiting:
+        next_step = f"external-result {waiting[0]} after its external run"
+    else:
+        next_step = f"validate_change.py {slug} --phase final"
+    lines.append(f"next: {next_step}")
+    print("\n".join(lines))
+    return 0
+
+
 def amend(slug: str, task: str, root: str | None, allowed: list[str], controller_paths: list[str], reason: str,
           derived: list[str] | None = None) -> int:
     if not reason.strip() or re.search(r"\b(?:pending|TBD|N/A)\b", reason, re.I):
@@ -710,6 +796,11 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--review-decision", help="Actual user decision authorizing a bounded extra round")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
+    handoff = steps.add_parser("handoff", help="Overwrite runs/handoff.md (session notes) from a file or stdin")
+    handoff.add_argument("change_slug")
+    handoff.add_argument("--file", required=True, help="Notes file, or - for stdin")
+    state = steps.add_parser("status", help="Compact read-only state and the next allowed step")
+    state.add_argument("change_slug")
     reported = steps.add_parser("report", help="Write the task report with its schema-valid result JSON")
     reported.add_argument("change_slug")
     reported.add_argument("task", help="Task id such as T3")
@@ -755,6 +846,10 @@ def main() -> int:
                           verification_timeout=args.verification_timeout)
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
+        if args.step == "handoff":
+            return write_handoff(args.change_slug, args.root, args.file)
+        if args.step == "status":
+            return status(args.change_slug, args.root)
         if args.step == "report":
             return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
                                 args.green, args.concern, args.body_file)

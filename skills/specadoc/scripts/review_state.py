@@ -37,14 +37,20 @@ def insert_round(change: Path, snapshot: dict, review_type: str, reason: str, de
     if decision:
         lines += [f'- **Review decision:** {decision}', f'- **Round cap override:** {decision}',
                   f'- **Decision used:** {identifier}']
-    lines += ['', '<details><summary>Manifest</summary>', '', '```json',
-              json.dumps(snapshot['manifest'], ensure_ascii=False, sort_keys=True), '```', '', '</details>', '']
+    # The manifest scales with the diff; plan.md keeps only its Snapshot hash.
+    manifest_path = f'runs/{identifier}-manifest.json'
+    lines += [f'- **Manifest:** `{manifest_path}`', '']
     if 'Review result' not in plan.sections:
         raise ValueError('plan has no Review result section')
     _, end = plan.sections['Review result']
     text = '\n'.join(plan.lines[:end] + lines + [''] + plan.lines[end:]) + '\n'
+    manifest_file = change / manifest_path
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    manifest_file.write_text(json.dumps(snapshot['manifest'], ensure_ascii=False, sort_keys=True, indent=0) + '\n',
+                             encoding='utf-8')
     candidate = Document(path, str(path), text=text)
     if errors := check_review_round_structure(candidate):
+        manifest_file.unlink()
         raise ValueError('; '.join(error.message for error in errors))
     path.write_text(text, encoding='utf-8')
     return identifier
