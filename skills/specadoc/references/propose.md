@@ -18,6 +18,16 @@ Load this reference only for `specadoc propose`.
     use the existing controller exception for a one-file, one-cycle correction.
     Reuse exact verifier commands, explicit project configs, baseline failures
     and DB/live permission limits in each task's bounded `Test context`.
+    Before the preview, close what workers would otherwise return as
+    BLOCKED or NEEDS_CONTEXT:
+    - check each requirement against each acceptance scenario and the
+      existing contracts it touches; record every conflict and its choice
+      in `Decisions`;
+    - give each task's `Files`/`Derived files` the registration and wiring
+      its new code needs (container bindings, providers, mappers, exports),
+      asking the scout to list them;
+    - put the repository's static and style gates for the task's files in
+      its `Verification`, so the final gate does not find them late.
    Use an installed architecture-design companion only for unresolved interface
    choices; use domain modeling when meanings or invariants need sharpening.
    The controller decides; bounded workers do not choose architecture. Preserve

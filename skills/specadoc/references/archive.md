@@ -2,8 +2,10 @@
 
 Load this reference only for explicit `specadoc archive`.
 
-Archive needs `plan.md`, not implementation history. A fresh session is
-optional; avoid replaying logs when continuing in the current session.
+Archive needs `plan.md`, not implementation history. Prefer continuing the
+session that finished `apply`: archive dispatches no worker, so the dispatch
+context guard does not apply, and a new session re-reads what this one holds.
+Avoid replaying logs when continuing in the current session.
 
 The target is `docs/specadoc/archive/<slug>/record.md`, schema
 `specadoc.archive/v1`, with a hard 16 KiB budget. It retains the durable outcome,

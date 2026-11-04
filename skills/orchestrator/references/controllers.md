@@ -23,22 +23,48 @@ not permission to edit a role or substitute a requested unavailable model.
 
 ## Map to the current host
 
-- **BB or another thread host:** each controller is an independent resumable
-  thread in its assigned repository. Use installed host instructions, not hardcoded
-  command guesses. Confirm the underlying runtime's tools and delivery too. In BB,
-  wait with one background `bb thread wait <id>` per active controller and read
-  `bb thread output <id>` only after it returns; a Monitor or `while` loop over
-  `bb thread list` is improvised monitoring.
-- **Cross-runtime CLI controllers** (for example Codex started from a Claude
-  shell): the child inherits the launcher's environment. Remove the launcher's
-  session variables, at least `CLAUDE_CODE_SESSION_ID`, so Specadoc context checks
-  measure the controller, and pass `--controller-runtime` on every routed step.
-  Write logs to the coordination directory and wake on process completion.
+This skill names capabilities, not host commands. Take concrete commands from the
+host's own instructions or from workspace host notes, and record the observed
+mapping once in the coordination record:
+
+| Capability | Use |
+|---|---|
+| launch / continue | one resumable session per controller in its assigned work area |
+| wait for completion | one blocking or background wait per active controller; read its final output only after the wait returns |
+| fork at a point | optional; start a phase or step from a prepared base session instead of re-reading context |
+| cancel / status | stop a stale writer; read status from evidence, not a title |
+| delivery limits | whether a parent turn may end while a child result is pending |
+
+- **Thread hosts:** each controller is an independent resumable thread. Confirm
+  the hosted runtime's tools and delivery too. A polling loop or monitor over the
+  thread list is improvised monitoring; use the host's wait.
+- **Cross-runtime CLI controllers:** the child inherits the launcher's
+  environment. Remove the launcher runtime's session variables (`run_role.py`
+  shows which) so Specadoc context checks measure the controller, and pass
+  `--controller-runtime` on every routed step. Write logs to the coordination
+  directory and wake on process completion.
 - **Native child sessions:** verify nesting depth and delegation tools. A
   resumable child alone does not prove it can act as a controller.
-- **ACP:** obey foreground requirements for sequential dependent work. Do not
-  end a parent turn while a required result is pending if delivery stops then.
-  Use background work only when independent, supported, and observable.
+- **Foreground-delivery hosts:** obey foreground requirements for sequential
+  dependent work. Do not end a parent turn while a required result is pending if
+  delivery stops then. Use background work only when independent, supported, and
+  observable.
+
+## Keep sessions few and small
+
+- Continue the controller that finished a change for its integration fix and
+  archive. Archive dispatches no worker, so the dispatch context guard does not
+  force a new session.
+- A controller ends its turn only in an envelope state: checkpoint, blocked,
+  failed or locally-ready. Starting a worker is not a reason to end the turn.
+- When the host can fork a session, prepare one base controller session with only
+  step-independent context (skills, repository rules, tooling notes) and fork it
+  for each phase or step; send the step brief as the fork's first prompt. Without
+  a fork, start fresh from a compact handoff.
+- Start each roadmap step in a fresh orchestrator session from the coordination
+  record, or fork from the point right after the mandate was set. Extract a large
+  source (roadmap, sweep) into the step brief once, with a scout, and do not
+  re-read it whole.
 
 Prefer completion events. With a supported durable timer, keep at most one future
 coordination tick for the whole orchestration; inspect only controllers that need

@@ -57,9 +57,10 @@ specific decision referencing the current checkpoint. Route changed requirements
 through affected local plans and approvals before implementation resumes.
 
 Use supported status/events and compact reports, not full-log polling. Follow
-host foreground/background rules, especially ACP delivery limits. A controller
-ending its turn can mean a checkpoint, blocker, or failure, not completion.
-Do not promise unattended monitoring without a working host mechanism.
+host foreground/background rules and delivery limits. A controller ending its
+turn can mean a checkpoint, blocker, or failure, not completion. Do not promise
+unattended monitoring without a working host mechanism. Keep controller sessions
+few and small (`references/controllers.md` → Keep sessions few and small).
 
 Intervene for contract drift, overlapping writers, repeated failures, missing
 proof, or scope growth. Do not retry a launch blindly after a lost event; reconcile

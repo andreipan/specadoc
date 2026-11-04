@@ -12,9 +12,16 @@ ROLES = ("scout", "worker", "reviewer")
 def validate_config(data: object) -> dict:
     if not isinstance(data, dict):
         raise ValueError("expected Specadoc config object")
-    unknown = set(data) - {"$schema", "root", "version", "roles"}
+    unknown = set(data) - {"$schema", "root", "version", "roles", "verification"}
     if unknown:
         raise ValueError(f"expected known Specadoc keys; unknown: {', '.join(sorted(unknown))}")
+    if "verification" in data:
+        verification = data["verification"]
+        if not isinstance(verification, dict) or set(verification) - {"environment"}:
+            raise ValueError("verification: expected an object with environment only")
+        environment = verification.get("environment", [])
+        if not isinstance(environment, list) or not all(isinstance(item, str) and item.strip() for item in environment):
+            raise ValueError("verification.environment: expected a list of variable names or globs")
     if "root" in data and (not isinstance(data["root"], str) or not data["root"].strip()):
         raise ValueError("expected nonempty root path")
     if "version" in data and (type(data["version"]) is not int or data["version"] != 1):

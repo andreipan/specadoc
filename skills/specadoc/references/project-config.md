@@ -24,6 +24,21 @@ runtimes fail rather than silently falling back. Models, effort, permissions
 and tools belong to installed role registries, not this JSON. No global/local
 configuration layering is introduced in v1.
 
+## Verification environment
+
+Accepted evidence is reused only while its environment digest is unchanged.
+Without configuration the digest covers every variable except per-session
+identity, scratch paths, sockets, tokens and proxy plumbing, which differ between
+sessions and hosts. When a new session still reports `environment changed:
+<names>`, list only the variables that verification depends on:
+
+```json
+{"version": 1, "verification": {"environment": ["PATH", "APP_*"]}}
+```
+
+Entries are names or globs. With a list, other variables never invalidate
+evidence. Values are never stored, only a short digest per name.
+
 ## Resolve and dispatch
 
 Use a verified Python 3.11+ interpreter when routes read Codex TOML registries.

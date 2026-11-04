@@ -16,6 +16,17 @@
         "worker": {"$ref": "#/$defs/route"},
         "reviewer": {"$ref": "#/$defs/route"}
       }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "description": "Variable names or globs whose values verification depends on; others never invalidate evidence",
+          "type": "array",
+          "items": {"type": "string", "pattern": "\\S"}
+        }
+      }
     }
   },
   "dependentRequired": {"roles": ["version"]},

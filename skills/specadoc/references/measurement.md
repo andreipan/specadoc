@@ -29,8 +29,10 @@ compute the hash with `validate_change.py --files-hash "<Files: value>"`.
 For managed tasks, `accept` also fingerprints Derived files, implicit lockfiles
 and optional read-only `Verification inputs`. Without declared inputs it uses
 a conservative repository fingerprint for reuse. Declare ignored configs/tools
-explicitly. Commands and a digest of the environment are included; environment
-values are never stored. Old records without input manifests require rechecking.
+explicitly. Commands and a per-variable environment digest are included;
+environment values are never stored, and session identity is excluded (see
+`project-config.md` → Verification environment). A stale message names the
+cause. Old records without input manifests require rechecking.
 A check that changes its own inputs must be rerun on the stable content.
 
 Record execution totals by Specadoc mode: `explore`, `propose`, `apply`, and

@@ -1,6 +1,7 @@
 """Content inputs for verification reuse; no commands or configuration discovery."""
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -65,12 +66,41 @@ def capture(fields: dict[str, str], artifact_root: str) -> dict:
     for path in (*owned, *checks):
         if not Path(path).resolve().is_relative_to(Path.cwd().resolve()):
             raise ValueError(f"verification path leaves repository: {path}")
+    environment = environment_digests()
     return {"version": 1, "owned": owned, "checks": checks,
             "declared": declared, "python": [sys.executable, sys.version],
-            # macOS launchd changes this process identity from an application
-            # name to "0" for Python children; it is not verifier configuration.
-            "environment_hash": content_hash({key: value for key, value in os.environ.items()
-                                               if key != "XPC_SERVICE_NAME"})}
+            "environment": environment, "environment_hash": content_hash(environment)}
+
+
+# Per-session identity, scratch locations and proxy plumbing differ between
+# sessions and hosts without changing what a check verifies.
+VOLATILE_ENVIRONMENT = ("PWD", "OLDPWD", "SHLVL", "_", "TMPDIR", "*_TMPDIR", "TMPPREFIX", "SSH_AUTH_SOCK",
+                        "XPC_SERVICE_NAME", "XPC_FLAGS", "*PROXY*", "*SESSION_ID", "*SESSIONID", "*_THREAD_ID",
+                        "*_PID", "*_SOCKET", "*_TOKEN")
+
+
+def environment_patterns() -> tuple[tuple[str, ...], bool]:
+    """Project allowlist from `.specadoc.json` verification.environment, else the volatile denylist."""
+    from specadoc_config import load_config
+    allow = (load_config(Path.cwd()).get("verification") or {}).get("environment")
+    return (tuple(allow), True) if allow else (VOLATILE_ENVIRONMENT, False)
+
+
+def environment_digests() -> dict[str, str]:
+    """Short digest per relevant variable name; values are never stored."""
+    selected, allowlist = environment_patterns()
+    def matches(name: str) -> bool:
+        return any(fnmatch.fnmatchcase(name.upper(), pattern.upper()) for pattern in selected)
+    return {name: hashlib.sha256(value.encode()).hexdigest()[:16]
+            for name, value in sorted(os.environ.items()) if matches(name) == allowlist}
+
+
+def environment_drift(previous: dict, current: dict) -> list[str]:
+    """Names of variables whose digest differs, for a stale-evidence message."""
+    before, after = previous.get("environment"), current.get("environment")
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return [] if previous.get("environment_hash") == current.get("environment_hash") else ["(unrecorded)"]
+    return sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
 
 
 def content_hash(manifest: dict) -> str:

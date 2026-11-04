@@ -20,7 +20,7 @@ class EngineeringCompanionsTest(unittest.TestCase):
     def test_optional_cleanup_precedes_final_verification(self) -> None:
         apply = (REFERENCES / "apply.md").read_text()
         cleanup = apply.index("optional behavior-preserving cleanup")
-        verification = apply.index("The controller runs the final affected-only verification")
+        verification = apply.index("Controller runs final affected-only checks once")
         review = apply.index("run one independent read-only `reviewer`")
         self.assertLess(cleanup, verification)
         self.assertLess(verification, review)

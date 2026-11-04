@@ -18,7 +18,21 @@ FORBIDDEN = re.compile(
 )
 
 
+# Skill text names host capabilities; concrete host apps and commands live in
+# host instructions or workspace notes. Runtime adapters in scripts may name
+# runtime variables.
+HOST_TERMS = re.compile(r"\b(?:bb|BB)\b|[Hh]erdr|\bACP\b|\bMonitor\b|CLAUDE_CODE_")
+
+
 class NeutralityTest(unittest.TestCase):
+    def test_skill_text_names_no_host_apps(self) -> None:
+        hits = []
+        for path in sorted((ROOT / "skills").rglob("*.md")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if HOST_TERMS.search(line):
+                    hits.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+        self.assertEqual([], hits, "\n".join(hits))
+
     def test_no_host_specific_terms(self) -> None:
         hits = []
         for base in SCANNED:

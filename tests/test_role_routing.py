@@ -51,6 +51,14 @@ class RoutingTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown: models"):
             load_config(self.repo)
 
+    def test_verification_environment_is_a_list_of_names(self):
+        self.config({"verification": {"environment": ["PATH", "APP_*"]}})
+        self.assertEqual(load_config(self.repo)["verification"]["environment"], ["PATH", "APP_*"])
+        for invalid in ({"environment": "PATH"}, {"environment": [""]}, {"commands": []}):
+            self.config({"verification": invalid})
+            with self.assertRaisesRegex(ValueError, "verification"):
+                load_config(self.repo)
+
     def test_missing_config_preserves_native_binding(self):
         route = resolve_role(self.repo, "worker", "claude")
         self.assertEqual((route["runtime"], route["model"], route["dispatch"]), ("claude", "host", "native"))

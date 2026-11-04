@@ -706,29 +706,41 @@ def evidence_is_current(runs: Path, task: str, files_field: str) -> bool | None:
     its current content (overlapping tasks). None when the task has no
     per-file acceptance record (older plans fall back to Evidence hash).
     """
+    return evidence_staleness(runs, task, files_field)[0]
+
+
+def evidence_staleness(runs: Path, task: str, files_field: str) -> tuple[bool | None, str]:
+    """`evidence_is_current` plus the reason when the evidence is stale."""
     try:
         record = json.loads((runs / f"{task}-baseline.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
+        return None, ""
     recorded = (record.get("verification") or {}).get("files") if isinstance(record, dict) else None
     if not isinstance(recorded, dict) or record.get("state") != "accepted":
-        return None
+        return None, ""
     inputs = (record.get("verification") or {}).get("inputs")
     if not isinstance(inputs, dict) or inputs.get("version") != 1:
-        return False  # Older acceptance records must be reverified, never upgraded by assumption.
-    from verification_inputs import capture
+        # Older acceptance records must be reverified, never upgraded by assumption.
+        return False, "the acceptance record predates input manifests"
+    from verification_inputs import capture, environment_drift
     plan = Document(runs.parent / "plan.md", "plan.md")
     fields = next((task_fields(plan, start, end) for identifier, start, end in plan.blocks("Tasks", "T")
                    if identifier == task), {})
     if " ".join(fields.get("Verification", "").split()) != record.get("frozen", {}).get("verification"):
-        return False
+        return False, "Verification changed since acceptance"
     root = runs.parent.parent.resolve().relative_to(Path.cwd().resolve()).as_posix()
     current_inputs = capture(fields, root)
     current = current_inputs["owned"]
-    if any(current_inputs.get(key) != inputs.get(key) for key in ("declared", "python", "environment_hash")):
-        return False
+    if current_inputs.get("declared") != inputs.get("declared"):
+        return False, "declared Verification inputs changed"
+    if current_inputs.get("python") != inputs.get("python"):
+        return False, "the Python interpreter changed"
+    if current_inputs.get("environment_hash") != inputs.get("environment_hash"):
+        names = ", ".join(environment_drift(inputs, current_inputs))
+        return False, (f"environment changed: {names}; list only verifier-relevant variables in "
+                       ".specadoc.json verification.environment")
     if set(current) != set(recorded):
-        return False
+        return False, "the set of owned files changed"
     owned: dict[str, set[str]] = {}
     for other in runs.glob("T*-baseline.json"):
         if other.name == f"{task}-baseline.json":
@@ -740,15 +752,24 @@ def evidence_is_current(runs: Path, task: str, files_field: str) -> bool | None:
         if isinstance(state, dict) and state.get("state") == "accepted":
             for path, value in ((state.get("verification") or {}).get("files") or {}).items():
                 owned.setdefault(path, set()).add(value)
-    if not all(current[path] == recorded[path] or current[path] in owned.get(path, ()) for path in current):
-        return False
+    drifted = sorted(path for path in current
+                     if current[path] != recorded[path] and current[path] not in owned.get(path, ()))
+    if drifted:
+        return False, "owned files changed: " + _first(drifted)
     previous_checks = inputs.get("checks", {})
     current_checks = current_inputs["checks"]
     # Later accepted work may independently verify overlapping inputs. Other
     # config/source/context drift must invalidate dependency evidence as well.
-    return all(current_checks.get(path, "missing") == previous_checks.get(path, "missing")
-               or current_checks.get(path, "missing") in owned.get(path, ())
-               for path in previous_checks.keys() | current_checks.keys())
+    changed = sorted(path for path in previous_checks.keys() | current_checks.keys()
+                     if current_checks.get(path, "missing") != previous_checks.get(path, "missing")
+                     and current_checks.get(path, "missing") not in owned.get(path, ()))
+    if changed:
+        return False, "verification inputs changed: " + _first(changed)
+    return True, ""
+
+
+def _first(paths: list[str], limit: int = 5) -> str:
+    return ", ".join(paths[:limit]) + (f" and {len(paths) - limit} more" if len(paths) > limit else "")
 
 
 def repeated_verification_warnings(plan: Document) -> list[str]:
@@ -1066,15 +1087,17 @@ def check_review_readiness(plan: Document) -> list[Violation]:
             )
 
         evidence_hash = fields.get("Evidence hash", "").strip()
-        current_evidence = evidence_is_current(plan.path.parent / "runs", identifier, fields.get("Files", ""))
+        current_evidence, stale_reason = evidence_staleness(plan.path.parent / "runs", identifier,
+                                                            fields.get("Files", ""))
         if current_evidence is False or (evidence_hash and not PENDING.search(evidence_hash) and current_evidence is not True):
             current_hash = files_field_hash(fields.get("Files", ""))
             if current_evidence is False or (current_hash is not None and current_hash != evidence_hash):
+                change = f" ({stale_reason})" if stale_reason else " to one of its Files"
                 violations.append(
                     Violation(
                         plan.display,
                         start + 1,
-                        f"{identifier}: Evidence predates a later change to one of its Files; "
+                        f"{identifier}: Evidence predates a later change{change}; "
                         f"re-verify and re-record Evidence and Evidence hash",
                     )
                 )

@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from validate_change import (Document, PENDING, TASK_CHECKBOX, evidence_is_current, files_field_hash, ids_in,
+from validate_change import (Document, PENDING, TASK_CHECKBOX, evidence_staleness, files_field_hash, ids_in,
                              task_fields)
 
 SCHEMA = "specadoc.task/v2"
@@ -80,12 +80,13 @@ def readiness(plan: Document, task: str) -> list[str]:
                                 errors.append(f"{task}: dependency {dependency} has not been accepted")
                             else:
                                 files = task_fields(plan, a, b).get("Files", "")
-                                fresh = evidence_is_current(state_path.parent, dependency, files)
+                                fresh, reason = evidence_staleness(state_path.parent, dependency, files)
                                 if fresh is None:
                                     recorded = state.get("verification", {}).get("files_hash")
                                     fresh = bool(recorded) and files_field_hash(files) == recorded
                                 if not fresh:
-                                    errors.append(f"{task}: dependency {dependency} accepted evidence is stale; "
+                                    why = f" ({reason})" if reason else ""
+                                    errors.append(f"{task}: dependency {dependency} accepted evidence is stale{why}; "
                                                   "re-verify it, or reopen it for the drifted files")
                     except (OSError, ValueError, TypeError, AttributeError):
                         errors.append(f"{task}: dependency {dependency} acceptance state is unreadable")

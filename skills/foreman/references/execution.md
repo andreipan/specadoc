@@ -24,10 +24,10 @@ thread, and let the user choose. Do not silently launch fresh substitutes.
 
 - **Native child sessions:** use the exposed launch and resume handles. Check
   whether children may use required tools; an agent file is not registration.
-- **BB or another thread host:** use its installed instructions for thread
-  creation, continuation, status, and permission responses. A separate thread is
-  not proof of delivery or of permissions inside the runtime it hosts.
-- **ACP:** honor foreground requirements for sequential work. Do not finish the
+- **Thread hosts:** use the host's own instructions for thread creation,
+  continuation, status, and permission responses. A separate thread is not proof
+  of delivery or of permissions inside the runtime it hosts.
+- **Foreground-delivery hosts:** honor foreground requirements for sequential work. Do not finish the
   parent turn while a required child result is pending when doing so cuts off
   progress forwarding. Background execution is for independent work when allowed.
 

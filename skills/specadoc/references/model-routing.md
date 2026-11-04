@@ -100,6 +100,12 @@ A fresh session can lose useful cache, so it is not mandatory at every phase:
   of the current window. Pass `--context-tokens` to dispatch when available.
   A boundary handoff lists accepted interfaces, the next ready task, relevant
   decisions and exact evidence; do not copy the discussion or raw logs.
+- When the host can fork a session, a fork of a small base session is cheaper
+  than a fresh session that re-reads the same context. The base loads only
+  change-independent context (this skill, repository rules, tooling notes) and
+  stops; each phase starts as a fork with its handoff as the first prompt. A fork
+  inherits the base's context size, so keep the base small and never fork a long
+  session to escape the context guard.
 
 Role boundaries, routing policy, dispatch contracts, and escalation live in
 `subagent-routing.md`. This file owns risk, binding resolution, binding advice,

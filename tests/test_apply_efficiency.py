@@ -284,6 +284,38 @@ class ApplyEfficiencyTest(unittest.TestCase):
             result = self.run_step('pre-review', 'demo', '--dry-run')
         self.assertEqual(0, result.returncode, result.stdout)
 
+    def test_new_session_identity_does_not_stale_evidence(self):
+        from unittest.mock import patch
+        import os
+        self.accepted()
+        with patch.dict(os.environ, HOST_SESSION_ID='next-session', RUNTIME_THREAD_ID='thr_next',
+                        HTTPS_PROXY='http://localhost:1/next-token', TMPDIR='/tmp/next-session'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+    def test_stale_environment_message_names_the_variable(self):
+        from unittest.mock import patch
+        import os
+        self.accepted()
+        with patch.dict(os.environ, SPECADOC_TEST_CONTEXT='changed'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('environment changed: SPECADOC_TEST_CONTEXT', result.stdout)
+
+    def test_project_environment_allowlist_limits_the_digest(self):
+        from unittest.mock import patch
+        import os
+        self.repo.joinpath('.specadoc.json').write_text(json.dumps(
+            {'version': 1, 'verification': {'environment': ['PATH', 'CHECK_*']}}))
+        self.accepted()
+        with patch.dict(os.environ, SPECADOC_TEST_CONTEXT='changed'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertEqual(0, result.returncode, result.stdout)
+        with patch.dict(os.environ, CHECK_MODE='strict'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('environment changed: CHECK_MODE', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()
