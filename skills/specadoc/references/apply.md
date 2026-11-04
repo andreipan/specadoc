@@ -58,9 +58,16 @@ Load this reference only for `specadoc apply <slug>`.
   artifact root use `--controller-path`. This change's `plan.md` is the
   controller's, but the task's Verification and the plan approval are frozen at
   dispatch; only `amend` changes them. Never widen Files silently.
+- **Stale evidence after later tasks.** `specadoc_step.py refresh <slug>`
+  re-accepts every stale accepted task in dependency order with its report and
+  frozen Verification. Edits inside a later-dispatched task's `Files` are
+  attributed to that task, not counted as scope violations. Without
+  `Verification inputs`, a task's check inputs are the whole repository, so any
+  later edit makes it stale; declare them when the checks are narrow.
 - **Corrective task work after later tasks.** `dispatch <slug> T<n> --reopen
   '<reason>'` archives the previous attempt and report and starts from the current
-  tree. Without `--reopen`, a retry compares against the first attempt.
+  tree. Use it only for code fixes, not for stale evidence. Without `--reopen`, a
+  retry compares against the first attempt.
 - **Review rounds.** New user requirements use `--review-type initial --reason
   requirements`; optional polish uses `--reason polish`. Corrections stay
   `re-review`. The cap blocks a fourth `initial`; an extra round needs

@@ -309,6 +309,58 @@ def scope_violations(
     return violations
 
 
+def _baseline_records(runs: Path) -> dict[str, dict]:
+    records = {}
+    for path in sorted(runs.glob("T*-baseline.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict):
+            records[path.name.removesuffix("-baseline.json")] = record
+    return records
+
+
+def next_sequence(runs: Path) -> int:
+    """Dispatch order; timestamps have one-second resolution."""
+    return 1 + max((r["sequence"] for r in _baseline_records(runs).values()
+                    if isinstance(r.get("sequence"), int)), default=0)
+
+
+def _dispatched_after(other: dict, record: dict) -> bool:
+    if isinstance(other.get("sequence"), int) and isinstance(record.get("sequence"), int):
+        return other["sequence"] > record["sequence"]
+    started, mine = other.get("started"), record.get("started")
+    return isinstance(started, str) and isinstance(mine, str) and started >= mine
+
+
+def later_task_scopes(runs: Path, task: str, record: dict) -> dict[str, tuple[list[str], list[str]]]:
+    """Frozen (scope, derived) of tasks dispatched after this task's baseline.
+
+    Overlapping tasks legitimately edit an earlier task's tree; those edits are
+    attributed to the later task instead of failing the earlier task's scope.
+    The later task's own evidence then covers that content.
+    """
+    return {other: (list(state.get("scope") or []), list(state.get("derived") or []))
+            for other, state in _baseline_records(runs).items()
+            if other != task and _dispatched_after(state, record)}
+
+
+def attribute_violations(violations: list[dict[str, str]], scopes: dict[str, tuple[list[str], list[str]]]
+                         ) -> tuple[list[dict[str, str]], dict[str, list[str]]]:
+    """Split `outside the task's Files` violations covered by a later task's scope."""
+    kept, attributed = [], {}
+    for item in violations:
+        owner = next((task for task, (patterns, derived) in scopes.items()
+                      if item["reason"] == "outside the task's Files"
+                      and (in_scope(item["path"], patterns) or is_derived(item["path"], patterns, derived))), None)
+        if owner is None:
+            kept.append(item)
+        else:
+            attributed.setdefault(owner, []).append(item["path"])
+    return kept, attributed
+
+
 def derived_changes(baseline: Manifest, current: Manifest, patterns: list[str], derived: list[str]) -> list[str]:
     delta = diff(baseline, current)
     return sorted(path for paths in delta.values() for path in paths
@@ -496,7 +548,8 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
         payload = {"schema": SCHEMA, "task": task, "hash": manifest_hash(current),
                    "manifest": current, "scope": patterns, "derived": derived, "state": "dispatched",
                    "frozen": frozen_contract(plan, task),
-                   "started": timestamp(), "capabilities": capabilities}
+                   "started": timestamp(), "sequence": next_sequence(baseline_path.parent),
+                   "capabilities": capabilities}
         save(baseline_path, payload)
         print(json.dumps({"baseline": str(baseline_path), "files": len(current), "uncheckable": uncheckable}))
         return 0
@@ -519,6 +572,8 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
     # The controller owns this change's plan.md; the worker brief forbids editing it.
     own_plan = Path(os.path.relpath(plan_path.resolve(), Path.cwd().resolve())).as_posix()
     violations = scope_violations(baseline, current, frozen, artifact_root, frozen_derived, (own_plan,))
+    violations, attributed = attribute_violations(
+        violations, later_task_scopes(baseline_path.parent, task, record))
     if set(patterns) != set(frozen) or set(derived) != set(frozen_derived):
         violations.append({"path": own_plan, "change": "changed",
                            "reason": "task scope differs from its baseline; use specadoc_step.py amend"})
@@ -529,7 +584,7 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
             violations.append({"path": own_plan, "change": "changed",
                                "reason": f"task {key} changed since dispatch; the controller uses specadoc_step.py amend"})
     result = {"task": task, "violations": violations, "uncheckable": uncheckable,
-              "derived": derived_changes(baseline, current, frozen, frozen_derived)}
+              "derived": derived_changes(baseline, current, frozen, frozen_derived), "attributed": attributed}
     if violations:
         print(json.dumps(result, indent=2))
         return 1

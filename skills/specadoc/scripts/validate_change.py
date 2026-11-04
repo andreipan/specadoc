@@ -1099,7 +1099,7 @@ def check_review_readiness(plan: Document) -> list[Violation]:
                         plan.display,
                         start + 1,
                         f"{identifier}: Evidence predates a later change{change}; "
-                        f"re-verify and re-record Evidence and Evidence hash",
+                        f"re-verify with specadoc_step.py refresh",
                     )
                 )
 

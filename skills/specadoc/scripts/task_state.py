@@ -85,7 +85,7 @@ def readiness(plan: Document, task: str) -> list[str]:
                                 if not fresh:
                                     why = f" ({reason})" if reason else ""
                                     errors.append(f"{task}: dependency {dependency} accepted evidence is stale{why}; "
-                                                  "re-verify it, or reopen it for the drifted files")
+                                                  "run specadoc_step.py refresh <slug>; reopen only for code fixes")
                     except (OSError, ValueError, TypeError, AttributeError):
                         errors.append(f"{task}: dependency {dependency} acceptance state is unreadable")
             visit(dependency, (*trail, current))

@@ -540,7 +540,7 @@ class ValidateChangeTest(unittest.TestCase):
 
         self.assertIn(
             "T1: Evidence predates a later change to one of its Files; "
-            "re-verify and re-record Evidence and Evidence hash",
+            "re-verify with specadoc_step.py refresh",
             messages,
         )
 

@@ -23,6 +23,8 @@ Steps:
   Commands must occupy the entire field, backticked and separated by semicolons.
   Run from the repository root; accept executes shell commands with the
   caller's permissions. Inspect them first and follow host approval rules.
+- `refresh <slug>` — re-accept every settled task whose evidence went stale after
+  later tasks, in dependency order, with the same report and frozen Verification.
 - `pre-review <slug>` — the pre-review gate plus the snapshot manifest to record
   in the new `### G<n>` round.
 
@@ -256,7 +258,14 @@ def scope_state(slug: str, task: str, root: str | None, checked: list[str]) -> t
     baseline_path = Path(artifact_root) / slug / "runs" / f"{task}-baseline.json"
     baseline = json.loads(baseline_path.read_text())["manifest"]
     delta = diff(baseline, tree_manifest(Path.cwd(), artifact_root))
-    changed = sorted(path for paths in delta.values() for path in paths)
+    attributed = payload.get("attributed") or {}
+    later = {path for paths in attributed.values() for path in paths}
+    if attributed:
+        note = "attributed to later tasks: " + "; ".join(f"{owner} {', '.join(paths)}"
+                                                        for owner, paths in sorted(attributed.items()))
+        if note not in checked:
+            checked.append(note)
+    changed = sorted(path for paths in delta.values() for path in paths if path not in later)
     return changed, violations, payload.get("derived", []), None
 
 
@@ -408,6 +417,71 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     return emit(checked, "ACCEPTED", changed, "", "task evidence and accepted result saved; continue with the next ready task")
 
 
+SETTLED_STATES = ("accepted", "external-pending")
+
+
+def dependency_order(plan: Document) -> list[str]:
+    """Task ids with every dependency before its dependents; plan order otherwise."""
+    from validate_change import ids_in
+    depends = {identifier: ids_in(task_fields(plan, start, end).get("Depends on", ""), "T")
+               for identifier, start, end in plan.blocks("Tasks", "T")}
+    order: list[str] = []
+
+    def visit(task: str, trail: frozenset[str]) -> None:
+        if task in order or task in trail or task not in depends:
+            return
+        for dependency in depends[task]:
+            visit(dependency, trail | {task})
+        order.append(task)
+
+    for task in depends:
+        visit(task, frozenset())
+    return order
+
+
+def refresh(slug: str, root: str | None, verification_timeout: float = 600) -> int:
+    """Re-verify every settled task whose evidence went stale, in dependency order.
+
+    Stale evidence after later tasks is not corrective work: the same report and
+    frozen Verification are re-accepted against today's tree, without --reopen.
+    """
+    import contextlib
+    import io
+    from validate_change import evidence_staleness
+    change = Path(resolve_root(root).path) / slug
+    plan_path = change / "plan.md"
+    checked: list[str] = []
+    for task in dependency_order(Document(plan_path, str(plan_path))):
+        state_path = change / "runs" / f"{task}-baseline.json"
+        try:
+            record = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict) or record.get("state") not in SETTLED_STATES:
+            continue
+        _, _, fields = task_block(Document(plan_path, str(plan_path)), task)
+        fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
+        if fresh is not False:
+            continue
+        if reason.startswith("Verification changed"):
+            return emit(checked + [f"{task}: {reason}"], "BLOCKED", [], f"{task}: {reason}",
+                        f"settle the Verification change with amend, or dispatch {task} --reopen for corrective work")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = accept(slug, task, root, note=record.get("note"), verification_timeout=verification_timeout)
+        if code != 0:
+            print(output.getvalue().rstrip())
+            return emit(checked + [f"{task}: {reason}"], "FAIL" if code == 1 else "BLOCKED", [],
+                        f"{task} could not be re-accepted; see its accept result above",
+                        f"fix {task} (dispatch --reopen for code changes), then rerun refresh")
+        result = next((line.removeprefix("result: ") for line in output.getvalue().splitlines()
+                       if line.startswith("result: ")), "ACCEPTED")
+        checked.append(f"{task} {result.lower()} ({reason})")
+    if not checked:
+        return emit(["evidence staleness"], "PASS", [], "", "no stale task evidence; continue")
+    return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
+
+
 def amend(slug: str, task: str, root: str | None, allowed: list[str], controller_paths: list[str], reason: str,
           derived: list[str] | None = None) -> int:
     if not reason.strip() or re.search(r"\b(?:pending|TBD|N/A)\b", reason, re.I):
@@ -526,6 +600,9 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--review-decision", help="Actual user decision authorizing a bounded extra round")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
+    refreshed = steps.add_parser("refresh", help="Re-verify stale accepted task evidence without --reopen")
+    refreshed.add_argument("change_slug")
+    refreshed.add_argument("--verification-timeout", type=float, default=600)
     settled = steps.add_parser("review-result")
     settled.add_argument("change_slug")
     settled.add_argument("--result-file", required=True)
@@ -553,6 +630,8 @@ def main() -> int:
                           verification_timeout=args.verification_timeout)
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
+        if args.step == "refresh":
+            return refresh(args.change_slug, args.root, args.verification_timeout)
         if args.step == "review-result":
             from review_state import record_result
             identifier = record_result(Path(resolve_root(args.root).path) / args.change_slug, args.result_file)
