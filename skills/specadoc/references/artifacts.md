@@ -200,7 +200,8 @@ is deliberately separate from task `Files:`, which may contain paths or
 symbols. Prefix an intentional deletion with `!`; reject symbols, globs, brace
 expressions, directories, absolute paths, and paths containing `..`.
 
-Task ownership values are `controller` (the default) or `worker`. Verification
+Task ownership values are `worker` (for a task ready for one) or `controller`
+(`subagent-routing.md` → Routing policy). Verification
 ownership, `worker` or `controller`, is required only on worker tasks. Overall
 high risk does not prevent a low-decision task from using a worker.
 

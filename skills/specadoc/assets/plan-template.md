@@ -78,8 +78,10 @@ section otherwise.>
 - **Open decisions:** None
 - **Risk:** __RISK__
 - **Decision risk:** <low|medium|high>
-- **Owner:** <controller by default; worker only for a mechanical task large
-  relative to its brief>
+- **Owner:** <worker for a task with low decision risk, known Files and exact
+  Verification; controller with a Controller justification otherwise>
+- **Controller justification:** None; optional — why a task ready for a worker stays
+  with the controller (an edit smaller than its brief, a decision made while editing)
 - **Verification owner:** <worker|controller; worker tasks only — delete for controller tasks>
 - **Files:** <backticked paths, directories, or globs; symbols in parentheses after a path>
 - **Derived files:** None; optional — backticked generated or wiring paths the task may also

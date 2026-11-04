@@ -117,12 +117,14 @@ later session does not lose it. Write "None" when nothing is outstanding.
 ## Remaining risks
 Write "None" when no known risks remain.
 
-When the dispatch names a report file, write this report there and return only
-the status line, the changed files, and the RED/GREEN commands. When a result
-schema is supplied, the final message must be JSON matching it.
-Embed that same JSON as the last fenced block in the report when the generated
-brief requests it. A path to a schema names an existing asset; do not guess its
-location. Never claim DONE when missing required verification or a scope decision.
+When the brief names `specadoc_step.py report`, finish with that command: it
+writes the report file and its validated result JSON from your actual changed
+paths, and prints the JSON; return that JSON unchanged as the final message.
+Never hand-write the result JSON or reuse `manifest` output as a result. Without
+a shell, write the report to the named file and return JSON matching the
+supplied schema, embedded as the report's last fenced block. A path to a schema
+names an existing asset; do not guess its location. Never claim DONE when
+missing required verification or a scope decision.
 
 When NEEDS_CONTEXT or BLOCKED, also include:
 - the precise blocker;

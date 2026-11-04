@@ -803,6 +803,30 @@ def repeated_verification_warnings(plan: Document) -> list[str]:
             for command, tasks in by_command.items() if len(tasks) >= 3]
 
 
+def controller_routing_warnings(plan: Document) -> list[str]:
+    """Open controller tasks a worker could take; the controller's context is the scarce budget."""
+    eligible = []
+    for identifier, start, end in plan.blocks("Tasks", "T"):
+        fields = task_fields(plan, start, end)
+        marks = [m["mark"] for line in plan.lines[start:end] if (m := TASK_CHECKBOX.match(line))]
+        justification = " ".join(fields.get("Controller justification", "").split())
+        if (fields.get("Owner", "").strip().lower() != "controller" or (marks and " " not in marks)
+                or (justification and not NO_VALUE.match(justification))
+                or fields.get("Decision risk", "").strip().lower() != "low"
+                or not NO_VALUE.match(fields.get("Open decisions", "None").strip() or "None")):
+            continue
+        verification = fields.get("Verification", "")
+        if not re.fullmatch(r"\s*`[^`\n]+`(?:\s*;\s*`[^`\n]+`)*\s*", verification):
+            continue
+        paths, uncheckable = files_patterns(fields.get("Files", ""))
+        if paths and not uncheckable:
+            eligible.append(identifier)
+    if not eligible:
+        return []
+    return [f"{', '.join(eligible)}: low decision risk with exact Files and Verification; set Owner: worker, "
+            "or record a Controller justification (open material decision, edit smaller than its brief)"]
+
+
 def plan_size_warnings(plan: Document) -> list[str]:
     """plan.md is re-read at every task and review; size multiplies its cost."""
     size = len("\n".join(plan.lines).encode("utf-8"))
@@ -1437,7 +1461,7 @@ def main() -> int:
     cross_violations, cross_warnings = cross_change_findings(spec, root, args.change_slug)
     violations += cross_violations
     if args.phase == "plan":
-        cross_warnings += repeated_verification_warnings(plan)
+        cross_warnings += repeated_verification_warnings(plan) + controller_routing_warnings(plan)
     if args.phase != "spec":
         cross_warnings += plan_size_warnings(plan)
     task_count = len(plan.blocks("Tasks", "T"))

@@ -14,10 +14,11 @@ Load this reference only for `specadoc propose`.
 5. Complete a small ordered set of independently verifiable tasks (usually
     three to eight, a heuristic rather than a hard limit) and the
     requirement-to-check matrix in `plan.md`.
-    Tasks default to `Owner: controller`. Mark `worker` only for a mechanical
-    task that is large relative to its brief: a multi-file sweep, a rule-based
-    migration, or lint fixes across a module. Merge adjacent mechanical steps
-    with shared files/checks. Keep `plan.md` to decisions, tasks, one-line
+    A task with low decision risk, known Files and exact Verification gets
+    `Owner: worker`; keep it with the controller only with a recorded
+    `Controller justification` (an edit smaller than its brief, a decision
+    made while editing). Merge
+    adjacent mechanical steps with shared files/checks. Keep `plan.md` to decisions, tasks, one-line
     evidence and current state; `validate_change.py` warns above 32 KiB.
     Reuse exact verifier commands, explicit project configs, baseline failures
     and DB/live permission limits in each task's bounded `Test context`.

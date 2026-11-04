@@ -7,8 +7,9 @@ Load this reference only for `specadoc apply <slug>`.
    controller context: save a compact handoff and resume `apply <slug>` in a new
    session. Claude Code sessions are read automatically; other hosts pass the
    observed count with `--context-tokens <n>`. Never invent a count.
-2. Close material decisions before RED. Tasks are controller-owned unless the
-   plan marks a worker (`subagent-routing.md` → Routing policy). A worker task
+2. Close material decisions before RED. A task ready for a worker goes to one;
+   the controller keeps tasks with open decisions or a recorded Controller
+   justification (`subagent-routing.md` → Routing policy). A worker task
    also names bounded
    `Decisions`, `Interfaces`, `Depends on` and `Test context`; its `Files` cover
    the code and tests, and `Derived files` covers generated or wiring paths
@@ -27,7 +28,9 @@ Load this reference only for `specadoc apply <slug>`.
    deterministic check for mechanical work. REFACTOR may include
    optional behavior-preserving cleanup (`interoperability.md`). Task checks
    are focused; the full suite runs once in Final verification.
-5. Read the report, then `specadoc_step.py accept <slug> T<n>`. It validates the
+5. The implementer ends with `specadoc_step.py report <slug> T<n> --status …
+   --summary … --red … --green …`, which writes the report and its result JSON
+   from the actual delta. Read the report, then `specadoc_step.py accept <slug> T<n>`. It validates the
    report JSON, runs Verification (reused only for unchanged content inputs,
    commands and environment), checks scope, and on **ACCEPTED** records Evidence, Evidence hash
    and Accepted result. One call reports both scope violations and check results.

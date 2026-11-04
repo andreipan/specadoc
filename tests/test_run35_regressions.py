@@ -187,5 +187,82 @@ class ExternalVerificationTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout)
 
 
+class WorkerResultTest(unittest.TestCase):
+    """3.5: the only worker result was manifest-shaped JSON; the controller then implemented everything."""
+    setUp = reliability.ApplyReliabilityTest.setUp
+    tearDown = reliability.ApplyReliabilityTest.tearDown
+    run_step = reliability.ApplyReliabilityTest.run_step
+    validate = ExternalVerificationTest.validate
+
+    def dispatch_and_edit(self):
+        result = self.run_step('dispatch', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('specadoc_step.py report', result.stdout)
+        self.repo.joinpath('label.py').write_text('def label():\n    return "ready"  # final\n')
+
+    def write_report(self, *extra):
+        return self.run_step('report', 'demo', 'T1', '--status', 'DONE', '--summary', 'label() returns ready',
+                             '--red', 'check_label.py failed on the old label', '--green', 'python3 check_label.py passed',
+                             *extra)
+
+    def test_report_step_writes_a_result_accept_takes(self):
+        self.dispatch_and_edit()
+        result = self.write_report()
+        self.assertEqual(0, result.returncode, result.stdout)
+        report = self.change.joinpath('runs/T1-report.md').read_text()
+        payload = json.loads(report.rsplit('```json\n', 1)[1].split('```', 1)[0])
+        self.assertEqual(['label.py'], payload['files_changed'])
+        self.assertEqual('docs/specadoc/demo/runs/T1-report.md', payload['report'])
+        self.assertIn(json.dumps(payload, ensure_ascii=False), result.stdout)
+        accepted = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(0, accepted.returncode, accepted.stdout)
+        self.assertIn('label() returns ready', self.plan.read_text())
+
+    def test_report_step_flags_changes_outside_scope(self):
+        self.dispatch_and_edit()
+        self.repo.joinpath('stray.py').write_text('z = 1\n')
+        result = self.write_report()
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertIn("stray.py (outside the task's Files)", result.stdout)
+
+    def test_manifest_shaped_result_names_the_mistake(self):
+        self.dispatch_and_edit()
+        runs = self.change / 'runs'
+        manifest = {'task': 'T1', 'files_changed': ['label.py'], 'review_scope': ['- `label.py`']}
+        runs.joinpath('T1-report.md').write_text('# report\n\n```json\n' + json.dumps(manifest) + '\n```\n')
+        result = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertIn('$.summary: missing', result.stdout)
+        self.assertIn('this is `manifest` output, not a worker result', result.stdout)
+        self.assertIn('specadoc_step.py report demo T1', result.stdout)
+
+    def test_brief_ends_with_report_not_manifest(self):
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        brief = self.change.joinpath('runs/T1-brief.md').read_text()
+        self.assertIn('specadoc_step.py report demo T1 --status DONE', brief)
+        self.assertNotIn(' manifest demo T1', brief)
+
+    def test_external_worker_route_prints_the_start_command(self):
+        self.repo.joinpath('.codex/agents').mkdir(parents=True)
+        self.repo.joinpath('.codex/agents/worker.toml').write_text('model = "executor"\nmodel_reasoning_effort = "low"\n')
+        self.repo.joinpath('.specadoc.json').write_text(json.dumps(
+            {'version': 1, 'roles': {'worker': {'runtime': 'codex'}, 'controller': {'runtime': 'claude'}}}))
+        result = self.run_step('dispatch', 'demo', 'T1', '--controller-runtime', 'claude')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('run_role.py start --role worker --controller-runtime claude', result.stdout)
+        self.assertIn('--prompt-file docs/specadoc/demo/runs/T1-brief.md --name T1', result.stdout)
+
+    def test_plan_warns_on_worker_ready_controller_task(self):
+        open_controller = PLAN.replace('- [x] Complete', '- [ ] Complete', 1).replace(
+            '- **Owner:** worker\n- **Verification owner:** controller', '- **Owner:** controller', 1)
+        self.plan.write_text(open_controller)
+        result = self.validate('plan')
+        self.assertIn('T1: low decision risk with exact Files and Verification; set Owner: worker', result.stderr)
+        self.plan.write_text(open_controller.replace(
+            '- **Owner:** controller', '- **Owner:** controller\n'
+            '- **Controller justification:** One-line edit; the brief would be longer than the change.', 1))
+        self.assertNotIn('set Owner: worker', self.validate('plan').stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

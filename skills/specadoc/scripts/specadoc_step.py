@@ -18,6 +18,8 @@ Steps:
 - `dispatch <slug> T<n>` — preflight, task baseline and brief; also supports a
   controller-owned task without launching a worker.
 - `manifest <slug> T<n>` — JSON actual changed paths and suggested review bullets.
+- `report <slug> T<n> --status … --summary … --red … --green …` — write the task
+  report and its schema-valid result JSON from the actual delta.
 - `accept <slug> T<n>` — scope check, report validation, exact Verification
   commands, then a second scope check.
   Commands must occupy the entire field, backticked and separated by semicolons.
@@ -228,9 +230,62 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     if failure is not None:
         return failure
     owner = task_block(plan, task)[2].get("Owner", "worker").lower()
-    next_step = (f"implement the controller task (brief {brief_path} is optional); record result in {report}" if owner == "controller"
-                 else f"dispatch the worker with brief {brief_path} and report {report}")
+    finish = f"finish with specadoc_step.py report {slug} {task}, then accept"
+    if owner == "controller":
+        next_step = f"implement the controller task (brief {brief_path} is optional); {finish}"
+    else:
+        next_step = f"dispatch the worker with brief {brief_path}; it writes {report} with specadoc_step.py report; then accept"
+        route = worker_route(controller)
+        if route and route["dispatch"] == "external":
+            next_step = (f"start the worker: python3 {SCRIPTS / 'run_role.py'} start --role worker --controller-runtime "
+                         f"{controller} --prompt-file {brief_path} --name {task}; wait on its run file, then accept")
     return emit(checked, "PASS", [], "", next_step)
+
+
+def worker_route(controller: str | None) -> dict | None:
+    from specadoc_config import load_config
+    if not controller or "roles" not in load_config(Path.cwd()):
+        return None
+    from role_routing import resolve_role
+    return resolve_role(Path.cwd(), "worker", controller)
+
+
+def write_report(slug: str, task: str, root: str | None, status: str, summary: str, red: str, green: str,
+                 concerns: list[str], body_file: str | None = None) -> int:
+    """Write the task report and its schema-valid result JSON; never hand-written JSON."""
+    from run_role import schema_errors, schema_path
+    from review_snapshot import _under
+    checked = ["task delta"]
+    changed, violations, _, failure = scope_state(slug, task, root, checked)
+    if failure is not None:
+        return failure
+    artifact_root = resolve_root(root).path
+    report = Path(artifact_root) / slug / "runs" / f"{task}-report.md"
+    concerns = [" ".join(item.split()) for item in concerns if item.strip()]
+    payload = {"status": status, "summary": " ".join(summary.split()),
+               "files_changed": [path for path in changed if not _under(path, artifact_root)],
+               "tests": {"red": " ".join(red.split()), "green": " ".join(green.split())},
+               "concerns": concerns, "report": report.as_posix()}
+    if not payload["summary"] or PENDING_REASON.fullmatch(payload["summary"]):
+        raise ValueError("--summary must describe the delivered result")
+    if errors := schema_errors(payload, json.loads(schema_path("worker").read_text())):
+        raise ValueError("invalid worker result: " + "; ".join(errors))
+    body = safe_path(body_file, allow_missing=False, allow_absolute=True).read_text(encoding="utf-8") if body_file else ""
+    sections = [f"# {task} report", "", "## Summary", "", payload["summary"], "", "## RED", "", payload["tests"]["red"],
+                "", "## GREEN", "", payload["tests"]["green"], "", "## Concerns", "",
+                *([f"- {item}" for item in concerns] or ["None"]), ""]
+    if body.strip():
+        sections += ["## Notes", "", body.strip(), ""]
+    text = "\n".join(sections) + "\n```json\n" + json.dumps(payload, indent=1, ensure_ascii=False) + "\n```\n"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(text, encoding="utf-8")
+    checked.append(f"wrote {report}")
+    detail = json.dumps(payload, ensure_ascii=False)
+    if violations:
+        return emit(checked, "FAIL", violations, "changes outside the task scope",
+                    "revert those paths, or rerun report with --status NEEDS_CONTEXT naming the required path", detail)
+    return emit(checked, "CHECKED", payload["files_changed"], "",
+                "report written; return the JSON below as the result; the controller runs accept", detail)
 
 
 def verification_commands(slug: str, task: str, root: str | None) -> list[str]:
@@ -295,7 +350,11 @@ def worker_result(change: Path, task: str, result_file: str | None) -> tuple[dic
         payload = payload["result"]
     errors = schema_errors(payload, json.loads(schema_path("worker").read_text()))
     if errors:
-        raise ValueError("invalid worker result: " + "; ".join(errors))
+        hint = ""
+        if isinstance(payload, dict) and ({"task", "review_scope"} & payload.keys()):
+            hint = "; this is `manifest` output, not a worker result"
+        raise ValueError("invalid worker result: " + "; ".join(errors) + hint
+                         + f"; write it with specadoc_step.py report {change.name} {task}")
     if safe_path(payload["report"], allow_missing=False, allow_absolute=True).resolve() != report.resolve():
         raise ValueError("worker result points to a different report")
     if payload["status"] not in ("DONE", "DONE_WITH_CONCERNS"):
@@ -651,6 +710,15 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--review-decision", help="Actual user decision authorizing a bounded extra round")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
+    reported = steps.add_parser("report", help="Write the task report with its schema-valid result JSON")
+    reported.add_argument("change_slug")
+    reported.add_argument("task", help="Task id such as T3")
+    reported.add_argument("--status", choices=("DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"), required=True)
+    reported.add_argument("--summary", required=True, help="Delivered result: behavior and interfaces, one or two sentences")
+    reported.add_argument("--red", required=True, help="Observed failing test, or the approved TDD exception")
+    reported.add_argument("--green", required=True, help="Observed passing checks")
+    reported.add_argument("--concern", action="append", default=[], help="One concern; repeat as needed")
+    reported.add_argument("--body-file", help="Optional longer notes appended to the report")
     external = steps.add_parser("external-result", help="Record a task's External verification result")
     external.add_argument("change_slug")
     external.add_argument("task", help="Task id such as T6")
@@ -670,7 +738,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest", "external-result") and not re.fullmatch(r"T\d+", args.task):
+    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest", "external-result", "report") and not re.fullmatch(r"T\d+", args.task):
         print("error: task must look like T<n>", file=sys.stderr)
         return 2
     try:
@@ -687,6 +755,9 @@ def main() -> int:
                           verification_timeout=args.verification_timeout)
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
+        if args.step == "report":
+            return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
+                                args.green, args.concern, args.body_file)
         if args.step == "external-result":
             return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log)
         if args.step == "refresh":

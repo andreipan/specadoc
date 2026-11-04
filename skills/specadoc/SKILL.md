@@ -41,10 +41,10 @@ Without an explicit mode:
 - Explicit invocation only; never create a second artifact tree.
 - `spec.md` is the stable behavioral contract. `plan.md` owns mutable technical
   state, approvals, evidence, and the compact archive summary.
-- The controller implements by default. A `scout` or `worker` is optional and
-  bounded, used only when its handoff pays for itself; one final read-only
-  `reviewer` covers each stable executable diff. The controller owns all final
-  verification.
+- A `worker` implements each task with low decision risk, known Files and an
+  exact Verification; the controller keeps open decisions and justified small
+  edits. A `scout` is optional and bounded; one final read-only `reviewer`
+  covers each stable executable diff. The controller owns all final verification.
 - Role startup, symbol-aware tools and code graphs are independent capabilities.
   Distinguish absence after discovery from a failed exposed call; cite a call
   and error only when actually attempted.
@@ -57,9 +57,9 @@ Without an explicit mode:
 - Failed gates do not authorize baseline rewrites, weaker frozen Verification,
   hidden completed work or altered approvals. Use amendment, reopen or an
   authorized exception; otherwise report the blocker.
-- When a required check is reserved for the user, keep its task unaccepted until
-  the user supplies the result. Static checks do not replace that evidence.
-  Give the command/prerequisites and resume this change with the observed result;
+- A required check reserved for the user or another executor goes in the task's
+  `External verification:`; record the observed result with `external-result`.
+  Static checks do not replace that evidence. Give the command/prerequisites and
   do not claim completion while it is pending.
 - Follow the host's command conventions (for example a required command prefix
   in repository or harness instructions) for every shell command shown or run.

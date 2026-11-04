@@ -24,25 +24,25 @@ Do not place task-specific paths, requirement IDs, or feature details in the rol
 
 Use `scout` for bounded read-only repository investigation.
 
-The controller implements tasks by default. Writing a complete worker brief,
-cold-starting the worker and accepting its diff usually costs the controller
-more than writing the code, and every retry repeats that cost.
-
-Use `worker` only when the handoff pays for itself:
-- the task is mechanical and large relative to its brief: a sweep over many
-  files, a rule-based migration, static-analysis or lint fixes across a module,
-  or tests generated from a verified exemplar;
-- the task is fully specified and has low decision risk;
+A `worker` implements every task that is ready for it. The controller's
+context is the scarce budget: implementing each task itself grows the
+controller session until it must be replaced, and every replacement re-reads
+the plan. A task is ready for a worker when:
+- it is fully specified and has low decision risk;
 - relevant files and interfaces are known;
 - expected behavior is explicit;
-- a deterministic verification command exists;
+- an exact deterministic Verification command exists;
 - no material behavior, architecture, authorization, schema, ownership, or
   compatibility decision remains.
 
-The overall change may be high risk; these criteria apply per task. When the
-controller context nears the dispatch guard, prefer a session boundary
-(`model-routing.md` → Session boundaries) over moving decision-heavy work to a
-worker.
+The controller keeps a ready task only with a recorded `Controller
+justification`: an edit smaller than its brief, or a decision the controller
+must make while editing. `validate_change.py --phase plan` warns on a ready
+controller task without one. The overall change may be high risk; these
+criteria apply per task. Never move decision-heavy work to a worker to save
+controller context; prefer a session boundary (`model-routing.md` → Session
+boundaries). The worker ends with `specadoc_step.py report`; the controller
+reads the report and runs `accept`.
 
 Size each worker task so its startup is worth it: merge adjacent mechanical
 tasks into one when they share files and one Verification command, and keep
