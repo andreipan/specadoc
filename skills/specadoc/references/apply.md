@@ -7,7 +7,9 @@ Load this reference only for `specadoc apply <slug>`.
    controller context: save a compact handoff and resume `apply <slug>` in a new
    session. Claude Code sessions are read automatically; other hosts pass the
    observed count with `--context-tokens <n>`. Never invent a count.
-2. Before delegation, close material decisions. Each worker task names bounded
+2. Close material decisions before RED. Tasks are controller-owned unless the
+   plan marks a worker (`subagent-routing.md` → Routing policy). A worker task
+   also names bounded
    `Decisions`, `Interfaces`, `Depends on` and `Test context`; its `Files` cover
    the code and tests, and `Derived files` covers generated or wiring paths
    (barrel exports, generated clients). A lockfile is derived when its manifest
@@ -17,14 +19,13 @@ Load this reference only for `specadoc apply <slug>`.
 3. `specadoc_step.py dispatch <slug> T<n>` validates readiness, paths, commands
    and routing before writing baseline/brief; it executes no Verification.
    Optional `preflight <slug> T<n>` checks without writes; do not repeat it before
-   dispatch. Retries keep the original baseline. Delegate one
-   fully specified task at a time; serialize overlapping writers. Routed projects
-   pass `--controller-runtime`; see `subagent-routing.md`. One-file, one-cycle
-   controller corrections use these gates with `Owner: controller` and
-   `Controller justification`, without a worker.
-4. Worker uses RED-GREEN-REFACTOR; an explicit `TDD exception` names the
+   dispatch. Retries keep the original baseline. A controller
+   task uses the same gates without a worker and need not read its brief.
+   Delegate one fully specified worker task at a time; serialize overlapping
+   writers. Routed projects pass `--controller-runtime`; see `subagent-routing.md`.
+4. The implementer, controller or worker, uses RED-GREEN-REFACTOR; an explicit `TDD exception` names the
    deterministic check for mechanical work. REFACTOR may include
-   optional behavior-preserving cleanup (`interoperability.md`). Worker checks
+   optional behavior-preserving cleanup (`interoperability.md`). Task checks
    are focused; the full suite runs once in Final verification.
 5. Read the report, then `specadoc_step.py accept <slug> T<n>`. It validates the
    report JSON, runs Verification (reused only for unchanged content inputs,

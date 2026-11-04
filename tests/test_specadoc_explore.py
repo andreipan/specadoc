@@ -14,7 +14,7 @@ class SpecadocExploreTest(unittest.TestCase):
         text = EXPLORE.read_text(encoding="utf-8")
 
         capability_search = text.index("search `docs/specadoc/specs/`")
-        scout_dispatch = text.index("Attempt exactly one bounded read-only `scout`")
+        scout_dispatch = text.index("Dispatch at most one\n   bounded read-only `scout`")
 
         self.assertLess(capability_search, scout_dispatch)
         self.assertIn("Read at most three files", text)
@@ -24,7 +24,7 @@ class SpecadocExploreTest(unittest.TestCase):
 
     def test_explore_runs_doctor_for_missing_key_paths(self) -> None:
         text = EXPLORE.read_text(encoding="utf-8")
-        step2 = text[text.index("2. Before dispatching") : text.index("3. Attempt")]
+        step2 = text[text.index("2. Before dispatching") : text.index("3. Investigate")]
         step2 = " ".join(step2.split())
 
         self.assertIn("<skill-root>/scripts/doctor.py", step2)

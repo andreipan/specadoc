@@ -1,19 +1,43 @@
 {
-  "limits": {"skill": 5632, "reference": 15360},
+  "limits": {
+    "skill": 5632,
+    "reference": 15360
+  },
   "modes": {
     "explore": {
       "limit": 14336,
-      "always": ["explore.md", "recon-and-clarify.md"],
-      "conditional": ["interoperability.md", "roles/scout.md"]
+      "always": [
+        "explore.md",
+        "recon-and-clarify.md"
+      ],
+      "conditional": [
+        "interoperability.md",
+        "roles/scout.md"
+      ]
+    },
+    "light": {
+      "limit": 12288,
+      "always": [
+        "light.md"
+      ],
+      "conditional": [
+        "tdd-and-review.md"
+      ]
     },
     "propose": {
       "limit": 31744,
-      "always": ["propose.md", "artifacts.md", "model-routing.md"],
+      "always": [
+        "propose.md",
+        "artifacts.md",
+        "model-routing.md"
+      ],
       "conditional": []
     },
     "apply": {
       "limit": 11264,
-      "always": ["apply.md"],
+      "always": [
+        "apply.md"
+      ],
       "conditional": [
         "interoperability.md",
         "subagent-routing.md",
@@ -27,7 +51,9 @@
     },
     "archive": {
       "limit": 10240,
-      "always": ["archive.md"],
+      "always": [
+        "archive.md"
+      ],
       "conditional": []
     }
   }

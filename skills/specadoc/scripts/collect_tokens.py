@@ -434,7 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--harness", required=True,
                         choices=("claude", "codex", "opencode"))
     parser.add_argument("--mode", required=True,
-                        choices=("explore", "propose", "apply", "archive"))
+                        choices=("explore", "light", "propose", "apply", "archive"))
     parser.add_argument("--directory",
                         help="opencode: the repository path a session ran in")
     parser.add_argument("--db", type=Path, default=OPENCODE_DB,

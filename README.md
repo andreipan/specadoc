@@ -249,8 +249,9 @@ original bytes with `--force`. It refuses non-regular artifact destinations.
 It is not crash-atomic across multiple files. If rollback itself fails, its
 error names retained recovery files; recover those before retrying.
 
-Direct changes keep both approvals, the short plan and verification in chat;
-they do not initialize artifacts or run file-based lifecycle gates.
+Light changes update capability specs in place and keep the plan, approval and
+verification in chat; they create no change folder and run no file-based
+lifecycle gates.
 
 | Script | Purpose |
 |---|---|

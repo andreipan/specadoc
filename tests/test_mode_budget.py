@@ -56,10 +56,10 @@ class ModeBudgetTest(unittest.TestCase):
         self.assertTrue(any("explore" in w and "> 100" in w for w in warns), warns)
         self.assertFalse(any("propose" in w for w in warns), warns)
 
-    def test_manifest_lists_four_modes(self) -> None:
+    def test_manifest_lists_five_modes(self) -> None:
         manifest = self.module.load_manifest(SKILL_ROOT)
         self.assertEqual(
-            set(manifest["modes"]), {"explore", "propose", "apply", "archive"}
+            set(manifest["modes"]), {"explore", "light", "propose", "apply", "archive"}
         )
 
     def test_real_skill_has_no_errors(self) -> None:

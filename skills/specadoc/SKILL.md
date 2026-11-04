@@ -21,6 +21,8 @@ Explicit modes win:
   `references/propose.md`.
 - `apply <slug>` — implement an approved plan and collect final evidence; read
   `references/apply.md`.
+- `light <request>` — one-session change that updates capability specs without
+  a change folder; read `references/light.md`.
 - `archive <slug> [--dry-run] [--force]` — close a change into one bounded
   `record.md`; read `references/archive.md`. Never select archive implicitly.
 
@@ -29,26 +31,20 @@ Without an explicit mode:
 1. Select `apply` only for an existing slug whose plan records both approvals.
 2. Select `explore` when material requirements are unresolved or the area is
    unfamiliar.
-3. Select `propose` when behavior is clear but the change is non-trivial.
-4. Use the internal direct path only when the change is local, reversible, free
-   of contract/schema/permission/money/concurrency risk, and has one exact
-   check. Direct still stops for plan approval, unless an explicit
-   uninterrupted request waives that stop, but creates no files.
-
-For direct, read `references/model-routing.md`: keep the role bindings line,
-short technical plan, plan approval, and exact verification evidence in chat. Do not
-initialize artifacts or run artifact gates. If new facts violate direct's risk
-conditions, stop and switch to `propose`, carrying forward accepted evidence
-and obtaining the approvals required for the revised scope.
+3. Select `propose` when any `light` eligibility condition fails: another
+   repository or external consumers, more than one session, money or the
+   permission model, or an irreversible data effect.
+4. Otherwise select `light`, including small local fixes.
 
 ## Shared invariants
 
 - Explicit invocation only; never create a second artifact tree.
 - `spec.md` is the stable behavioral contract. `plan.md` owns mutable technical
   state, approvals, evidence, and the compact archive summary.
-- Keep one bounded `scout`, fully specified low-decision `worker` tasks, and one
-  final read-only `reviewer` per stable executable diff in `apply`. The
-  controller owns all final verification.
+- The controller implements by default. A `scout` or `worker` is optional and
+  bounded, used only when its handoff pays for itself; one final read-only
+  `reviewer` covers each stable executable diff. The controller owns all final
+  verification.
 - Role startup, symbol-aware tools and code graphs are independent capabilities.
   Distinguish absence after discovery from a failed exposed call; cite a call
   and error only when actually attempted.

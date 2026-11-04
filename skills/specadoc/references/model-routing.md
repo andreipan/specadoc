@@ -70,7 +70,7 @@ reviewer, each with runtime/model/effort and its source file. Read them with
 `role_routing.py --controller-runtime <runtime> --dry-run --compact --check-cli`,
 or name the registered or embedded role when nothing is routed. Record the line
 in `## Plan approval` → `Bindings shown`. It is evidence of what would run, not
-an approval of a profile. Direct shows the same line in chat.
+an approval of a profile. Light shows the controller and reviewer in chat.
 
 ## Binding advice
 

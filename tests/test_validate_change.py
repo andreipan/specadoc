@@ -425,18 +425,24 @@ class ValidateChangeTest(unittest.TestCase):
         )
         self.assertFalse(any("worker task's Files" in message for message in done + controller))
 
-    def test_controller_low_risk_requires_justification(self) -> None:
-        bare = self.plan_messages(self.task_plan(owner="controller", risk="low", files="`a.php`"))
-        justified = self.plan_messages(
-            self.task_plan(
-                owner="controller",
-                risk="low",
-                files="`a.php`",
-                extra="- **Controller justification:** one-file, one-cycle fix\n",
-            )
-        )
-        self.assertTrue(any("Controller justification" in message for message in bare), bare)
-        self.assertFalse(any("Controller justification" in message for message in justified), justified)
+    def test_controller_low_risk_needs_no_justification(self) -> None:
+        messages = self.plan_messages(self.task_plan(owner="controller", risk="low", files="`a.php`"))
+        self.assertFalse(any("justification" in message.lower() for message in messages), messages)
+
+    def test_verification_owner_is_required_only_for_worker_tasks(self) -> None:
+        def without_owner(owner: str) -> str:
+            return self.task_plan(owner=owner, risk="low", files="`a.php`").replace(
+                "- **Verification owner:** controller\n", "")
+
+        self.assertFalse(any("Verification owner" in m for m in self.plan_messages(without_owner("controller"))))
+        self.assertTrue(any("Verification owner" in m for m in self.plan_messages(without_owner("worker"))))
+
+    def test_large_plan_warns(self) -> None:
+        module = load_module()
+        small = self.document("plan.md", self.task_plan(owner="controller", risk="low", files="`a.php`"))
+        large = self.document("plan.md", "x" * (module.PLAN_SIZE_WARNING + 1))
+        self.assertEqual(module.plan_size_warnings(small), [])
+        self.assertTrue(any("32768" in w for w in module.plan_size_warnings(large)))
 
     def test_files_patterns_split_paths_symbols_and_prose(self) -> None:
         module = load_module()

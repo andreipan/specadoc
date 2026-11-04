@@ -16,7 +16,7 @@ Steps:
 
 - `preflight <slug> T<n>` — read-only task validation, no Verification execution.
 - `dispatch <slug> T<n>` — preflight, task baseline and brief; also supports a
-  justified controller microfix without launching a worker.
+  controller-owned task without launching a worker.
 - `manifest <slug> T<n>` — JSON actual changed paths and suggested review bullets.
 - `accept <slug> T<n>` — scope check, report validation, exact Verification
   commands, then a second scope check.
@@ -223,7 +223,7 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     if failure is not None:
         return failure
     owner = task_block(plan, task)[2].get("Owner", "worker").lower()
-    next_step = (f"execute the justified controller task using {brief_path}; record result in {report}" if owner == "controller"
+    next_step = (f"implement the controller task (brief {brief_path} is optional); record result in {report}" if owner == "controller"
                  else f"dispatch the worker with brief {brief_path} and report {report}")
     return emit(checked, "PASS", [], "", next_step)
 

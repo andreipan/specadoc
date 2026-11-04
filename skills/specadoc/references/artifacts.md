@@ -200,9 +200,13 @@ is deliberately separate from task `Files:`, which may contain paths or
 symbols. Prefix an intentional deletion with `!`; reject symbols, globs, brace
 expressions, directories, absolute paths, and paths containing `..`.
 
-Task ownership values are `controller` or `worker`. Verification ownership is
-`worker` or `controller`. Overall high risk does not prevent a
-low-decision task from using a worker.
+Task ownership values are `controller` (the default) or `worker`. Verification
+ownership, `worker` or `controller`, is required only on worker tasks. Overall
+high risk does not prevent a low-decision task from using a worker.
+
+`plan.md` is re-read at every task and review, so its size multiplies cost.
+Keep decisions, tasks, one-line evidence and current state; above 32 KiB
+`validate_change.py` warns.
 
 Before worker dispatch, record its bounded Decisions, Interfaces, Depends on,
 and any Test context or explicit TDD exception. Include required composition-root

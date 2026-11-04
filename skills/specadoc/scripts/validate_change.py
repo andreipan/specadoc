@@ -68,6 +68,9 @@ TASK_FIELDS = (
     "Evidence",
 )
 
+WORKER_ONLY_FIELDS = ("Verification owner",)
+PLAN_SIZE_WARNING = 32 * 1024
+
 OWNERS = ("controller", "worker")
 VERIFICATION_OWNERS = ("worker", "controller")
 DECISION_RISKS = ("low", "medium", "high")
@@ -787,6 +790,15 @@ def repeated_verification_warnings(plan: Document) -> list[str]:
             for command, tasks in by_command.items() if len(tasks) >= 3]
 
 
+def plan_size_warnings(plan: Document) -> list[str]:
+    """plan.md is re-read at every task and review; size multiplies its cost."""
+    size = len("\n".join(plan.lines).encode("utf-8"))
+    if size <= PLAN_SIZE_WARNING:
+        return []
+    return [f"plan.md is {size} bytes (> {PLAN_SIZE_WARNING}): keep only decisions, tasks, "
+            "one-line evidence and current state; move bulky evidence to research.md or drop it"]
+
+
 def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
     violations = check_sections(plan, PLAN_SECTIONS)
 
@@ -815,6 +827,8 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                 Violation(plan.display, start + 1, f"{identifier}: missing `- [ ] Complete` checkbox")
             )
         for field in TASK_FIELDS:
+            if field in WORKER_ONLY_FIELDS and fields.get("Owner", "").strip().lower() != "worker":
+                continue
             if field not in fields:
                 violations.append(
                     Violation(plan.display, start + 1, f"{identifier}: missing field **{field}:**")
@@ -841,19 +855,6 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                     f"{identifier}: Decision risk must be one of {', '.join(DECISION_RISKS)}",
                 )
             )
-        if owner == "controller" and decision_risk == "low":
-            justification = fields.get("Controller justification", "").strip()
-            if not justification or PENDING.search(justification):
-                violations.append(
-                    Violation(
-                        plan.display,
-                        start + 1,
-                        f"{identifier}: Owner is controller with Decision risk low — running "
-                        "tools and fixing what they find is worker's job (subagent-routing.md's "
-                        "Routing policy). Add a **Controller justification:** line naming the "
-                        "specific exception, or change Owner to worker.",
-                    )
-                )
         if owner == "worker" and not complete and "Files" in fields:
             _, uncheckable = files_patterns(fields["Files"])
             if uncheckable:
@@ -1413,6 +1414,8 @@ def main() -> int:
     violations += cross_violations
     if args.phase == "plan":
         cross_warnings += repeated_verification_warnings(plan)
+    if args.phase != "spec":
+        cross_warnings += plan_size_warnings(plan)
     task_count = len(plan.blocks("Tasks", "T"))
     if args.phase != "spec" and task_count > MAX_TASKS:
         cross_warnings.append(f"{task_count} tasks: inspect change size and dependency boundaries; retain corrective tasks rather than folding them into completed work")

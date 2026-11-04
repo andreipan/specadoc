@@ -24,24 +24,25 @@ Do not place task-specific paths, requirement IDs, or feature details in the rol
 
 Use `scout` for bounded read-only repository investigation.
 
-Use `worker` only when:
-- one task is fully specified and has low decision risk;
+The controller implements tasks by default. Writing a complete worker brief,
+cold-starting the worker and accepting its diff usually costs the controller
+more than writing the code, and every retry repeats that cost.
+
+Use `worker` only when the handoff pays for itself:
+- the task is mechanical and large relative to its brief: a sweep over many
+  files, a rule-based migration, static-analysis or lint fixes across a module,
+  or tests generated from a verified exemplar;
+- the task is fully specified and has low decision risk;
 - relevant files and interfaces are known;
 - expected behavior is explicit;
 - a deterministic verification command exists;
 - no material behavior, architecture, authorization, schema, ownership, or
   compatibility decision remains.
 
-The overall change may be high risk. Delegate bounded tests, mechanical
-migrations, and scoped static-analysis fixes when their task-level decision risk
-is low. A task with `Decision risk: low` defaults to `worker` even when the
-overall change is high risk — running tools and fixing what they find is
-worker's job, not controller's, and expensive controller time
-is for tasks that carry real decision risk, not for rg sweeps, full test runs,
-or static-analysis cleanup. Keeping such a task on `controller` requires a
-`**Controller justification:**` line on the task naming the specific exception
-below (e.g. the one-file, one-cycle fix exception) — `validate_change.py`
-rejects `Owner: controller` + `Decision risk: low` without one.
+The overall change may be high risk; these criteria apply per task. When the
+controller context nears the dispatch guard, prefer a session boundary
+(`model-routing.md` → Session boundaries) over moving decision-heavy work to a
+worker.
 
 Size each worker task so its startup is worth it: merge adjacent mechanical
 tasks into one when they share files and one Verification command, and keep
@@ -76,14 +77,13 @@ Keep work in the controller when:
 - Do not make a reviewer depend on a scout summary for correctness findings.
 - A reviewer may use one bounded scout only for large-diff inventory and must
   inspect critical evidence itself.
-- Prefer direct controller execution for a one-file, one-cycle fix when handoff
-  overhead exceeds the expected context savings. This is mandatory for a small
-  UI follow-up: one controller, one final build, and one browser check; do not
-  fan out browser screenshots or parallel visual investigations.
-- Record that exception with `Owner: controller` and `Controller justification`.
-  `dispatch` prepares the same baseline and result contract without routing a
-  worker; `accept` still verifies the report, scope and exact checks. It does not
-  waive approval, TDD, final verification or independent review.
+- A small UI follow-up stays with one controller, one final build, and one
+  browser check; do not fan out browser screenshots or parallel visual
+  investigations.
+- A task with `Owner: controller` uses the same gates: `dispatch` records its
+  baseline without routing a worker (the brief need not be read) and `accept`
+  verifies the report, scope and exact checks. It does not waive approval, TDD,
+  final verification or independent review.
 
 ## Scout dispatch example
 

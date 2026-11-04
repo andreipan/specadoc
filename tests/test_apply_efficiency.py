@@ -198,6 +198,19 @@ class ApplyEfficiencyTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn('stale', result.stdout)
 
+    def test_controller_task_needs_no_justification_or_low_decision_risk(self):
+        self.plan.write_text(PLAN.replace('- **Owner:** worker', '- **Owner:** controller', 1)
+            .replace('- **Decision risk:** low', '- **Decision risk:** medium', 1))
+        result = self.run_step('dispatch', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertNotIn('dispatch the worker', result.stdout)
+
+    def test_worker_task_still_requires_low_decision_risk(self):
+        self.plan.write_text(PLAN.replace('- **Decision risk:** low', '- **Decision risk:** medium', 1))
+        result = self.run_step('dispatch', 'demo', 'T1')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('resolve material decisions', result.stdout)
+
     def test_controller_microfix_does_not_bypass_runtime_validation(self):
         self.plan.write_text(PLAN.replace('- **Owner:** worker',
             '- **Owner:** controller\n- **Controller justification:** One-file, one-cycle fix.', 1))

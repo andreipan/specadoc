@@ -48,9 +48,7 @@ def readiness(plan: Document, task: str) -> list[str]:
     owner = fields.get("Owner", "").lower()
     if owner not in ("worker", "controller"):
         errors.append(f"{task}: dispatch requires Owner: worker or controller")
-    if owner == "controller" and not fields.get("Controller justification", "").strip():
-        errors.append(f"{task}: controller execution requires Controller justification")
-    if fields.get("Decision risk", "").lower() != "low":
+    if owner == "worker" and fields.get("Decision risk", "").lower() != "low":
         errors.append(f"{task}: resolve material decisions before worker dispatch")
     open_decisions = fields.get("Open decisions", "None").strip()
     if open_decisions.lower() not in ("none", "n/a", "нет", "-"):

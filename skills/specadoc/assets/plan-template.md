@@ -78,12 +78,9 @@ section otherwise.>
 - **Open decisions:** None
 - **Risk:** __RISK__
 - **Decision risk:** <low|medium|high>
-- **Owner:** <controller|worker>
-- **Verification owner:** <worker|controller>
-- **Controller justification:** <required only when Owner is controller and Decision
-  risk is low — name the subagent-routing.md exception that applies (e.g. the
-  one-file, one-cycle fix exception). Delete this field for any other
-  Owner/Decision-risk combination.>
+- **Owner:** <controller by default; worker only for a mechanical task large
+  relative to its brief>
+- **Verification owner:** <worker|controller; worker tasks only — delete for controller tasks>
 - **Files:** <backticked paths, directories, or globs; symbols in parentheses after a path>
 - **Derived files:** None; optional — backticked generated or wiring paths the task may also
   touch (barrel exports, lockfiles of other ecosystems). Changes there are listed, not violations.
@@ -96,7 +93,7 @@ section otherwise.>
 - **Verification inputs:** None; optional — backticked read-only configs, test helpers,
   runtime/tool paths and dependency manifests used by Verification. Include ignored
   configs explicitly; this field grants no write permission.
-- **Test context:** <optional: verified test exemplar, bootstrap/login helper,
+- **Test context:** <optional, mainly for worker tasks: verified test exemplar, bootstrap/login helper,
   test-only environment and one runbook section; delete when not needed>
 - **Surface:** <code|ui|mixed>
 - **Delivery verification:** <For ui/mixed: final build, typecheck, and Browser URL/state check; for code: N/A>

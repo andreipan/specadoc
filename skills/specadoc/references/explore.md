@@ -18,9 +18,11 @@ exploration. Explore produces conversation evidence, not repository artifacts.
    and the drift must be reported. Run `python3 <skill-root>/scripts/doctor.py`
    once and report each missing key-path warning for a selected file as drift;
    do not edit the capability file.
-3. Attempt exactly one bounded read-only `scout` with one concrete question.
-   Pass the selected capability-spec paths and the conflict rule in its prompt.
-   Continue independent controller work while it runs.
+3. Investigate with targeted controller reads first. Dispatch at most one
+   bounded read-only `scout` with one concrete question only when the area is
+   unfamiliar or the search is broad enough that its output would crowd the
+   controller context. Pass the selected capability-spec paths and the conflict
+   rule in its prompt, and continue independent controller work while it runs.
 4. If the role cannot start, record the exact runtime error and continue with a
    bounded controller investigation. Do not report the primary MCP as the cause
    unless it itself failed.
