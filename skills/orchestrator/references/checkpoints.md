@@ -14,6 +14,33 @@ Suggested bounded question:
 > May I accept local plans within this goal and these contracts, returning to you
 > for changed requirements, risk, external effects, or scope? Otherwise I will
 > bring the required checkpoints to you, grouped when they share one decision.
+> May controllers and the integration verifier use `<dedicated test database>`
+> for integration runs without asking each time?
+
+### Plan approval under a mandate
+
+With that mandate, approve an ordinary local plan without asking the user when
+all of these hold, and record the provenance line below:
+
+- the plan's design gate is a current PASS (`## Design review` bound to the
+  current Class inventory), or the plan adds no new non-test file;
+- `validate_change.py --phase plan` passes;
+- no escalation trigger: no row of Decision boundaries that belongs to the user
+  (new behavior, incompatible contract, added repository, material risk or
+  scope change, production, destructive or external effects, routing), and no
+  open decision the controller marked for the user.
+
+Otherwise bring the checkpoint to the user. A design FAIL is never approved by
+the orchestrator; return it to the controller.
+
+### Standing test-database permission
+
+The mandate may name one dedicated, disposable test database and its connection
+name. Controllers and the integration verifier may then run integration tests
+and test migrations against it repeatedly without asking each time; the brief
+repeats its exact name. It never covers the working, shared or production
+database, a copied production configuration, or creating another database.
+Record it once in the coordination brief.
 
 When permitted, local controllers record the original mandate and the actual
 orchestrator decision with its artifact revision. Do not fabricate a user quote
@@ -43,6 +70,18 @@ rules. It does not waive specifications, testing, review, or completion evidence
 
 Use the simplest reversible option within the mandate. For an escalation, give
 context, viable options including deferral, costs/risks, and a recommendation.
+
+### Relaying options
+
+When a controller returns options for the user, pass them on verbatim: its
+option table with the controller's labels, its recommendation, and what each
+choice changes. Ask one structured question (the host's question tool when it
+has one) whose answers are those labels. Do not reword, re-letter, merge or
+reorder options, and do not add your own preference unless labelled as yours.
+An answer that picks no option ("go", "ok") is not a choice: ask again. In 3.5
+the orchestrator reframed a controller's A/B/C, the user answered "go", and the
+choice had to be made again inside the controller.
+
 Pause affected work; independent authorized work may continue when the host
 supports it. Do not repeatedly ask equivalent approval questions.
 

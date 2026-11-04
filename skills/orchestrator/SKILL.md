@@ -51,12 +51,17 @@ inside one repository and leave consumers on an obsolete contract.
 
 ## Coordinate checkpoints
 
-Continue the same controller for related work. At a question, inspect its actual
-plan/artifacts, apply only the authority recorded in the mandate, and send a
-specific decision referencing the current checkpoint. Route changed requirements
-through affected local plans and approvals before implementation resumes.
+Continue the same controller for related work. At a question, read the
+controller's `specadoc_step.py status <slug>` and handoff, open only the plan
+section the decision needs, apply only the authority recorded in the mandate,
+and send a specific decision referencing the current checkpoint. Relay options
+meant for the user verbatim (`references/checkpoints.md` → Relaying options).
+Route changed requirements through affected local plans and approvals before
+implementation resumes.
 
-Use supported status/events and compact reports, not full-log polling. Follow
+Use supported status/events and compact reports, not full-log polling. Wait in
+bounded intervals and check the controller's last error after each
+(`references/controllers.md` → Waiting). Follow
 host foreground/background rules and delivery limits. A controller ending its
 turn can mean a checkpoint, blocker, or failure, not completion. Do not promise
 unattended monitoring without a working host mechanism. Keep controller sessions

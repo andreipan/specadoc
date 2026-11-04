@@ -76,6 +76,20 @@ class ManagementSkillsTest(unittest.TestCase):
         self.assertIn("**Approval provenance:**", checkpoints)
         self.assertIn("`.specadoc.json`", checkpoints)
 
+    def test_orchestrator_guards_from_run_35(self) -> None:
+        root = SKILLS / "orchestrator"
+        checkpoints = (root / "references/checkpoints.md").read_text()
+        self.assertIn("pass them on verbatim", checkpoints)
+        self.assertIn('An answer that picks no option ("go", "ok") is not a choice', checkpoints)
+        self.assertIn("design gate is a current PASS", checkpoints)
+        self.assertIn("A design FAIL is never approved by\nthe orchestrator", checkpoints)
+        self.assertIn("dedicated, disposable test database", checkpoints)
+        controllers = (root / "references/controllers.md").read_text()
+        self.assertIn("Wait in bounded intervals", controllers)
+        self.assertIn("specadoc_step.py status <slug>", controllers)
+        self.assertIn("coordination_log.py decision", (root / "references/state.md").read_text())
+        self.assertTrue((root / "scripts/coordination_log.py").is_file())
+
     def test_integration_verifier_reports_and_never_fixes(self) -> None:
         text = (SKILLS / "orchestrator/references/roles/integration-verifier.md").read_text()
         self.assertEqual(1, text.count("<!-- specadoc:tooling:begin -->"))

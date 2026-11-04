@@ -30,7 +30,7 @@ mapping once in the coordination record:
 | Capability | Use |
 |---|---|
 | launch / continue | one resumable session per controller in its assigned work area |
-| wait for completion | one blocking or background wait per active controller; read its final output only after the wait returns |
+| wait for completion | one bounded wait (minutes) per active controller; on a timeout read status and the last error before waiting again; read its final output only after the wait returns |
 | fork at a point | optional; start a phase or step from a prepared base session instead of re-reading context |
 | cancel / status | stop a stale writer; read status from evidence, not a title |
 | delivery limits | whether a parent turn may end while a child result is pending |
@@ -49,6 +49,19 @@ mapping once in the coordination record:
   dependent work. Do not end a parent turn while a required result is pending if
   delivery stops then. Use background work only when independent, supported, and
   observable.
+
+## Waiting
+
+A failed provider call can leave a controller errored while a wait for
+completion keeps waiting: in 3.5 a 30-minute wait returned after 46 minutes and
+the network error behind it was noticed late. Wait in bounded intervals of a few
+minutes. After each, read the controller's status and its last error event: an
+errored turn needs a supported retry or a decision, not another wait. A wait
+that returns late is not evidence of progress.
+
+Resume a controller from `specadoc_step.py status <slug>` and its
+`runs/handoff.md`, not by re-reading spec, plan and design: in 3.5 the
+orchestrator re-read plan.md five times.
 
 ## Keep sessions few and small
 
