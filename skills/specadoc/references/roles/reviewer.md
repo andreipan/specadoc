@@ -120,3 +120,12 @@ Risks that remain even when the verdict is PASS. Do not speculate here about
 unproven requirements; mark them UNVERIFIABLE in the matrix.
 
 Verdict is FAIL when any BLOCKER or IMPORTANT finding exists.
+
+## Design review before code
+
+When the prompt is a design brief (`runs/design-brief.md`), no code exists yet.
+Review the plan's Class inventory against the requirements instead of a diff:
+is each new file needed, does each port cross a real boundary or have a second
+implementation, is each layer right, and is there a simpler shape with fewer
+files? Mirroring an existing feature is not a reason by itself. Return the same
+result JSON; a file or port without a reason is IMPORTANT.

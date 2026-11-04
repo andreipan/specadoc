@@ -42,6 +42,9 @@ def approval_error(plan: Document) -> str | None:
 
 def readiness(plan: Document, task: str) -> list[str]:
     errors = []
+    from design_gate import review_error
+    if error := review_error(plan):
+        errors.append(error)
     if error := approval_error(plan):
         errors.append(error)
     _, _, fields = task_block(plan, task)

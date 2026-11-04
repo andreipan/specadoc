@@ -18,8 +18,9 @@ Load this reference only for `specadoc apply <slug>`.
    is in scope: `package.json` in its directory or a workspace package below it,
    `go.mod` for `go.sum`, or a same-stem manifest for `<stem>.lock`. A `low` label does not authorize architecture,
    catalog, contrast or compatibility decisions.
-3. `specadoc_step.py dispatch <slug> T<n>` validates readiness, paths, commands
-   and routing before writing baseline/brief; it executes no Verification.
+3. `specadoc_step.py dispatch <slug> T<n>` validates readiness, paths, commands,
+   routing and a current design review (`design-gate.md`) before writing
+   baseline/brief; it executes no Verification.
    Optional `preflight <slug> T<n>` checks without writes; do not repeat it before
    dispatch. Retries keep the original baseline. A controller
    task uses the same gates without a worker and need not read its brief.

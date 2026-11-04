@@ -549,6 +549,8 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
                    "started": timestamp(), "sequence": next_sequence(baseline_path.parent),
                    "capabilities": capabilities}
         save(baseline_path, payload)
+        from design_gate import record_apply_start
+        record_apply_start(baseline_path.parent, current)
         print(json.dumps({"baseline": str(baseline_path), "files": len(current), "uncheckable": uncheckable}))
         return 0
 

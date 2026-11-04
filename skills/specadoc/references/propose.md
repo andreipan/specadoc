@@ -36,7 +36,9 @@ Load this reference only for `specadoc propose`.
    choices; use domain modeling when meanings or invariants need sharpening.
    The controller decides; bounded workers do not choose architecture. Preserve
    repository artifact locations and keep one source of truth per concern.
-6. Run `validate_change.py <slug> --phase plan`, present a compact plan preview
+6. List every new non-test file in `## Class inventory` and pass the design gate
+   (`design-gate.md`): an independent reviewer checks it before approval.
+7. Run `validate_change.py <slug> --phase plan`, present a compact plan preview
    with the role bindings line and any binding advice (`model-routing.md` →
    Bindings at plan approval, Binding advice), and stop for plan approval. If accumulated context warrants it, offer running
    `apply <slug>` in a new controller session that starts from the plan's
@@ -45,4 +47,4 @@ Load this reference only for `specadoc propose`.
 Plan approval is the only approval stop. An explicit uninterrupted execution
 request may waive it, but not specification or validation.
 
-Read `artifacts.md` and `model-routing.md` while preparing the proposal.
+Read `artifacts.md`, `model-routing.md` and `design-gate.md` while preparing the proposal.

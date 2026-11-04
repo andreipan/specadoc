@@ -70,6 +70,22 @@ section otherwise.>
 |---|---|---|
 | Pending | Pending | Pending |
 
+## Class inventory
+
+Every new non-test file the change adds, before code. A port needs a real
+boundary or a second implementation; mirroring an existing feature is not a
+reason. Kind is `port`, `concrete`, or `file` (config, migration, route file).
+Delete the example row when the change adds no such file.
+
+| File | Layer | Why it exists | Kind |
+|---|---|---|---|
+| `<new/path/File.ext>` | <domain/application/infrastructure/ui/config> | <requirement or boundary it serves> | <port/concrete/file> |
+
+## Design review
+
+**Result:** Not run; `specadoc_step.py design-review` records an independent reviewer's verdict
+on the Class inventory before plan approval.
+
 ## Tasks
 
 ### T1 — <Independently testable outcome>

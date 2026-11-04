@@ -29,7 +29,8 @@
       "always": [
         "propose.md",
         "artifacts.md",
-        "model-routing.md"
+        "model-routing.md",
+        "design-gate.md"
       ],
       "conditional": []
     },
@@ -46,7 +47,8 @@
         "tdd-and-review.md",
         "artifacts.md",
         "roles/worker.md",
-        "roles/reviewer.md"
+        "roles/reviewer.md",
+        "design-gate.md"
       ]
     },
     "archive": {

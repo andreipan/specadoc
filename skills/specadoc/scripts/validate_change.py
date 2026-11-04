@@ -990,6 +990,8 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                 Violation(plan.display, 1, f"{requirement}: absent from the requirement-to-check matrix")
             )
 
+    from design_gate import check_inventory
+    violations += check_inventory(plan)
     return violations
 
 
@@ -1189,8 +1191,10 @@ def check_review_readiness(plan: Document, *, allow_external_pending: bool = Fal
 
 def check_pre_review(plan: Document, *, next_type: str = "initial", decision: str | None = None) -> list[Violation]:
     """Validate readiness and refuse only a new reviewer dispatch past the cap."""
+    from design_gate import gate_violations
     return (
         check_review_readiness(plan, allow_external_pending=True)
+        + gate_violations(plan)
         + check_review_round_structure(plan)
         + check_review_round_cap(plan, next_type=next_type, decision=decision)
     )
@@ -1255,6 +1259,8 @@ def latest_review_round(
 def check_final(spec: Document, plan: Document) -> list[Violation]:
     violations: list[Violation] = []
     violations += check_review_readiness(plan)
+    from design_gate import gate_violations
+    violations += gate_violations(plan)
     violations += check_review_round_structure(plan)
 
     archive_summary = "\n".join(line for _, line in plan.body("Archive summary")).strip()
@@ -1491,7 +1497,9 @@ def main() -> int:
     cross_violations, cross_warnings = cross_change_findings(spec, root, args.change_slug)
     violations += cross_violations
     if args.phase == "plan":
-        cross_warnings += repeated_verification_warnings(plan) + controller_routing_warnings(plan)
+        from design_gate import missing_inventory_warning
+        cross_warnings += (repeated_verification_warnings(plan) + controller_routing_warnings(plan)
+                           + missing_inventory_warning(plan))
     if args.phase != "spec":
         cross_warnings += plan_size_warnings(plan)
     task_count = len(plan.blocks("Tasks", "T"))

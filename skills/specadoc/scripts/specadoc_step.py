@@ -30,6 +30,9 @@ Steps:
   EXTERNAL-PENDING: review may open, `--phase final` requires a PASS.
 - `refresh <slug>` — re-accept every settled task whose evidence went stale after
   later tasks, in dependency order, with the same report and frozen Verification.
+- `design-brief <slug>` / `design-review <slug> --result-file <json>` — the
+  design gate: an independent reviewer checks `## Class inventory` before apply;
+  dispatch needs a PASS bound to the current inventory.
 - `status <slug>` — compact task states, latest review and the next allowed step;
   read it instead of plan.md when resuming.
 - `handoff <slug> --file <path|->` — overwrite `runs/handoff.md` (at most 4 KiB);
@@ -263,19 +266,19 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
         next_step = f"implement the controller task (brief {brief_path} is optional); {finish}"
     else:
         next_step = f"dispatch the worker with brief {brief_path}; it writes {report} with specadoc_step.py report; then accept"
-        route = worker_route(controller)
+        route = role_route("worker", controller)
         if route and route["dispatch"] == "external":
             next_step = (f"start the worker: python3 {SCRIPTS / 'run_role.py'} start --role worker --controller-runtime "
                          f"{controller} --prompt-file {brief_path} --name {task}; wait on its run file, then accept")
     return emit(checked, "PASS", [], "", next_step)
 
 
-def worker_route(controller: str | None) -> dict | None:
+def role_route(role: str, controller: str | None) -> dict | None:
     from specadoc_config import load_config
     if not controller or "roles" not in load_config(Path.cwd()):
         return None
     from role_routing import resolve_role
-    return resolve_role(Path.cwd(), "worker", controller)
+    return resolve_role(Path.cwd(), role, controller)
 
 
 def write_report(slug: str, task: str, root: str | None, status: str, summary: str, red: str, green: str,
@@ -354,6 +357,12 @@ def scope_state(slug: str, task: str, root: str | None, checked: list[str]) -> t
         if note not in checked:
             checked.append(note)
     changed = sorted(path for paths in delta.values() for path in paths if path not in later)
+    from design_gate import outside
+    from review_snapshot import _under
+    plan_path = Path(artifact_root) / slug / "plan.md"
+    added = [path for path in delta["added"] if path not in later and not _under(path, artifact_root)]
+    violations += [f"{path} (new file outside Class inventory)"
+                   for path in outside(Document(plan_path, str(plan_path)), added)]
     return changed, violations, payload.get("derived", []), None
 
 
@@ -416,7 +425,8 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     if amendments:
         # A shell-capable worker could call amend itself; make every amendment visible.
         checked.append("amendments: " + " | ".join(amendments))
-    scope_next = "revert each path, list it in Derived files via amend, or amend --allow it with a reason"
+    scope_next = ("revert each path, list it in Derived files via amend, or amend --allow it with a reason; "
+                  "a new file outside Class inventory needs an inventory row and a new design review")
     if scope_only:
         if violations:
             return emit(checked, "FAIL", violations, "changes outside the task scope", scope_next)
@@ -622,6 +632,40 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600) -> i
     return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
 
 
+def design_brief(slug: str, root: str | None, controller: str | None) -> int:
+    import design_gate
+    change = Path(resolve_root(root).path) / slug
+    plan = Document(change / "plan.md", "plan.md")
+    if not design_gate.rows(plan):
+        return emit(["Class inventory"], "BLOCKED", [], "plan.md has no Class inventory rows",
+                    "list every new non-test file (File | Layer | Why it exists | Kind) first")
+    if violations := design_gate.check_inventory(plan):
+        return emit(["Class inventory"], "FAIL", [], "; ".join(v.message for v in violations), "fix the inventory rows")
+    checked = ["Class inventory", *binding_check("reviewer", controller)]
+    path = design_gate.write_brief(change)
+    route = role_route("reviewer", controller)
+    start = (f"python3 {SCRIPTS / 'run_role.py'} start --role reviewer --controller-runtime {controller} "
+             f"--prompt-file {path} --name design" if route and route["dispatch"] == "external"
+             else f"the native reviewer with {path}")
+    return emit(checked + [f"wrote {path}"], "PASS", [], "",
+                f"run {start} (strongest reviewer binding); then design-review {slug} --result-file <json>")
+
+
+def design_review(slug: str, root: str | None, source: str, controller: str | None) -> int:
+    import design_gate
+    change = Path(resolve_root(root).path) / slug
+    checked = binding_check("reviewer", controller)
+    reviewer = next((item.removeprefix("resolved reviewer ") for item in checked if item.startswith("resolved ")),
+                    "host reviewer")
+    verdict = design_gate.record(change, source, reviewer)
+    checked += ["reviewer schema", "inventory hash", "recorded Design review"]
+    if verdict == "PASS":
+        return emit(checked, "PASS", [], "", "design gate passed; present the plan for approval (or apply the "
+                    "orchestrator mandate), then dispatch")
+    return emit(checked, "FAIL", [], "design review FAIL; read its findings in plan.md",
+                "revise the approach or Class inventory, then design-brief and review again")
+
+
 HANDOFF_LIMIT = 4096
 
 
@@ -650,8 +694,12 @@ def status(slug: str, root: str | None) -> int:
     plan_path = change / "plan.md"
     plan = Document(plan_path, str(plan_path))
     approval = approval_error(plan)
+    import design_gate
+    design = ("n/a (no Class inventory)" if not design_gate.rows(plan)
+              else design_gate.review_error(plan) or "PASS (current inventory)")
     handoff = change / "runs" / "handoff.md"
     lines = [f"change: {slug}; plan.md {plan_path.stat().st_size} bytes; approval: {approval or 'approved'}",
+             f"design: {design}",
              f"handoff: {handoff} ({handoff.stat().st_size} bytes)" if handoff.is_file() else "handoff: none"]
     working, stale, waiting, unstarted = [], [], [], []
     for task, start, end in plan.blocks("Tasks", "T"):
@@ -681,7 +729,9 @@ def status(slug: str, root: str | None) -> int:
     outcome = latest[1].get("Outcome", "").strip() if latest else ""
     lines.append(f"review: {latest[0]} {outcome or 'missing'} ({latest[1].get('Type', '-').strip()})" if latest
                  else "review: none")
-    if approval:
+    if design_gate.rows(plan) and design_gate.review_error(plan):
+        next_step = f"design review: specadoc_step.py design-brief {slug}, reviewer, design-review"
+    elif approval:
         next_step = "obtain plan approval"
     elif working:
         next_step = f"finish {working[0]}: report, then accept"
@@ -822,6 +872,13 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--review-decision", help="Actual user decision authorizing a bounded extra round")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
+    brief = steps.add_parser("design-brief", help="Write the design reviewer prompt from the Class inventory")
+    brief.add_argument("change_slug")
+    reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
+    reviewed.add_argument("change_slug")
+    reviewed.add_argument("--result-file", required=True)
+    for step in (brief, reviewed):
+        step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
     handoff = steps.add_parser("handoff", help="Overwrite runs/handoff.md (session notes) from a file or stdin")
     handoff.add_argument("change_slug")
     handoff.add_argument("--file", required=True, help="Notes file, or - for stdin")
@@ -874,6 +931,10 @@ def main() -> int:
                           verification_timeout=args.verification_timeout)
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
+        if args.step == "design-brief":
+            return design_brief(args.change_slug, args.root, args.controller_runtime)
+        if args.step == "design-review":
+            return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime)
         if args.step == "handoff":
             return write_handoff(args.change_slug, args.root, args.file)
         if args.step == "status":

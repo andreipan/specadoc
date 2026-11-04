@@ -401,5 +401,79 @@ class SmallFrictionTest(unittest.TestCase):
         self.assertIn('External verification', result.stdout + result.stderr)
 
 
+INVENTORY_PLAN = PLAN.replace(
+    '## Tasks\n',
+    '## Class inventory\n\n| File | Layer | Why it exists | Kind |\n|---|---|---|---|\n'
+    '| `src/port.py` | application | R1 needs a label source port | port |\n\n'
+    '## Design review\n\n**Result:** Not run\n\n## Tasks\n', 1).replace(
+    '- **Files:** `label.py`, `check_label.py`', '- **Files:** `label.py`, `check_label.py`, `src/`', 1)
+
+
+class DesignGateTest(unittest.TestCase):
+    """3.5 mirrored ResendCode (~7 ports) and nobody checked the class count before code."""
+    setUp = reliability.ApplyReliabilityTest.setUp
+    tearDown = reliability.ApplyReliabilityTest.tearDown
+    run_step = reliability.ApplyReliabilityTest.run_step
+    report = reliability.ApplyReliabilityTest.report
+    validate = ExternalVerificationTest.validate
+
+    def review(self, verdict='PASS', findings=()):
+        path = self.repo / 'design.json'
+        path.write_text(json.dumps({'verdict': verdict, 'report': 'One port for one boundary.',
+                                    'findings': [dict(severity=s, location='src/port.py', summary='x') for s in findings]}))
+        return self.run_step('design-review', 'demo', '--result-file', 'design.json')
+
+    def test_inventory_rows_are_validated_at_plan_time(self):
+        self.plan.write_text(INVENTORY_PLAN.replace('| R1 needs a label source port | port |', '| tbd | adapter |'))
+        output = self.validate('plan')
+        self.assertIn('needs the requirement or boundary it serves', output.stdout)
+        self.assertIn('kind must be one of port, concrete, file', output.stdout)
+
+    def test_missing_inventory_warns_when_tasks_add_files(self):
+        self.plan.write_text(PLAN.replace('`label.py`, `check_label.py`', '`label.py`, `src/new_port.py`', 1))
+        self.assertIn('plan.md has no Class inventory', self.validate('plan').stderr)
+
+    def test_dispatch_needs_a_current_design_pass(self):
+        self.plan.write_text(INVENTORY_PLAN)
+        result = self.run_step('dispatch', 'demo', 'T1')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('design review missing', result.stdout)
+        brief = self.run_step('design-brief', 'demo')
+        self.assertEqual(0, brief.returncode, brief.stdout)
+        text = self.change.joinpath('runs/design-brief.md').read_text()
+        self.assertIn('R1 needs a label source port', text)
+        self.assertIn('second implementation', text)
+        self.assertEqual(2, self.review('PASS', ['IMPORTANT']).returncode)
+        self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
+        self.assertIn('design review FAIL', self.run_step('dispatch', 'demo', 'T1').stdout)
+        result = self.review('PASS', ['MINOR'])
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('**Result:** PASS', self.plan.read_text())
+        self.assertEqual(1, self.plan.read_text().count('## Design review'))
+        self.assertIn('design: PASS (current inventory)', self.run_step('status', 'demo').stdout)
+        self.plan.write_text(self.plan.read_text().replace('label source port', 'label source port and cache'))
+        self.assertIn('predates the current Class inventory', self.run_step('dispatch', 'demo', 'T1').stdout)
+
+    def test_new_file_outside_inventory_fails_accept_and_pre_review(self):
+        self.plan.write_text(INVENTORY_PLAN)
+        self.assertEqual(0, self.review().returncode)
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        self.assertTrue(self.change.joinpath('runs/apply-start.json').is_file())
+        self.repo.joinpath('src').mkdir()
+        self.repo.joinpath('src/port.py').write_text('class Port: ...\n')
+        self.repo.joinpath('src/mirror.py').write_text('class Mirror: ...\n')
+        self.report(files=('src/port.py', 'src/mirror.py'))
+        result = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertIn('src/mirror.py (new file outside Class inventory)', result.stdout)
+        self.assertNotIn('src/port.py (new file', result.stdout)
+        review = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertIn('new file outside Class inventory: src/mirror.py', review.stdout)
+        self.repo.joinpath('src/mirror.py').unlink()
+        self.report(files=('src/port.py',))
+        result = self.run_step('accept', 'demo', 'T1')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
