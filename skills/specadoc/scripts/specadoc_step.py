@@ -745,6 +745,8 @@ def status(slug: str, root: str | None) -> int:
         next_step = "pre-review" + (" --review-type re-review after fixing the findings" if latest else "")
     elif outcome.upper() not in ("PASS", "FAIL"):
         next_step = f"run the reviewer for {latest[0]}, then review-result"
+    elif drift := review_drift(plan, change, latest):
+        next_step = f"pre-review --review-type re-review ({drift})"
     elif waiting:
         next_step = f"external-result {waiting[0]} after its external run"
     else:
@@ -752,6 +754,24 @@ def status(slug: str, root: str | None) -> int:
     lines.append(f"next: {next_step}")
     print("\n".join(lines))
     return 0
+
+
+def review_drift(plan: Document, change: Path, latest: tuple) -> str:
+    """Why the latest PASS no longer covers the change: a changed diff or an unreviewed task."""
+    from review_snapshot import SnapshotError, compute, manifest_hash
+    from validate_change import expand_ids
+    reasons = []
+    try:
+        if manifest_hash(compute(change, Path.cwd())) != latest[1].get("Snapshot", "").strip():
+            reasons.append(f"diff changed since {latest[0]}")
+    except SnapshotError as exc:
+        reasons.append(f"Review scope cannot be hashed: {exc}")
+    header = "\n".join(line for _, line in plan.body("Review result"))
+    if match := re.search(r"\*\*Reviewed tasks:\*\*\s*(.+)", header):
+        unreviewed = [task for task, _, _ in plan.blocks("Tasks", "T") if task not in expand_ids(match[1], "T")]
+        if unreviewed:
+            reasons.append(f"{', '.join(unreviewed)} not reviewed")
+    return "; ".join(reasons)
 
 
 def amend(slug: str, task: str, root: str | None, allowed: list[str], controller_paths: list[str], reason: str,

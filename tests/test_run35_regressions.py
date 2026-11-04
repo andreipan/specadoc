@@ -363,6 +363,31 @@ class PlanGrowthTest(unittest.TestCase):
         self.assertIn('next: specadoc_step.py refresh demo (T1)', result.stdout)
         self.assertLess(len(result.stdout.splitlines()), 12)
 
+    def test_status_notices_a_review_that_no_longer_covers_the_change(self):
+        self.accepted()
+        self.assertEqual(0, self.run_step('pre-review', 'demo').returncode)
+        self.change.joinpath('runs/review.json').write_text(json.dumps({'verdict': 'PASS', 'findings': [], 'report': 'ok'}))
+        result = self.run_step('review-result', 'demo', '--result-file', 'docs/specadoc/demo/runs/review.json')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('next: validate_change.py demo --phase final', self.run_step('status', 'demo').stdout)
+        self.plan.write_text(self.plan.read_text().replace(
+            '## Requirement-to-check matrix', '### T4 — Late task\n- [x] Complete\n\n## Requirement-to-check matrix', 1))
+        self.repo.joinpath('label.py').write_text('def label():\n    return "ready"  # late\n')
+        self.assertIn('next: specadoc_step.py refresh demo (T1)', self.run_step('status', 'demo').stdout)
+        self.assertEqual(0, self.run_step('refresh', 'demo').returncode)
+        status = self.run_step('status', 'demo').stdout
+        self.assertIn('next: pre-review --review-type re-review (diff changed since G1; T4 not reviewed)', status)
+
+    def test_archive_record_elides_the_manifest_file_reference(self):
+        import sys
+        from test_specadoc_step import SCRIPTS
+        sys.path.insert(0, str(SCRIPTS))
+        from archive_change import _strip_round_manifests
+        text = '### G1\n\n- **Snapshot:** sha256:abc\n- **Manifest:** `runs/G1-manifest.json`\n'
+        self.assertEqual('### G1\n\n- **Snapshot:** sha256:abc\n'
+                         '- **Manifest:** elided for the record; see the Snapshot hash above\n',
+                         _strip_round_manifests(text))
+
 
 class SmallFrictionTest(unittest.TestCase):
     """3.5 small items: controller runtime default, 'pending' in a real reason, prose Verification."""

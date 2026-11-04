@@ -192,6 +192,9 @@ def section(path: Path, heading: str) -> str:
 ROUND_MANIFEST_FENCE = re.compile(r"```json\n(.*?)\n```\n?", re.DOTALL)
 
 
+ROUND_MANIFEST_FILE = re.compile(r"^- \*\*Manifest:\*\* `runs/G\d+-manifest\.json`$", re.M)
+
+
 def _strip_round_manifests(text: str) -> str:
     """Replace each fenced round manifest with a one-line stand-in.
 
@@ -203,6 +206,9 @@ def _strip_round_manifests(text: str) -> str:
     digests — a ~100-file change alone produces ~13 KiB and cannot be archived
     without force, which is what this strip exists to prevent.
     """
+
+    # Since November 2026 the manifest is a runs/ file, which the record does not keep.
+    text = ROUND_MANIFEST_FILE.sub("- **Manifest:** elided for the record; see the Snapshot hash above", text)
 
     def replace(match: re.Match[str]) -> str:
         try:
