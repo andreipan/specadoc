@@ -157,6 +157,37 @@ class Run38Test(unittest.TestCase):
         self.assertIn('locally ready; continue for the final gate', status)
         self.assertNotIn('locally ready', self.run_step('status', 'demo', '--context-tokens', '90000').stdout)
 
+    # 3.7/3.8: approval and spec/plan/design sha256 sums were written by hand.
+    def test_approve_records_provenance_and_detects_later_spec_edits(self):
+        self.plan.write_text(OPEN_T1.replace('**Status:** Approved (synthetic test fixture)',
+                                             '**Status:** Awaiting user approval'))
+        self.assertIn('approval required', self.run_step('status', 'demo').stdout.replace(
+            'plan approval is required', 'approval required'))
+        result = self.run_step('approve', 'demo', '--by', 'orchestrator',
+                               '--source', 'mandate D25, decision D58 (ordinary local plan)')
+        self.assertEqual(0, result.returncode, result.stdout)
+        section = self.plan.read_text().split('## Plan approval', 1)[1].split('## ', 1)[0]
+        self.assertIn('**Status:** Approved', section)
+        self.assertIn('**Bindings shown:** worker claude/test/low', section)
+        self.assertIn('**Approval provenance:** orchestrator decision under user mandate: mandate D25', section)
+        record = json.loads(self.change.joinpath('runs/approval.json').read_text())
+        self.assertEqual(['spec.md'], list(record['artifacts']))
+        self.assertIn('approval: approved\n', self.run_step('status', 'demo').stdout)
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        self.change.joinpath('spec.md').write_text(self.change.joinpath('spec.md').read_text() + '\nLate edit.\n')
+        self.assertIn('changed since approval: spec.md (re-approve)', self.run_step('status', 'demo').stdout)
+
+    def test_approve_needs_a_source_and_bindings(self):
+        self.plan.write_text(OPEN_T1.replace('**Bindings shown:** worker claude/test/low', '**Bindings shown:** Pending'))
+        result = self.run_step('approve', 'demo', '--by', 'user', '--source', 'Pending')
+        self.assertEqual(2, result.returncode, result.stdout)
+        result = self.run_step('approve', 'demo', '--by', 'user', '--source', '"ок, одобряю план"')
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertIn('--bindings', result.stdout)
+        result = self.run_step('approve', 'demo', '--by', 'user', '--source', '"ок, одобряю план"',
+                               '--bindings', 'worker claude/sonnet/medium')
+        self.assertEqual(0, result.returncode, result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

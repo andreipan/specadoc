@@ -40,7 +40,9 @@ Load this reference only for `specadoc propose`.
    (`design-gate.md`): an independent reviewer checks it before approval.
 7. Run `validate_change.py <slug> --phase plan`, present a compact plan preview
    with the role bindings line and any binding advice (`model-routing.md` →
-   Bindings at plan approval, Binding advice), and stop for plan approval. If accumulated context warrants it, offer running
+   Bindings at plan approval, Binding advice), and stop for plan approval.
+   Record it with `specadoc_step.py approve <slug> --by user --source '<the
+   user's words>' --bindings '<line shown>'`, never by hand. If accumulated context warrants it, offer running
    `apply <slug>` in a new controller session that starts from the plan's
    `### Read before continuing` list (`model-routing.md` → Session boundaries).
 

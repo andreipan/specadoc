@@ -14,6 +14,8 @@ script outputs:
 
 Steps:
 
+- `approve <slug> --by user|orchestrator --source '<decision>'` — record plan
+  approval and provenance; hashes spec.md/design.md into `runs/approval.json`.
 - `preflight <slug> T<n>` — read-only task validation, no Verification execution.
 - `dispatch <slug> T<n>` — preflight, task baseline and brief; also supports a
   controller-owned task without launching a worker.
@@ -28,6 +30,7 @@ Steps:
 - `external-result <slug> T<n> --outcome PASS|FAIL --evidence '<run>'` — record
   the result of a task's `External verification:`. Its `accept` ends in
   EXTERNAL-PENDING: review may open, `--phase final` requires a PASS.
+  `--supersede '<why>'` corrects a recorded result for the same content.
 - `refresh <slug>` — re-accept every settled task whose evidence went stale after
   later tasks, in dependency order, with the same report and frozen Verification.
 - `design-brief <slug>` / `design-review <slug> --result-file <json>` — the
@@ -738,7 +741,9 @@ def status(slug: str, root: str | None, controller: str | None = None,
     design = ("n/a (no Class inventory)" if not design_gate.rows(plan)
               else design_gate.review_error(plan) or "PASS (current inventory)")
     handoff = change / "runs" / "handoff.md"
-    lines = [f"change: {slug}; plan.md {plan_path.stat().st_size} bytes; approval: {approval or 'approved'}",
+    drift = approval_drift(change) if not approval else []
+    approved = "approved" + (f"; changed since approval: {', '.join(drift)} (re-approve)" if drift else "")
+    lines = [f"change: {slug}; plan.md {plan_path.stat().st_size} bytes; approval: {approval or approved}",
              f"design: {design}",
              f"handoff: {handoff} ({handoff.stat().st_size} bytes)" if handoff.is_file() else "handoff: none"]
     working, stale, waiting, unstarted = [], [], [], []
@@ -812,6 +817,69 @@ def status(slug: str, root: str | None, controller: str | None = None,
         lines.append(f"context: {context_tokens} tokens ({context_source}){advice}")
     print("\n".join(lines))
     return 0
+
+
+APPROVAL_ARTIFACTS = ("spec.md", "design.md")
+
+
+def approve(slug: str, root: str | None, by: str, source: str, bindings: str | None = None) -> int:
+    """Record plan approval and its provenance; hash the approved spec and design.
+
+    Replaces hand-written Status/Approved at lines and hand-computed sha256 sums
+    (3.7, 3.8). `by` is `user` for a direct decision, `orchestrator` for a
+    decision under a recorded user mandate, which `source` must name.
+    """
+    checked = ["approval source", "validate plan"]
+    if placeholder(source):
+        raise ValueError("--source must quote the user's decision or name the mandate and decision")
+    change = Path(resolve_root(root).path) / slug
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    if "Plan approval" not in plan.sections:
+        raise ValueError("plan.md has no Plan approval section")
+    import design_gate
+    if design_gate.rows(plan) and (error := design_gate.review_error(plan)):
+        return emit(checked + ["design review"], "BLOCKED", [], error, "finish the design review before approval")
+    gate = run_script("validate_change.py", slug, "--phase", "plan", *root_args(root))
+    if gate.returncode:
+        return emit(checked, "BLOCKED", [], tail(gate.stderr + gate.stdout), "fix the plan, then approve")
+    start, end = plan.sections["Plan approval"]
+    body = plan.lines[start:end]
+    current = next((m[1].strip() for line in body if (m := re.match(r"\*\*Bindings shown:\*\*\s*(.*)", line))), "")
+    shown = " ".join((bindings or current).split())
+    from validate_change import PENDING
+    if placeholder(shown) or PENDING.search(shown):
+        raise ValueError("pass --bindings with the role bindings shown at approval")
+    at = timestamp()
+    provenance = (f"user decision: {' '.join(source.split())}" if by == "user"
+                  else f"orchestrator decision under user mandate: {' '.join(source.split())}")
+    values = {"Status": "Approved", "Bindings shown": shown, "Approved at": at, "Approval provenance": provenance}
+    for key, value in values.items():
+        pattern = re.compile(rf"\*\*{re.escape(key)}:\*\*")
+        index = next((i for i, line in enumerate(body) if pattern.match(line)), None)
+        line = f"**{key}:** {value}" + ("  " if key != "Approval provenance" else "")
+        if index is None:
+            last = max((i for i, text in enumerate(body) if text.startswith("**")), default=0)
+            body.insert(last + 1, line)
+        else:
+            body[index] = line
+    text = "\n".join(plan.lines[:start] + body + plan.lines[end:]).rstrip("\n") + "\n"
+    plan_path.write_text(text, encoding="utf-8")
+    record = {"by": by, "source": " ".join(source.split()), "at": at,
+              "artifacts": {name: digest(change / name) for name in APPROVAL_ARTIFACTS if (change / name).is_file()}}
+    (change / "runs").mkdir(exist_ok=True)
+    save(change / "runs" / "approval.json", record)
+    return emit(checked + ["recorded approval"], "PASS", ["plan.md", "runs/approval.json"], "",
+                "approval recorded; start apply (status, then dispatch)")
+
+
+def approval_drift(change: Path) -> list[str]:
+    """Approved artifacts that changed after `approve`."""
+    try:
+        record = json.loads((change / "runs" / "approval.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [name for name, value in (record.get("artifacts") or {}).items() if digest(change / name) != value]
 
 
 def capability_gap(change: Path, artifact_root: str, slug: str) -> str:
@@ -970,6 +1038,12 @@ def build_parser() -> argparse.ArgumentParser:
     reviewed.add_argument("--result-file", required=True)
     for step in (brief, reviewed):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
+    approved = steps.add_parser("approve", help="Record plan approval, its provenance and the approved spec/design hashes")
+    approved.add_argument("change_slug")
+    approved.add_argument("--by", choices=("user", "orchestrator"), required=True,
+                          help="user: a direct decision; orchestrator: a decision under a recorded user mandate")
+    approved.add_argument("--source", required=True, help="The user's words, or the mandate and decision id")
+    approved.add_argument("--bindings", help="Role bindings shown at approval (default: keep the recorded line)")
     handoff = steps.add_parser("handoff", help="Overwrite runs/handoff.md (session notes) from a file or stdin")
     handoff.add_argument("change_slug")
     handoff.add_argument("--file", required=True, help="Notes file, or - for stdin")
@@ -1036,6 +1110,8 @@ def main() -> int:
             return design_brief(args.change_slug, args.root, args.controller_runtime)
         if args.step == "design-review":
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime)
+        if args.step == "approve":
+            return approve(args.change_slug, args.root, args.by, args.source, args.bindings)
         if args.step == "handoff":
             return write_handoff(args.change_slug, args.root, args.file)
         if args.step == "status":

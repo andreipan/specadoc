@@ -55,11 +55,13 @@ orchestrator decision with its artifact revision. Do not fabricate a user quote
 or mark an approval as directly given by the user when it was delegated. Use
 existing Specadoc approval fields; if their validation cannot represent the
 delegation faithfully, stop and obtain direct approval rather than bypassing a gate.
-Keep `**Status:**` a plain `Approved`: the gate rejects negations there, such as
-"not a direct user approval". Put provenance on its own line, for example
-`**Approval provenance:** orchestrator decision under user mandate D<n>, artifact
-revision <ref>`. Give controllers this wording in the brief so they never record
-an orchestrator decision as an explicit user instruction.
+The controller records it with `specadoc_step.py approve <slug> --by
+orchestrator --source 'mandate D<n>, decision D<m>'` (a direct user decision:
+`--by user --source '<the user's words>'`). It writes a plain `**Status:**
+Approved`, an `**Approval provenance:**` line and the approved spec/design
+hashes; never write
+these lines or hashes by hand. Give controllers this command in the brief so
+they never record an orchestrator decision as an explicit user instruction.
 
 An explicit uninterrupted-execution request is handled by existing Specadoc
 rules. It does not waive specifications, testing, review, or completion evidence.
