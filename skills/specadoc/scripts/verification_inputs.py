@@ -86,12 +86,27 @@ def environment_patterns() -> tuple[tuple[str, ...], bool]:
     return (tuple(allow), True) if allow else (VOLATILE_ENVIRONMENT, False)
 
 
+def session_neutral(value: str) -> str:
+    """Replace this session's scratch directory inside a value with a placeholder.
+
+    A sandboxed session gets its own TMPDIR, so a value built from it, such as
+    `PHP_INI_SCAN_DIR=":$TMPDIR/ini"`, differs in every session without changing
+    what a check verifies (3.6: each new controller saw accepted tasks as stale).
+    """
+    scratch = os.environ.get("TMPDIR", "").rstrip("/")
+    if len(scratch) <= 1:
+        return value
+    for form in sorted({scratch, os.path.realpath(scratch)}, key=len, reverse=True):
+        value = value.replace(form, "<TMPDIR>")
+    return value
+
+
 def environment_digests() -> dict[str, str]:
     """Short digest per relevant variable name; values are never stored."""
     selected, allowlist = environment_patterns()
     def matches(name: str) -> bool:
         return any(fnmatch.fnmatchcase(name.upper(), pattern.upper()) for pattern in selected)
-    return {name: hashlib.sha256(value.encode()).hexdigest()[:16]
+    return {name: hashlib.sha256(session_neutral(value).encode()).hexdigest()[:16]
             for name, value in sorted(os.environ.items()) if matches(name) == allowlist}
 
 

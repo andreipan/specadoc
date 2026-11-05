@@ -306,6 +306,20 @@ class ApplyEfficiencyTest(unittest.TestCase):
             result = self.run_step('pre-review', 'demo', '--dry-run')
         self.assertEqual(0, result.returncode, result.stdout)
 
+    def test_session_scratch_directory_inside_a_value_does_not_stale_evidence(self):
+        """3.6: PHP_INI_SCAN_DIR=":$TMPDIR/ini" differed in every sandboxed session."""
+        from unittest.mock import patch
+        import os
+        with patch.dict(os.environ, TMPDIR='/tmp/session-a', PHP_INI_SCAN_DIR=':/tmp/session-a/ini'):
+            self.accepted()
+        with patch.dict(os.environ, TMPDIR='/tmp/session-b/', PHP_INI_SCAN_DIR=':/tmp/session-b/ini'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertEqual(0, result.returncode, result.stdout)
+        with patch.dict(os.environ, TMPDIR='/tmp/session-b', PHP_INI_SCAN_DIR=':/tmp/session-b/other'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('environment changed: PHP_INI_SCAN_DIR', result.stdout)
+
     def test_stale_environment_message_names_the_variable(self):
         from unittest.mock import patch
         import os
