@@ -72,6 +72,9 @@ def placeholder(text: str | None) -> bool:
 TAIL_LINES = 30
 # Controller context at which dispatch stops for a session boundary.
 CONTEXT_GUARD = 200_000
+# Context at a phase boundary from which a fresh session pays back before the next
+# phase that dispatches workers (model-routing.md -> Session boundaries).
+PHASE_BOUNDARY_CONTEXT = 120_000
 
 
 def run_script(script: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -207,15 +210,20 @@ def preflight(slug: str, task: str, root: str | None, controller: str | None) ->
                 "inputs valid; no commands executed and no state written")
 
 
-def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
-             context_tokens: int | None = None, reopen: str | None = None) -> int:
-    context_source = "reported"
+def observed_context(controller: str | None, context_tokens: int | None) -> tuple[int | None, str]:
+    """The controller's current context: the reported count, else its own Claude transcript."""
     # A Codex/OpenCode controller started from a Claude shell inherits its session
     # id; that transcript measures the launcher, not this controller.
     if context_tokens is None and controller in (None, "claude"):
         from collect_tokens import claude_context_tokens, current_claude_transcript
         if (transcript := current_claude_transcript()) is not None:
-            context_tokens, context_source = claude_context_tokens(transcript), f"read from {transcript.name}"
+            return claude_context_tokens(transcript), f"read from {transcript.name}"
+    return context_tokens, "reported"
+
+
+def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
+             context_tokens: int | None = None, reopen: str | None = None) -> int:
+    context_tokens, context_source = observed_context(controller, context_tokens)
     if context_tokens is not None and context_tokens >= CONTEXT_GUARD:
         return emit([f"context budget ({context_source})"], "BLOCKED", [],
                     f"controller context is {context_tokens} tokens, at least {CONTEXT_GUARD // 1000}k",
@@ -687,7 +695,8 @@ def write_handoff(slug: str, root: str | None, source: str) -> int:
                 "a new session runs status, then reads this file instead of re-reading plan.md")
 
 
-def status(slug: str, root: str | None) -> int:
+def status(slug: str, root: str | None, controller: str | None = None,
+           context_tokens: int | None = None) -> int:
     """Compact read-only state for a controller or orchestrator; replaces re-reading plan.md."""
     from validate_change import TASK_CHECKBOX, evidence_staleness, latest_review_round
     change = Path(resolve_root(root).path) / slug
@@ -752,6 +761,16 @@ def status(slug: str, root: str | None) -> int:
     else:
         next_step = f"validate_change.py {slug} --phase final"
     lines.append(f"next: {next_step}")
+    context_tokens, context_source = observed_context(controller, context_tokens)
+    if context_tokens is None:
+        lines.append("context: not reported (pass --context-tokens from the host's observed count)")
+    else:
+        # Apply has not started yet: the plan-approval phase boundary.
+        apply_start = next_step.startswith("dispatch ") and len(unstarted) == len(plan.blocks("Tasks", "T"))
+        advice = ("; phase boundary: fresh session recommended before worker dispatch "
+                  f"(at least {PHASE_BOUNDARY_CONTEXT // 1000}k)"
+                  if apply_start and context_tokens >= PHASE_BOUNDARY_CONTEXT else "")
+        lines.append(f"context: {context_tokens} tokens ({context_source}){advice}")
     print("\n".join(lines))
     return 0
 
@@ -904,6 +923,8 @@ def build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--file", required=True, help="Notes file, or - for stdin")
     state = steps.add_parser("status", help="Compact read-only state and the next allowed step")
     state.add_argument("change_slug")
+    state.add_argument("--context-tokens", type=int, help="Observed current controller input context")
+    state.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
     reported = steps.add_parser("report", help="Write the task report with its schema-valid result JSON")
     reported.add_argument("change_slug")
     reported.add_argument("task", help="Task id such as T3")
@@ -958,7 +979,7 @@ def main() -> int:
         if args.step == "handoff":
             return write_handoff(args.change_slug, args.root, args.file)
         if args.step == "status":
-            return status(args.change_slug, args.root)
+            return status(args.change_slug, args.root, args.controller_runtime, args.context_tokens)
         if args.step == "report":
             return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
                                 args.green, args.concern, args.body_file)

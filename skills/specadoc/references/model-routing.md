@@ -89,10 +89,17 @@ boundary, because the prompt cache belongs to one model.
 
 Long histories increase later input, often cached. Keep one active change;
 use a compact handoff when switching tasks or when the history becomes large.
-A fresh session can lose useful cache, so it is not mandatory at every phase:
+A fresh session is not mandatory at every phase. Each call re-reads the whole
+context; a fresh controller re-orients to 70–90k in about ten calls, so in 3.6 a
+switch paid back after about 30 calls at 120k and 10 at 200k (apply: 75–105).
 
-- At plan approval, offer a fresh `apply <slug>` session if accumulated context
-  warrants it, starting from `### Read before continuing`, not discussion logs.
+- Decide at a phase boundary (plan approved; locally-ready before a fix);
+  within a phase the 200k task-boundary guard decides.
+- Start fresh at 120k or more when the next phase dispatches workers; below
+  that, or with only the final gate left, continue. `status` prints the
+  observed context and this advice. Never split explore from propose.
+- A fresh `apply <slug>` session starts from `### Read before continuing`, not
+  discussion logs.
 - For another slug, archive, or branch work, prefer a bounded handoff from
   `plan.md` or `record.md`; do not split short clarifications mechanically.
 - In `apply`, record each accepted task's result in `plan.md` before the next

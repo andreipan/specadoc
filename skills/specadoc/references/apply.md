@@ -3,11 +3,13 @@
 Load this reference only for `specadoc apply <slug>`.
 
 1. Require validated spec/plan and recorded explicit approval before edits.
-   Start apply in a fresh session after propose. `dispatch` blocks at roughly 200k
-   controller context: save session notes with `specadoc_step.py handoff <slug>
-   --file -` (overwrites `runs/handoff.md`; never append them to plan.md) and
-   resume `apply <slug>` in a new session from `specadoc_step.py status <slug>`. Claude Code sessions are read automatically; other hosts pass the
-   observed count with `--context-tokens <n>`. Never invent a count.
+   A fresh session orients from `specadoc_step.py status <slug>`, `runs/handoff.md`
+   and the task brief, never whole spec/plan/design. `status` prints the
+   observed context and advises a fresh session from 120k at plan approval;
+   `dispatch` blocks at roughly 200k: save notes with `specadoc_step.py handoff
+   <slug> --file -` (overwrites `runs/handoff.md`) and resume in a new session.
+   Claude Code sessions are read automatically; other hosts pass
+   `--context-tokens <n>`. Never invent a count.
 2. Close material decisions before RED. A task ready for a worker goes to one;
    the controller keeps tasks with open decisions or a recorded Controller
    justification (`subagent-routing.md` → Routing policy). A worker task

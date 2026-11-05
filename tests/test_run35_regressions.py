@@ -363,6 +363,17 @@ class PlanGrowthTest(unittest.TestCase):
         self.assertIn('next: specadoc_step.py refresh demo (T1)', result.stdout)
         self.assertLess(len(result.stdout.splitlines()), 12)
 
+    def test_status_reports_context_and_recommends_a_fresh_apply_session(self):
+        """3.6: controllers reached 272k and 205k; the switch belongs at the phase boundary."""
+        self.plan.write_text(PLAN.replace('- [x] Complete', '- [ ] Complete'))
+        status = self.run_step('status', 'demo', '--context-tokens', '130000').stdout
+        self.assertIn('next: dispatch T1', status)
+        self.assertIn('context: 130000 tokens (reported); phase boundary: fresh session recommended', status)
+        self.assertNotIn('recommended', self.run_step('status', 'demo', '--context-tokens', '90000').stdout)
+        self.assertIn('context: not reported', self.run_step('status', 'demo').stdout)
+        self.accepted()
+        self.assertNotIn('recommended', self.run_step('status', 'demo', '--context-tokens', '150000').stdout)
+
     def test_status_notices_a_review_that_no_longer_covers_the_change(self):
         self.accepted()
         self.assertEqual(0, self.run_step('pre-review', 'demo').returncode)
