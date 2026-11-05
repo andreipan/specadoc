@@ -121,6 +121,17 @@ unproven requirements; mark them UNVERIFIABLE in the matrix.
 
 Verdict is FAIL when any BLOCKER or IMPORTANT finding exists.
 
+## Result JSON
+End the reply with one fenced `json` block matching
+`assets/reviewer-result.schema.json`, so the controller passes your reply
+file to `review-result` unchanged instead of transcribing it:
+
+```json
+{"verdict": "PASS", "findings": [{"severity": "MINOR", "location": "path:line", "summary": "problem and minimal fix"}], "report": "one-paragraph summary"}
+```
+
+Each finding above appears once in `findings`; use `[]` when there are none.
+
 ## Design review before code
 
 When the prompt is a design brief (`runs/design-brief.md`), no code exists yet.

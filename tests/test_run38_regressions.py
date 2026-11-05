@@ -157,6 +157,28 @@ class Run38Test(unittest.TestCase):
         self.assertIn('locally ready; continue for the final gate', status)
         self.assertNotIn('locally ready', self.run_step('status', 'demo', '--context-tokens', '90000').stdout)
 
+    # 3.7: the controller transcribed the reviewer's Markdown report into JSON by hand.
+    def test_review_result_reads_the_reviewers_markdown_reply(self):
+        self.plan.write_text(OPEN_T1)
+        self.run_step('dispatch', 'demo', 'T1')
+        self.report()
+        self.assertEqual(0, self.run_step('accept', 'demo', 'T1').returncode)
+        self.assertEqual(0, self.run_step('pre-review', 'demo').returncode)
+        reply = ('## Verdict\nPASS\n\n## Findings\n- MINOR label.py:2 — naming\n\n## Result JSON\n\n```json\n'
+                 + json.dumps({'verdict': 'PASS', 'findings': [{'severity': 'MINOR', 'location': 'label.py:2',
+                                                                 'summary': 'rename for clarity'}],
+                               'report': 'Label is ready.'}) + '\n```\n')
+        self.change.joinpath('runs/G1-reply.md').write_text(reply)
+        result = self.run_step('review-result', 'demo', '--result-file', 'docs/specadoc/demo/runs/G1-reply.md')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('MINOR (G1-1): label.py:2 — rename for clarity', self.plan.read_text())
+
+    def test_reviewer_contract_asks_for_result_json(self):
+        from test_specadoc_step import SCRIPTS
+        role = (SCRIPTS.parent / 'references/roles/reviewer.md').read_text()
+        self.assertIn('## Result JSON', role)
+        self.assertIn('assets/reviewer-result.schema.json', role)
+
     # 3.7/3.8: approval and spec/plan/design sha256 sums were written by hand.
     def test_approve_records_provenance_and_detects_later_spec_edits(self):
         self.plan.write_text(OPEN_T1.replace('**Status:** Approved (synthetic test fixture)',

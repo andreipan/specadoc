@@ -55,7 +55,8 @@ Load this reference only for `specadoc apply <slug>`.
    executable diff (`!path` means deleted).
 7. On a stable diff, `specadoc_step.py pre-review <slug>` records the pending
    round; then run one independent read-only `reviewer`.
-   On return run `specadoc_step.py review-result <slug> --result-file <json>`
+   On return run `specadoc_step.py review-result <slug> --result-file <reply>`
+   (the reviewer's saved reply, ending in its result JSON; never transcribe it)
    before anything else, including a user question.
 8. Fix confirmed findings within the approved scope, then
    `pre-review <slug> --review-type re-review` for one targeted round limited to
