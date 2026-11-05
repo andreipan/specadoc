@@ -201,14 +201,7 @@ un-indent it to four spaces less when you add the first real entry:
     - **Round cap override:** Pending
     - **Review decision:** <only for a user-authorized extra re-review; actual decision plus bounded scope, never an inferred archive waiver>
     - **Snapshot waiver:** Pending (only for a technical read failure; never for a manifest mismatch)
-
-    <details><summary>Manifest</summary>
-
-    ```json
-    {"...": "..."}
-    ```
-
-    </details>
+    - **Manifest:** `runs/G1-manifest.json` (written by `pre-review`; never inline it here)
 >
 
 ## Archive summary

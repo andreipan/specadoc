@@ -851,8 +851,15 @@ def plan_size_warnings(plan: Document) -> list[str]:
                         "and one Continue line; session notes go to runs/handoff.md via specadoc_step.py handoff")
     size = len("\n".join(plan.lines).encode("utf-8"))
     if size > PLAN_SIZE_WARNING:
+        def weight(start: int, end: int) -> int:
+            return len("\n".join(plan.lines[start:end]).encode("utf-8"))
+        # Name what to trim: in 3.8 the plan was 55 KB at approval, before any evidence.
+        parts = [(weight(start, end), name) for name, (start, end) in plan.sections.items() if name != "Tasks"]
+        parts += [(weight(start, end), identifier) for identifier, start, end in plan.blocks("Tasks", "T")]
+        largest = ", ".join(f"{name} {bytes_} B" for bytes_, name in sorted(parts, reverse=True)[:4])
         warnings.append(f"plan.md is {size} bytes (> {PLAN_SIZE_WARNING}): keep only decisions, tasks, "
-                        "one-line evidence and current state; move bulky evidence to research.md or drop it")
+                        "one-line evidence and current state; move bulky evidence to research.md or drop it. "
+                        f"Largest: {largest}")
     return warnings
 
 

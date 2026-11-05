@@ -157,6 +157,24 @@ class Run38Test(unittest.TestCase):
         self.assertIn('locally ready; continue for the final gate', status)
         self.assertNotIn('locally ready', self.run_step('status', 'demo', '--context-tokens', '90000').stdout)
 
+    # 3.8: plan.md reached 55-69 KB; the warning now names what to trim.
+    def test_long_summary_is_capped_and_size_warning_names_the_largest_parts(self):
+        self.plan.write_text(OPEN_T1)
+        self.run_step('dispatch', 'demo', 'T1')
+        runs = self.change / 'runs'
+        value = dict(status='DONE', summary='word ' * 200, files_changed=['label.py'],
+                     tests=dict(red='old label failed', green='passed'), concerns=[],
+                     report='docs/specadoc/demo/runs/T1-report.md')
+        runs.joinpath('T1-report.md').write_text('```json\n' + json.dumps(value) + '\n```\n')
+        self.assertEqual(0, self.run_step('accept', 'demo', 'T1').returncode)
+        accepted = next(line for line in self.t1_block().splitlines() if line.startswith('- **Accepted result:**'))
+        self.assertLess(len(accepted), 480)
+        self.assertIn('(full: runs/T1-report.md)', accepted)
+        self.plan.write_text(self.plan.read_text().replace('## Reconnaissance evidence\n',
+                                                           '## Reconnaissance evidence\n' + 'x' * 40000 + '\n'))
+        warning = self.validate('plan').stderr
+        self.assertIn('Largest: Reconnaissance evidence', warning)
+
     # 3.7: the controller transcribed the reviewer's Markdown report into JSON by hand.
     def test_review_result_reads_the_reviewers_markdown_reply(self):
         self.plan.write_text(OPEN_T1)

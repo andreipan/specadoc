@@ -73,6 +73,8 @@ PLACEHOLDER = re.compile(r"\s*(?:pending|tbd|n/?a|none|todo|-|\?+)?\s*[.!]?\s*",
 def placeholder(text: str | None) -> bool:
     return text is None or bool(PLACEHOLDER.fullmatch(text))
 TAIL_LINES = 30
+# Characters of a worker summary copied into plan.md's Accepted result.
+ACCEPTED_SUMMARY_LIMIT = 400
 # Controller context at which dispatch stops for a session boundary.
 CONTEXT_GUARD = 200_000
 # Context at a phase boundary from which a fresh session pays back before the next
@@ -528,7 +530,11 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
                 and re.match(r"(?:build|typecheck|browser):", part, re.I)]
         if kept:
             evidence += "; " + "; ".join(kept)
-    accepted = payload["summary"] + (f"; controller: {note}" if note else "")
+    summary = " ".join(payload["summary"].split())
+    if len(summary) > ACCEPTED_SUMMARY_LIMIT:
+        # plan.md is re-read at every task; the full summary stays in the report.
+        summary = summary[:ACCEPTED_SUMMARY_LIMIT].rsplit(" ", 1)[0] + f" … (full: runs/{task}-report.md)"
+    accepted = summary + (f"; controller: {note}" if note else "")
     if resolved:
         accepted = f"worker {payload['status']} → resolved: {resolved}; worker: {accepted}"
         record["blocker_resolution"] = {"worker_status": payload["status"], "resolution": " ".join(resolved.split()),
