@@ -380,6 +380,12 @@ class PlanGrowthTest(unittest.TestCase):
         self.change.joinpath('runs/review.json').write_text(json.dumps({'verdict': 'PASS', 'findings': [], 'report': 'ok'}))
         result = self.run_step('review-result', 'demo', '--result-file', 'docs/specadoc/demo/runs/review.json')
         self.assertEqual(0, result.returncode, result.stdout)
+        # 3.7: apply step 9 was missed until the archive dry-run; status names it first.
+        self.assertIn('next: apply step 9: update capability specs', self.run_step('status', 'demo').stdout)
+        capability = self.repo / 'docs/specadoc/specs/label.md'
+        capability.parent.mkdir(parents=True)
+        capability.write_text('# Label\n\n| Change | Requirements |\n|---|---|\n| demo | C1 |\n\n'
+                              '### C1 — Diagnostic label is ready\nThe label SHALL equal ready.\n')
         self.assertIn('next: validate_change.py demo --phase final', self.run_step('status', 'demo').stdout)
         self.plan.write_text(self.plan.read_text().replace(
             '## Requirement-to-check matrix', '### T4 — Late task\n- [x] Complete\n\n## Requirement-to-check matrix', 1))

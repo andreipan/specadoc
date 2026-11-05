@@ -571,7 +571,14 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
     frozen_derived = record.get("derived", derived)
     # The controller owns this change's plan.md; the worker brief forbids editing it.
     own_plan = Path(os.path.relpath(plan_path.resolve(), Path.cwd().resolve())).as_posix()
-    violations = scope_violations(baseline, current, frozen, artifact_root, frozen_derived, (own_plan,))
+    # Apply step 9 promotes the capability files this change's spec declares; that
+    # controller edit is not a worker scope violation and needs no amend.
+    from validate_change import capability_deltas
+    spec_path = change / "spec.md"
+    capability_files = tuple(path for _, path, _, _ in capability_deltas(
+        Document(spec_path, str(spec_path)), artifact_root)) if spec_path.is_file() else ()
+    violations = scope_violations(baseline, current, frozen, artifact_root, frozen_derived,
+                                  (own_plan, *capability_files))
     violations, attributed = attribute_violations(
         violations, later_task_scopes(baseline_path.parent, task, record))
     if set(patterns) != set(frozen) or set(derived) != set(frozen_derived):

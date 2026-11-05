@@ -384,7 +384,7 @@ def check_scope(slug: str, task: str, root: str | None, checked: list[str]) -> t
     return changed, None
 
 
-def worker_result(change: Path, task: str, result_file: str | None) -> tuple[dict, Path]:
+def worker_result(change: Path, task: str, result_file: str | None, resolved: str | None = None) -> tuple[dict, Path]:
     from run_role import _parse_json_text, schema_errors, schema_path
     report = change / "runs" / f"{task}-report.md"
     if not report.is_file():
@@ -404,8 +404,13 @@ def worker_result(change: Path, task: str, result_file: str | None) -> tuple[dic
                          + f"; write it with specadoc_step.py report {change.name} {task}")
     if safe_path(payload["report"], allow_missing=False, allow_absolute=True).resolve() != report.resolve():
         raise ValueError("worker result points to a different report")
-    if payload["status"] not in ("DONE", "DONE_WITH_CONCERNS"):
-        raise ValueError(f"worker status {payload['status']} is not completion")
+    unfinished = payload["status"] not in ("DONE", "DONE_WITH_CONCERNS")
+    if resolved and not unfinished:
+        raise ValueError(f"--resolved applies only to a BLOCKED or NEEDS_CONTEXT report, not {payload['status']}")
+    if unfinished and not resolved:
+        raise ValueError(f"worker status {payload['status']} is not completion; when the parent or controller "
+                         "removed the blocker, rerun accept with --resolved '<who removed it and how>' "
+                         "(never rewrite the worker report)")
     for path in payload["files_changed"]:
         safe_path(path)
     return payload, report
@@ -422,7 +427,7 @@ def amendments_since_dispatch(slug: str, task: str, root: str | None) -> list[st
 
 
 def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, result_file: str | None = None,
-           note: str | None = None, verification_timeout: float = 600) -> int:
+           note: str | None = None, verification_timeout: float = 600, resolved: str | None = None) -> int:
     checked = ["check-scope"]
     changed, violations, derived, failure = scope_state(slug, task, root, checked)
     if failure is not None:
@@ -443,6 +448,8 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
         raise ValueError("verification timeout must be positive")
     if note is not None and placeholder(note):
         raise ValueError("--note must name the actual decision or accepted result")
+    if resolved is not None and placeholder(resolved):
+        raise ValueError("--resolved must name who removed the blocker and how")
 
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
@@ -450,7 +457,7 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     if error := approval_error(plan):
         return emit(checked, "BLOCKED", violations or changed, error, "obtain plan approval before acceptance")
     try:
-        payload, report = worker_result(change, task, result_file)
+        payload, report = worker_result(change, task, result_file, resolved)
         commands = verification_commands(slug, task, root)
     except (OSError, ValueError) as exc:
         return emit(checked, "BLOCKED", violations or changed, str(exc),
@@ -505,7 +512,7 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     record["state"] = "verified"
     save(baseline_path, record)
     concerns = payload["concerns"]
-    if (concerns or payload["status"] == "DONE_WITH_CONCERNS") and not note:
+    if (concerns or payload["status"] == "DONE_WITH_CONCERNS") and not (note or resolved):
         emit(checked, "NEEDS_DECISION", changed, "worker concerns require a controller disposition",
              "read the concerns; rerun accept with --note '<decision>' (verification is reused), or return to implementation")
         return 2
@@ -518,8 +525,12 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
                 and re.match(r"(?:build|typecheck|browser):", part, re.I)]
         if kept:
             evidence += "; " + "; ".join(kept)
-    values = {"Evidence": evidence, "Evidence hash": content_hash(inputs["owned"]),
-              "Accepted result": payload["summary"] + (f"; controller: {note}" if note else "")}
+    accepted = payload["summary"] + (f"; controller: {note}" if note else "")
+    if resolved:
+        accepted = f"worker {payload['status']} → resolved: {resolved}; worker: {accepted}"
+        record["blocker_resolution"] = {"worker_status": payload["status"], "resolution": " ".join(resolved.split()),
+                                        "at": timestamp()}
+    values = {"Evidence": evidence, "Evidence hash": content_hash(inputs["owned"]), "Accepted result": accepted}
     external = external_verification(fields)
     prior = record.get("external") or {}
     # A recorded external PASS holds while the task's own content is unchanged.
@@ -536,12 +547,19 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     return emit(checked, "ACCEPTED", changed, "", "task evidence and accepted result saved; continue with the next ready task")
 
 
-def external_result(slug: str, task: str, root: str | None, outcome: str, evidence: str, log: str | None = None) -> int:
-    """Record the result of a task's External verification; final requires PASS."""
+def external_result(slug: str, task: str, root: str | None, outcome: str, evidence: str, log: str | None = None,
+                    supersede: str | None = None) -> int:
+    """Record the result of a task's External verification; final requires PASS.
+
+    `supersede` corrects an already recorded result (a wrong log or a garbled
+    hash) for the same content; the replaced result stays in `external_history`.
+    """
     from validate_change import evidence_staleness
     checked = ["external verification state"]
     if placeholder(evidence):
         raise ValueError("--evidence must name the actual run and its result")
+    if supersede is not None and placeholder(supersede):
+        raise ValueError("--supersede must name why the recorded result is wrong")
     change = Path(resolve_root(root).path) / slug
     baseline_path = change / "runs" / f"{task}-baseline.json"
     if not baseline_path.is_file():
@@ -552,9 +570,19 @@ def external_result(slug: str, task: str, root: str | None, outcome: str, eviden
     _, _, fields = task_block(plan, task)
     if not external_verification(fields):
         raise ValueError(f"{task} has no External verification field")
-    if record.get("state") != "external-pending":
+    if supersede is not None:
+        if record.get("state") != "accepted" or not record.get("external"):
+            return emit(checked, "BLOCKED", [], f"{task} has no recorded external result to supersede "
+                        f"(state {record.get('state')})", "record it with external-result without --supersede")
+        if record["external"].get("files_hash") != (record.get("verification") or {}).get("files_hash"):
+            return emit(checked, "BLOCKED", [], f"{task} recorded external result covers different content",
+                        "accept the current content and rerun the external verification")
+        checked.append("superseding the recorded external result")
+    elif record.get("state") != "external-pending":
+        hint = (f"; to correct a recorded result use --supersede '<why it is wrong>'"
+                if record.get("state") == "accepted" and record.get("external") else "")
         return emit(checked, "BLOCKED", [], f"{task} state is {record.get('state')}, not external-pending",
-                    f"accept {task} first; its local Verification must pass before the external result")
+                    f"accept {task} first; its local Verification must pass before the external result{hint}")
     fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
     if fresh is False:
         return emit(checked, "BLOCKED", [], f"{task} local evidence is stale ({reason})",
@@ -563,6 +591,9 @@ def external_result(slug: str, task: str, root: str | None, outcome: str, eviden
         safe_path(log, allow_missing=False, allow_absolute=True)
     files_hash = (record.get("verification") or {}).get("files_hash")
     text = " ".join(evidence.split())
+    if supersede is not None:
+        record.setdefault("external_history", []).append(
+            {**record["external"], "superseded_at": timestamp(), "reason": " ".join(supersede.split())})
     record["external"] = {"outcome": outcome, "evidence": text, "log": log, "at": timestamp(), "files_hash": files_hash}
     value = f"{outcome}: {text}" + (f" (log `{log}`)" if log else "")
     if outcome == "PASS":
@@ -756,6 +787,8 @@ def status(slug: str, root: str | None, controller: str | None = None,
         next_step = f"run the reviewer for {latest[0]}, then review-result"
     elif drift := review_drift(plan, change, latest):
         next_step = f"pre-review --review-type re-review ({drift})"
+    elif capability := capability_gap(change, resolve_root(root).path, slug):
+        next_step = f"apply step 9: update capability specs before the final gate ({capability})"
     elif waiting:
         next_step = f"external-result {waiting[0]} after its external run"
     else:
@@ -767,12 +800,28 @@ def status(slug: str, root: str | None, controller: str | None = None,
     else:
         # Apply has not started yet: the plan-approval phase boundary.
         apply_start = next_step.startswith("dispatch ") and len(unstarted) == len(plan.blocks("Tasks", "T"))
-        advice = ("; phase boundary: fresh session recommended before worker dispatch "
-                  f"(at least {PHASE_BOUNDARY_CONTEXT // 1000}k)"
-                  if apply_start and context_tokens >= PHASE_BOUNDARY_CONTEXT else "")
+        # Locally ready: review passed and only the final gate or an external run remains.
+        locally_ready = bool(latest) and outcome.upper() == "PASS" and not (working or stale or unstarted)
+        advice = ""
+        if context_tokens >= PHASE_BOUNDARY_CONTEXT and apply_start:
+            advice = ("; phase boundary: fresh session recommended before worker dispatch "
+                      f"(at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
+        elif context_tokens >= PHASE_BOUNDARY_CONTEXT and locally_ready:
+            advice = ("; phase boundary: locally ready; continue for the final gate, but start a later fix "
+                      f"in a fresh session (at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
         lines.append(f"context: {context_tokens} tokens ({context_source}){advice}")
     print("\n".join(lines))
     return 0
+
+
+def capability_gap(change: Path, artifact_root: str, slug: str) -> str:
+    """First capability promotion still missing after review (apply step 9), or ''."""
+    spec_path = change / "spec.md"
+    if not spec_path.is_file():
+        return ""
+    from archive_change import capability_findings
+    _, messages = capability_findings(Document(spec_path, str(spec_path)), artifact_root.rstrip("/"), slug)
+    return messages[0] if messages else ""
 
 
 def review_drift(plan: Document, change: Path, latest: tuple) -> str:
@@ -894,6 +943,9 @@ def build_parser() -> argparse.ArgumentParser:
             step.add_argument("--verify", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
             step.add_argument("--result-file", help="Schema-valid worker JSON; default: fenced JSON in its report")
             step.add_argument("--note", help="Controller decision on concerns or corrections to the accepted result")
+            step.add_argument("--resolved", metavar="HOW",
+                              help="Accept a BLOCKED/NEEDS_CONTEXT report whose blocker the parent or controller "
+                                   "removed: who did it and how; the worker report stays unchanged")
             step.add_argument("--verification-timeout", type=float, default=600)
         if name == "dispatch":
             step.add_argument("--context-tokens", type=int, help="Observed current controller input context")
@@ -940,6 +992,9 @@ def build_parser() -> argparse.ArgumentParser:
     external.add_argument("--outcome", choices=("PASS", "FAIL"), required=True)
     external.add_argument("--evidence", required=True, help="The actual run (command, run id) and its result")
     external.add_argument("--log", help="Repository path of the run log")
+    external.add_argument("--supersede", metavar="REASON",
+                          help="Replace the recorded result of an accepted task for the same content; "
+                               "the old one is kept in external_history")
     refreshed = steps.add_parser("refresh", help="Re-verify stale accepted task evidence without --reopen")
     refreshed.add_argument("change_slug")
     refreshed.add_argument("--verification-timeout", type=float, default=600)
@@ -948,6 +1003,11 @@ def build_parser() -> argparse.ArgumentParser:
     settled.add_argument("--result-file", required=True)
     for step in (steps.choices["preflight"], steps.choices["dispatch"], review):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
+    # Accept the flag on every step, so a controller can pass it uniformly (3.7: amend rejected it).
+    for step in steps.choices.values():
+        if "--controller-runtime" not in step._option_string_actions:
+            step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"),
+                              help="Not used by this step; accepted so every call can pass it")
     return parser
 
 
@@ -957,7 +1017,7 @@ def main() -> int:
         print("error: task must look like T<n>", file=sys.stderr)
         return 2
     try:
-        if hasattr(args, "controller_runtime"):
+        if args.step in ("preflight", "dispatch", "pre-review", "design-brief", "design-review", "status"):
             args.controller_runtime = default_controller(args.controller_runtime)
         if args.step == "preflight":
             return preflight(args.change_slug, args.task, args.root, args.controller_runtime)
@@ -969,7 +1029,7 @@ def main() -> int:
         if args.step == "accept":
             return accept(args.change_slug, args.task, args.root, scope_only=args.scope_only,
                           result_file=args.result_file, note=args.note,
-                          verification_timeout=args.verification_timeout)
+                          verification_timeout=args.verification_timeout, resolved=args.resolved)
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
         if args.step == "design-brief":
@@ -984,7 +1044,8 @@ def main() -> int:
             return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
                                 args.green, args.concern, args.body_file)
         if args.step == "external-result":
-            return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log)
+            return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log,
+                                   args.supersede)
         if args.step == "refresh":
             return refresh(args.change_slug, args.root, args.verification_timeout)
         if args.step == "review-result":

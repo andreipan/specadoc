@@ -39,6 +39,14 @@ sessions and hosts. When a new session still reports `environment changed:
 Entries are names or globs. With a list, other variables never invalidate
 evidence. Values are never stored, only a short digest per name.
 
+Keep a host or sandbox setting out of `Verification`: a command that starts
+with `NAME=value` or `env` freezes one session's runtime into the plan, and the
+next session, sandbox or validator runs it differently (3.7/3.8: an
+interpreter config override dropped the coverage driver, then evidence went
+stale when the validator unset it). Fix the runtime once for every session (for
+example an interpreter config file the runtime always loads) and write the bare
+command. `validate_change.py --phase plan` warns about such a prefix.
+
 ## Resolve and dispatch
 
 Use a verified Python 3.11+ interpreter when routes read Codex TOML registries.

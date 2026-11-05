@@ -598,11 +598,24 @@ def check_spec(spec: Document, root: str, *, expect_capabilities_applied: bool =
     return violations
 
 
+# Path and command fields whose indented continuation lines are part of the
+# value: a wrapped `Files:` must not silently lose its second line (3.7, 3.8).
+CONTINUED_FIELDS = frozenset({"Files", "Derived files", "Verification", "Verification inputs",
+                              "Depends on", "Scope amendment"})
+
+
 def task_fields(plan: Document, start: int, end: int) -> dict[str, str]:
     fields: dict[str, str] = {}
+    current: str | None = None
     for index in range(start, end):
-        if match := FIELD.match(plan.lines[index]):
-            fields[match.group("name").strip()] = match.group("value").strip()
+        line = plan.lines[index]
+        if match := FIELD.match(line):
+            current = match.group("name").strip()
+            fields[current] = match.group("value").strip()
+        elif current in CONTINUED_FIELDS and line.startswith((" ", "\t")) and line.strip():
+            fields[current] = f"{fields[current]} {line.strip()}".strip()
+        else:
+            current = None
     return fields
 
 
@@ -841,6 +854,17 @@ def plan_size_warnings(plan: Document) -> list[str]:
         warnings.append(f"plan.md is {size} bytes (> {PLAN_SIZE_WARNING}): keep only decisions, tasks, "
                         "one-line evidence and current state; move bulky evidence to research.md or drop it")
     return warnings
+
+
+ENV_PREFIX = re.compile(r"`\s*(?:env\b|[A-Za-z_][A-Za-z0-9_]*=)")
+
+
+def verification_env_warnings(plan: Document) -> list[str]:
+    """A runtime setting frozen into Verification diverges between sessions and sandboxes."""
+    return [f"{identifier}: Verification sets an environment variable; a host or sandbox setting belongs "
+            "in the runtime (php.ini, harness), not in the frozen command"
+            for identifier, start, end in plan.blocks("Tasks", "T")
+            if ENV_PREFIX.search(task_fields(plan, start, end).get("Verification", ""))]
 
 
 def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
@@ -1130,6 +1154,16 @@ def check_review_readiness(plan: Document, *, allow_external_pending: bool = Fal
                 elif state.get("schema") == "specadoc.task/v2" and current not in SETTLED_STATES:
                     violations.append(Violation(plan.display, start + 1,
                         f"{identifier}: task has not reached report-aware ACCEPTED; settle its result before review"))
+                elif (state.get("schema") == "specadoc.task/v2" and current == "accepted"
+                      and external_verification(task_fields(plan, start, end)) and not allow_external_pending):
+                    # An external PASS covers only the content it ran on (amend can keep an old PASS).
+                    external = state.get("external") or {}
+                    verified = (state.get("verification") or {}).get("files_hash")
+                    if external.get("outcome") != "PASS" or external.get("files_hash") != verified:
+                        violations.append(Violation(plan.display, start + 1,
+                            f"{identifier}: no external PASS recorded for the accepted content; rerun "
+                            "specadoc_step.py accept (it becomes external-pending), run the external "
+                            "verification, then record it with external-result"))
             except (OSError, ValueError, TypeError, AttributeError):
                 violations.append(Violation(plan.display, start + 1, f"{identifier}: task state is unreadable"))
         marks = [
@@ -1499,7 +1533,7 @@ def main() -> int:
     if args.phase == "plan":
         from design_gate import missing_inventory_warning
         cross_warnings += (repeated_verification_warnings(plan) + controller_routing_warnings(plan)
-                           + missing_inventory_warning(plan))
+                           + missing_inventory_warning(plan) + verification_env_warnings(plan))
     if args.phase != "spec":
         cross_warnings += plan_size_warnings(plan)
     task_count = len(plan.blocks("Tasks", "T"))

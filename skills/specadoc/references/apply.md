@@ -40,12 +40,15 @@ Load this reference only for `specadoc apply <slug>`.
    report JSON, runs Verification (reused only for unchanged content inputs,
    commands and environment), checks scope, and on **ACCEPTED** records Evidence, Evidence hash
    and Accepted result. One call reports both scope violations and check results.
-   Concerns return **NEEDS_DECISION**: rerun with `--note '<decision>'`.
+   Concerns return **NEEDS_DECISION**: rerun with `--note '<decision>'`. A
+   BLOCKED report whose blocker the parent or controller removed takes
+   `--resolved '<who and how>'`; never rewrite the worker's report.
    A task with `External verification:` (integration on a shared database, a
    check allowed only after review) returns **EXTERNAL-PENDING**: dependents
    may start and review may open. Record the run with `external-result <slug>
    T<n> --outcome PASS|FAIL --evidence '<run and result>'`; `--phase final`
-   needs a PASS on the current content. FAIL returns the task to work.
+   needs a PASS on the current content. FAIL returns the task to work. Correct a
+   recorded result with `--supersede '<why>'`; never edit `runs/*.json`.
    A returned status is a claim, not evidence.
 6. Controller runs final affected-only checks once, records observed Build/Typecheck
    PASS and Browser URL/state for UI, and fills literal Review scope from the
@@ -60,7 +63,8 @@ Load this reference only for `specadoc apply <slug>`.
    with only MINOR findings, fix them: test/doc-only fixes need no new round;
    executable fixes take one `re-review` (recorded as `minor-fixes`, outside the
    round cap). New BLOCKER/IMPORTANT after a re-review: stop and ask.
-9. On PASS, update capability specs, the Archive summary (name post-review MINOR
+9. On PASS, update the capability specs that spec.md declares (`status` names a
+   missing one; no `amend` needed), the Archive summary (name post-review MINOR
    fixes) and residual risks, collect tokens after all review rounds, then run
    `validate_change.py <slug> --phase final`. Archive only when asked.
 
