@@ -157,6 +157,38 @@ class Run38Test(unittest.TestCase):
         self.assertIn('locally ready; continue for the final gate', status)
         self.assertNotIn('locally ready', self.run_step('status', 'demo', '--context-tokens', '90000').stdout)
 
+    # 3.8: token collection needed a manual search through other sessions' transcripts.
+    def test_writing_steps_record_the_controller_session_status_does_not(self):
+        import os
+        import subprocess
+        import sys
+        from test_specadoc_step import SCRIPTS
+        home = self.repo / 'home'
+        transcript = home / 'projects/p/controller-1.jsonl'
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text('{}\n')
+        self.plan.write_text(OPEN_T1)
+        self.change.joinpath('runs').mkdir()
+
+        def step(*args, session='controller-1'):
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', CLAUDE_CONFIG_DIR=str(home),
+                       CLAUDE_CODE_SESSION_ID=session)
+            env.pop('SPECADOC_ROOT', None)
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'specadoc_step.py'), *args],
+                                  cwd=self.repo, env=env, capture_output=True, text=True, input='notes\n')
+        step('status', 'demo')
+        ledger = self.change / 'runs/sessions.json'
+        self.assertFalse(ledger.exists())
+        self.assertEqual(0, step('dispatch', 'demo', 'T1').returncode)
+        recorded = json.loads(ledger.read_text())['claude']
+        self.assertEqual([(str(transcript), 'apply')], [(item['transcript'], item['mode']) for item in recorded])
+        # A Codex controller launched from a Claude shell inherits the launcher's session id.
+        other = home / 'projects/p/launcher.jsonl'
+        other.write_text('{}\n')
+        result = step('handoff', 'demo', '--file', '-', '--controller-runtime', 'codex', session='launcher')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(1, len(json.loads(ledger.read_text())['claude']))
+
     # 3.8: plan.md reached 55-69 KB; the warning now names what to trim.
     def test_long_summary_is_capped_and_size_warning_names_the_largest_parts(self):
         self.plan.write_text(OPEN_T1)

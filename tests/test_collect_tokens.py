@@ -73,6 +73,34 @@ class CollectTokensTest(unittest.TestCase):
             self.assertIn("new.jsonl", errors.getvalue())
             self.assertIn("claude 2 run(s)", output.getvalue())
 
+    def test_claude_sessions_recorded_by_steps_are_all_collected(self):
+        """3.8: apply ran in three controller sessions; collection without paths saw only the newest."""
+        collect = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo, home = Path(directory) / "repo", Path(directory) / "home"
+            change = repo / "docs/specadoc/demo"
+            (change / "runs").mkdir(parents=True)
+            for session, output in (("first", 100), ("second", 5), ("third", 7)):
+                self.write_jsonl(home / "projects" / "p" / f"{session}.jsonl", [self.claude_record(output)])
+            with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(home)}):
+                for session, mode in (("first", "propose"), ("second", "apply"), ("third", "apply"), ("third", "apply")):
+                    with patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": session}):
+                        collect.remember_session(change, mode)
+                ledger = json.loads((change / "runs/sessions.json").read_text())
+                self.assertEqual(3, len(ledger["claude"]))
+                argv = ["collect_tokens", "demo", "--harness", "claude", "--mode", "apply", "--project", str(repo)]
+                previous = Path.cwd()
+                os.chdir(repo)
+                try:
+                    with patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": ""}), \
+                            patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()) as output, \
+                            contextlib.redirect_stderr(io.StringIO()) as errors:
+                        self.assertEqual(collect.main(), 0)
+                finally:
+                    os.chdir(previous)
+            self.assertIn("using 2 apply session(s) recorded", errors.getvalue())
+            self.assertIn("claude 2 run(s)", output.getvalue())
+
     def test_claude_streaming_uses_max_usage_per_request(self):
         collect = load_module()
         with tempfile.TemporaryDirectory() as directory:

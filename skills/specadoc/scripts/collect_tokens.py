@@ -493,6 +493,48 @@ def latest_claude_transcript(project: str) -> Path | None:
     return transcripts[-1] if transcripts else None
 
 
+SESSION_LEDGER = "sessions.json"
+
+
+def remember_session(change: Path, mode: str) -> None:
+    """Record this Claude session's transcript for the change and mode.
+
+    A change often spans several controller sessions (3.8: three in apply);
+    without this ledger token collection saw only the newest one.
+    """
+    transcript = current_claude_transcript()
+    runs = change / "runs"
+    if transcript is None or not runs.is_dir():
+        return
+    path = runs / SESSION_LEDGER
+    try:
+        ledger = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except ValueError:
+        ledger = {}
+    sessions = ledger.setdefault("claude", [])
+    if any(item.get("transcript") == str(transcript) and item.get("mode") == mode for item in sessions):
+        return
+    sessions.append({"transcript": str(transcript), "mode": mode,
+                     "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(ledger, indent=1) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def ledger_sessions(change: Path, mode: str) -> list[Path]:
+    """Recorded Claude transcripts of this change and mode that still exist."""
+    try:
+        ledger = json.loads((change / "runs" / SESSION_LEDGER).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    paths = [Path(item["transcript"]) for item in ledger.get("claude", [])
+             if isinstance(item, dict) and item.get("mode") == mode and item.get("transcript")]
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        print(f"warning: recorded transcripts are missing: {', '.join(missing)}", file=sys.stderr)
+    return [path for path in paths if path.is_file()]
+
+
 def _collect(args: argparse.Namespace) -> list[Execution]:
     if args.harness == "opencode":
         if not args.directory and not args.external_run:
@@ -500,6 +542,15 @@ def _collect(args: argparse.Namespace) -> list[Execution]:
         executions = (collect_opencode(args.directory, args.db, args.session)
                       if args.directory else [])
     else:
+        if not args.sources and not args.external_run and args.harness == "claude":
+            try:
+                change = Path(resolve_root(args.root).path) / args.change_slug
+            except ValueError:
+                change = None
+            if change is not None and (recorded := ledger_sessions(change, args.mode)):
+                print(f"note: using {len(recorded)} {args.mode} session(s) recorded in runs/{SESSION_LEDGER}",
+                      file=sys.stderr)
+                args.sources = [str(path) for path in recorded]
         if not args.sources and not args.external_run and args.harness == "claude":
             if transcript := latest_claude_transcript(args.project):
                 print(f"warning: no transcript given; using the newest session {transcript} and its subagents",

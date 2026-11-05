@@ -1091,6 +1091,32 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+PROPOSE_STEPS = ("approve", "design-brief", "design-review")
+# Read-only steps also run by an orchestrator; they must not record its session.
+UNRECORDED_STEPS = ("status", "preflight", "manifest")
+
+
+def record_session(args: argparse.Namespace) -> None:
+    """Remember the controller's Claude transcript for token collection (`runs/sessions.json`)."""
+    if args.step in UNRECORDED_STEPS:
+        return
+    runtime = args.controller_runtime
+    if runtime is None:
+        from specadoc_config import load_config
+        try:
+            runtime = ((load_config(Path.cwd()).get("roles") or {}).get("controller") or {}).get("runtime")
+        except ValueError:
+            return
+    if runtime not in (None, "claude"):
+        return  # a Codex/OpenCode controller started from a Claude shell inherits the launcher's id
+    try:
+        change = Path(resolve_root(args.root).path) / args.change_slug
+        from collect_tokens import remember_session
+        remember_session(change, "propose" if args.step in PROPOSE_STEPS else "apply")
+    except (OSError, ValueError):
+        pass  # bookkeeping never blocks a step
+
+
 def main() -> int:
     args = build_parser().parse_args()
     if args.step in ("preflight", "dispatch", "accept", "amend", "manifest", "external-result", "report") and not re.fullmatch(r"T\d+", args.task):
@@ -1099,6 +1125,7 @@ def main() -> int:
     try:
         if args.step in ("preflight", "dispatch", "pre-review", "design-brief", "design-review", "status"):
             args.controller_runtime = default_controller(args.controller_runtime)
+        record_session(args)
         if args.step == "preflight":
             return preflight(args.change_slug, args.task, args.root, args.controller_runtime)
         if args.step == "manifest":
