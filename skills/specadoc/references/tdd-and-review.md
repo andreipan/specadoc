@@ -146,8 +146,9 @@ Classify findings:
 
 Fix every confirmed finding, `MINOR` included, inside the same apply run. Leave a
 finding open only when fixing it would leave the approved scope or contradict
-`spec.md`, or when the user explicitly accepts a bounded deferral; record the
-decision next to the finding. After a FAIL, dispatch the one targeted re-review
+`spec.md`, or when the user (or an orchestrator under its mandate) explicitly
+accepts a bounded deferral; record the decision next to the finding and as a
+residual risk. The controller never defers on its own (3.8 G1). After a FAIL, dispatch the one targeted re-review
 immediately, without waiting for the user; the explicit `specadoc apply`
 invocation already authorizes it. Stop and report instead of fixing again if a
 re-review returns new BLOCKER or IMPORTANT findings. The cap on new-diff review

@@ -63,7 +63,8 @@ Load this reference only for `specadoc apply <slug>`.
    prior findings and changed files, without waiting for the user. After a PASS
    with only MINOR findings, fix them: test/doc-only fixes need no new round;
    executable fixes take one `re-review` (recorded as `minor-fixes`, outside the
-   round cap). New BLOCKER/IMPORTANT after a re-review: stop and ask.
+   round cap). Defer a MINOR only by a parent or user decision, recorded as a
+   residual risk (`tdd-and-review.md`). New BLOCKER/IMPORTANT after a re-review: stop and ask.
 9. On PASS, update the capability specs that spec.md declares (`status` names a
    missing one; no `amend` needed), the Archive summary (name post-review MINOR
    fixes) and residual risks, collect tokens after all review rounds, then run
