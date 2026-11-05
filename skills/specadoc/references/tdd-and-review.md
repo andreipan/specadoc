@@ -19,6 +19,10 @@ For each behavior-changing task:
 
 Prefer tests of observable behavior over mocks of internal implementation.
 
+An integration test on a shared resource (queue, database, cache) removes only
+the records it created, never a range or everything above a baseline: in 3.6 a
+tearDown deleted every job above a baseline on the shared default queue.
+
 REFACTOR may use an installed cleanup companion; see `interoperability.md` →
 Behavior-preserving cleanup.
 

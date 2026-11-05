@@ -108,6 +108,8 @@ A launched run is not a result. The controller stays in its turn and keeps calli
 a necessary user decision. Claude Code can run `wait --follow` with
 `run_in_background` and is woken when it exits; Codex and OpenCode have no such
 wake-up, so they must keep waiting in the foreground.
+Wait for any other process by its PID or exit status, never by `pgrep -f
+<pattern>`: the pattern also matches the waiting shell (3.6: a 55×10 s spin).
 
 Routing a role to an external runtime in the committed `.specadoc.json` is the
 project's consent to send it code. Do not ask for each change or task. A
