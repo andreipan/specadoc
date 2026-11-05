@@ -75,13 +75,17 @@ orchestrator re-read plan.md five times.
   archive is no reason to keep or replace a session.
 - Decide a fresh controller session only at a phase boundary, by the rule in
   Specadoc `model-routing.md` → Session boundaries, using the `Context` line
-  of the envelope.
+  of the envelope and the advice `status` prints. Do not set thresholds of your
+  own in briefs (3.7/3.8 briefs invented "hand off at 120–140k at a task
+  boundary", which contradicts that rule).
 - A controller ends its turn only in an envelope state: checkpoint, blocked,
-  failed or locally-ready. Starting a worker is not a reason to end the turn.
-- When the host can fork a session, prepare one base controller session with only
-  step-independent context (skills, repository rules, tooling notes) and fork it
-  for each phase or step; send the step brief as the fork's first prompt. Without
-  a fork, start fresh from a compact handoff.
+  failed or locally-ready, and with none of its own background jobs still
+  running (3.8: three controllers went idle with a run pending). Starting a
+  worker is not a reason to end the turn.
+- When that rule calls for a fresh session and the host can fork, fork one
+  prepared base controller session with only step-independent context (skills,
+  repository rules, tooling notes) and send the brief as the fork's first
+  prompt. Without a fork, start fresh from a compact handoff.
 - Start each roadmap step in a fresh orchestrator session from the coordination
   record, or fork from the point right after the mandate was set. Extract a large
   source (roadmap, sweep) into the step brief once, with a scout, and do not
@@ -146,4 +150,10 @@ An exposed permission question is separate from a lifecycle checkpoint. Answer
 only when the host permits delegated approval and the explicit user mandate
 covers the exact request; prefer allow_once and record why. A text message does
 not approve a tool request. A denial is not an invitation to bypass the gate.
-Keep briefs in accessible authorized locations; do not broaden global access.
+When a controller reports that its runtime denied a command (network, a
+dependency update, a write outside its sandbox), bring that exact command to the
+user; do not run it yourself in your own, wider sandbox, and never call it
+approved without a recorded user approval (3.8: the orchestrator ran a
+dependency lock update with network after the controller's denial and told it
+"approved"). Keep briefs in accessible authorized locations; do not broaden
+global access.

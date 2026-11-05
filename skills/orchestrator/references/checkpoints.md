@@ -45,10 +45,10 @@ the orchestrator; return it to the controller.
 
 The mandate may name one dedicated, disposable test database and its connection
 name. Controllers and the integration verifier may then run integration tests
-and test migrations against it repeatedly without asking each time; the brief
-repeats its exact name. It never covers the working, shared or production
-database, a copied production configuration, or creating another database.
-Record it once in the coordination brief.
+and test migrations against it repeatedly without asking each time. Record it
+once, with its exact name, in the coordination brief; controller briefs cite
+that entry. It never covers the working, shared or production database, a
+copied production configuration, or creating another database.
 
 When permitted, local controllers record the original mandate and the actual
 orchestrator decision with its artifact revision. Do not fabricate a user quote
@@ -75,6 +75,7 @@ rules. It does not waive specifications, testing, review, or completion evidence
 | Ordinary local plan checkpoint | User unless explicitly delegated and accepted by host/repository rules |
 | New product behavior, incompatible contract, added repository, or material risk/scope change | User unless that exact choice was already explicitly authorized |
 | Production, destructive migration, secrets, money, system changes, external publication, push/deployment | User's explicit authorization for the action; never inferred from a plan mandate |
+| Network access, dependency install or update, a sandbox bypass, or any command a runtime denied | User, for that exact command; the orchestrator never runs it for a controller, and nobody calls it approved without a recorded approval |
 | Runtime/model routing, role files, `.specadoc.json`, or a controller's runtime | User; show the mismatch and ask, never edit to make a launch fit |
 | Independent review result | Independent reviewer; neither controller nor orchestrator may invent PASS |
 

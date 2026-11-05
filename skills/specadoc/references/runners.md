@@ -106,8 +106,10 @@ progress note, so a long run never looks stopped.
 A launched run is not a result. The controller stays in its turn and keeps calling
 `wait --follow` until the run finishes, or ends the turn only with a real blocker or
 a necessary user decision. Claude Code can run `wait --follow` with
-`run_in_background` and is woken when it exits; Codex and OpenCode have no such
-wake-up, so they must keep waiting in the foreground.
+`run_in_background` and is woken when it exits, but only while its turn
+continues: a final reply with that job still running ends the turn without the
+result (3.8: three controllers went idle that way). Codex and OpenCode have no
+such wake-up, so they must keep waiting in the foreground.
 Wait for any other process by its PID or exit status, never by `pgrep -f
 <pattern>`: the pattern also matches the waiting shell (3.6: a 55×10 s spin).
 

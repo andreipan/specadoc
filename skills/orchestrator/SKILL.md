@@ -47,7 +47,9 @@ verbatim, shared contract/version, verified facts versus assumptions, scope and
 prohibitions, dependency readiness, checkpoint authority, and completion evidence.
 Quote the extracted source excerpt (roadmap row, decisions) so the controller
 does not re-read the whole source. Tell it explicitly to use Specadoc for the
-local change. Let it choose its local
+local change. Write it from `references/controller-brief.md`: cite the standing
+constraints in the coordination brief instead of repeating them, in full
+sentences. Let it choose its local
 plan and mechanism. Do not direct their workers or modify their active diff.
 
 Require the controller to challenge a contradictory contract or disproportionate
@@ -97,10 +99,13 @@ fixes. Never place Foreman inside a controller.
 
 Inspect the artifacts rather than accepting a summary alone, but read verdicts
 and the lines they cite: do not read repository code, tests, project skills or
-Specadoc script internals yourself. Give a check that needs them to a scout or
-the integration verifier. Local review PASS
-does not establish integration success. Run the agreed end-to-end scenario in
-the authorized environment with compatible component versions. If integration
+Specadoc script internals yourself, and do not run project quality tools,
+`validate_change.py` or tests; the owning controller runs them and reports
+(3.7/3.8: doing this yourself filled 200k of orchestrator context). Give a check
+that needs them to a scout or the integration verifier. Local review PASS
+does not establish integration success. The integration verifier runs the
+agreed end-to-end scenario in the authorized environment with compatible
+component versions. If integration
 needs a fix, return it to the owning controller and preserve its Specadoc gates;
 changed executable diffs need renewed verification and independent review.
 
