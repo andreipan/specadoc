@@ -170,6 +170,13 @@ def write_brief(change: Path) -> Path:
              "- For each Class inventory row ask: is the file needed for a requirement? Does a port cross a real "
              "boundary or have a second implementation? Is the layer right? Does it mirror an existing feature "
              "without a reason? Is there a simpler shape with fewer files and the same behavior?",
+             # 3.8: review found these only after apply (legacy rows, trailing data, an undeclared extension,
+             # an ambiguous error code).
+             "- For the design as a whole ask: which existing data states (legacy or partial rows) must it "
+             "handle? Which platform requirements (runtime extensions, binaries) does it add, and are they "
+             "declared? Which input-format edge cases (truncated, oversized, trailing or malformed data) does it "
+             "accept or reject? Which error code or outcome does each failure map to? A missing answer that "
+             "affects a requirement is IMPORTANT.",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "

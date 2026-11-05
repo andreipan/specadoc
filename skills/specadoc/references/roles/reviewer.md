@@ -138,5 +138,8 @@ When the prompt is a design brief (`runs/design-brief.md`), no code exists yet.
 Review the plan's Class inventory against the requirements instead of a diff:
 is each new file needed, does each port cross a real boundary or have a second
 implementation, is each layer right, and is there a simpler shape with fewer
-files? Mirroring an existing feature is not a reason by itself. Return the same
-result JSON; a file or port without a reason is IMPORTANT.
+files? Mirroring an existing feature is not a reason by itself. Then check the
+design as a whole: existing data states it must handle, platform requirements it
+adds and whether they are declared, input-format edge cases, and the error code
+each failure maps to. Return the same result JSON; a file or port without a
+reason, or a missing answer that affects a requirement, is IMPORTANT.

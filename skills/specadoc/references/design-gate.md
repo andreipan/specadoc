@@ -25,6 +25,9 @@ checks them before the first task.
 5. Present the plan for approval with the design verdict. `dispatch` requires a
    current PASS.
 
+Answer the brief's whole-design questions (data states, platform requirements,
+input edge cases, error codes) in spec `Constraints` first; 3.8 met them in review.
+
 During apply, `accept` and `report` fail on a new non-test file outside the
 inventory. Pre-review and the final gate check every file added since the first
 dispatch (`runs/apply-start.json`). A file you did not foresee is a design

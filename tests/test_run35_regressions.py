@@ -485,6 +485,10 @@ class DesignGateTest(unittest.TestCase):
         text = self.change.joinpath('runs/design-brief.md').read_text()
         self.assertIn('R1 needs a label source port', text)
         self.assertIn('second implementation', text)
+        # 3.8: whole-design questions that review answered only after apply.
+        for question in ('existing data states', 'platform requirements', 'input-format edge cases',
+                         'error code or outcome'):
+            self.assertIn(question, text)
         self.assertEqual(2, self.review('PASS', ['IMPORTANT']).returncode)
         self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
         self.assertIn('design review FAIL', self.run_step('dispatch', 'demo', 'T1').stdout)

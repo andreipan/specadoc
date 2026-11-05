@@ -50,6 +50,7 @@ only ADDED operations are valid.
 ## Constraints
 
 - <Compatibility, security, platform, dependency, or performance constraint.>
+- <Existing data states, added platform requirements, input-format edge cases, error code of each failure.>
 
 ## Assumptions
 
