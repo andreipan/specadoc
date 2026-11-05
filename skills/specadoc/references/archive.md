@@ -2,10 +2,22 @@
 
 Load this reference only for explicit `specadoc archive`.
 
-Archive needs `plan.md`, not implementation history. Prefer continuing the
-session that finished `apply`: archive dispatches no worker, so the dispatch
-context guard does not apply, and a new session re-reads what this one holds.
-Avoid replaying logs when continuing in the current session.
+Archive needs `plan.md`, not implementation history.
+
+## Delegate the run to a worker
+
+The controller keeps the decision: it archives only on an explicit request,
+confirms the final gate and the current PASS, and afterwards checks the record
+header, its size and `git status`. The run itself (Normal archive below) is
+ready work for a `worker`, routed as usual but outside task `dispatch`; in 3.6
+it cost 17 controller calls at 130–146k context. The brief allows exactly:
+the commands below; shortening wording in durable `plan.md` sections to fit
+the size budget without changing a decision, requirement or evidence. Never
+`--force`, code or test edits, a reviewer, or manual `runs/` cleanup. Stop and
+return on a manifest mismatch, unknown attachment, collision, any gate other
+than size, or a size that will not fit without losing meaning. Return the
+record path and bytes, both command results, the `plan.md` edits, and any
+stop reason. Without a worker, the controller runs the same steps.
 
 The target is `docs/specadoc/archive/<slug>/record.md`, schema
 `specadoc.archive/v1`, with a hard 16 KiB budget. It retains the durable outcome,

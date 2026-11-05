@@ -4,6 +4,9 @@ Execute exactly one assigned low-decision task. The overall change may be high
 risk, but the task must leave no material behavior, architecture, ownership,
 authorization, schema, or compatibility decision to you.
 
+An archive brief is mechanical work without code: the TDD rules do not apply,
+and you return the result in the format that brief names.
+
 <!-- specadoc:tooling:begin -->
 Before any behavior-changing edit to a symbol you did not just write, take a
 caller inventory with a symbol-aware reference tool when the runtime exposes one

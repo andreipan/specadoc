@@ -24,6 +24,9 @@ Do not place task-specific paths, requirement IDs, or feature details in the rol
 
 Use `scout` for bounded read-only repository investigation.
 
+An explicitly requested archive run is ready work for a `worker` although it is
+not a T-task (`archive.md` → Delegate the run to a worker).
+
 A `worker` implements every task that is ready for it. The controller's
 context is the scarce budget: implementing each task itself grows the
 controller session until it must be replaced, and every replacement re-reads
