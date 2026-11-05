@@ -12,19 +12,22 @@ Foreman inside them. For one local change, prefer one ordinary controller.
 
 ## Establish the mandate
 
-1. Restate the user's outcome, quote explicit requirements, identify allowed
+1. Find the existing coordination record for this repository or roadmap first
+   (`references/state.md`). Read its mandate and latest decisions; a step of
+   the same roadmap continues that record and its standing mandate.
+2. Restate the user's outcome, quote explicit requirements, identify allowed
    repositories/work areas, and define an end-to-end acceptance scenario.
-2. Read `references/checkpoints.md`. State which decisions remain with the user
-   and whether an explicit mandate delegates ordinary local plan checkpoints.
-   Invoking this skill alone does not delegate those approvals.
-3. Read `references/controllers.md` before launch. Verify persistent controller
+3. Read `references/checkpoints.md`. State which decisions remain with the user
+   and whether an explicit mandate, new or inherited, delegates ordinary local
+   plan checkpoints. Invoking this skill alone does not delegate those approvals.
+4. Read `references/controllers.md` before launch. Verify persistent controller
    sessions, continuation, nested worker/reviewer capability, delivery, permission
    boundaries, and model bindings. No model names or levels are fixed by this
    skill. Use installed project/host routing; never silently change bindings.
    Show each repository's routed roles beside the runtime/model you will launch;
    on a mismatch ask the user. Never edit routing or role files yourself.
-4. Read `references/state.md`. Reuse or create a compact authorized coordination
-   record. It tracks relationships and shared decisions, not duplicate local
+5. Reuse the record found in step 1, or create one where `references/state.md`
+   says. It tracks relationships and shared decisions, not duplicate local
    specifications, task lists, or verification logs.
 
 ## Partition and dispatch
@@ -42,7 +45,9 @@ split one tightly coupled diff across competing controllers.
 Give each controller a bounded brief: local outcome and why, user requirements
 verbatim, shared contract/version, verified facts versus assumptions, scope and
 prohibitions, dependency readiness, checkpoint authority, and completion evidence.
-Tell it explicitly to use Specadoc for the local change. Let it choose its local
+Quote the extracted source excerpt (roadmap row, decisions) so the controller
+does not re-read the whole source. Tell it explicitly to use Specadoc for the
+local change. Let it choose its local
 plan and mechanism. Do not direct their workers or modify their active diff.
 
 Require the controller to challenge a contradictory contract or disproportionate
@@ -54,13 +59,16 @@ inside one repository and leave consumers on an obsolete contract.
 Continue the same controller for related work. At a question, read the
 controller's `specadoc_step.py status <slug>` and handoff, open only the plan
 section the decision needs, apply only the authority recorded in the mandate,
-and send a specific decision referencing the current checkpoint. Relay options
+and send a specific decision referencing the current checkpoint. Keep each
+message short (about 150 words): the decision, checkpoint key and `D<n>`; the
+rationale stays in the coordination record, since every message stays in the
+controller's context for the rest of its session. Relay options
 meant for the user verbatim (`references/checkpoints.md` → Relaying options).
 Route changed requirements through affected local plans and approvals before
 implementation resumes.
 
-Use supported status/events and compact reports, not full-log polling. Wait in
-bounded intervals and check the controller's last error after each
+Use supported status/events and compact reports, not full-log polling. Prefer
+the host's completion/failure event over waiting; a bounded wait is the fallback
 (`references/controllers.md` → Waiting). Follow
 host foreground/background rules and delivery limits. A controller ending its
 turn can mean a checkpoint, blocker, or failure, not completion. Do not promise
@@ -87,7 +95,10 @@ verifier (`references/roles/integration-verifier.md`), continued across rounds
 like a Foreman executor; keep its verdicts, not its logs. It reports and never
 fixes. Never place Foreman inside a controller.
 
-Inspect the artifacts rather than accepting a summary alone. Local review PASS
+Inspect the artifacts rather than accepting a summary alone, but read verdicts
+and the lines they cite: do not read repository code, tests, project skills or
+Specadoc script internals yourself. Give a check that needs them to a scout or
+the integration verifier. Local review PASS
 does not establish integration success. Run the agreed end-to-end scenario in
 the authorized environment with compatible component versions. If integration
 needs a fix, return it to the owning controller and preserve its Specadoc gates;

@@ -30,7 +30,8 @@ mapping once in the coordination record:
 | Capability | Use |
 |---|---|
 | launch / continue | one resumable session per controller in its assigned work area |
-| wait for completion | one bounded wait (minutes) per active controller; on a timeout read status and the last error before waiting again; read its final output only after the wait returns |
+| completion/failure event | prefer the host's wake on a finished, failed or interrupted controller turn; otherwise one bounded wait per active controller (see Waiting) |
+| observed context | the controller's current context size, for session boundaries |
 | fork at a point | optional; start a phase or step from a prepared base session instead of re-reading context |
 | cancel / status | stop a stale writer; read status from evidence, not a title |
 | delivery limits | whether a parent turn may end while a child result is pending |
@@ -52,12 +53,16 @@ mapping once in the coordination record:
 
 ## Waiting
 
-A failed provider call can leave a controller errored while a wait for
-completion keeps waiting: in 3.5 a 30-minute wait returned after 46 minutes and
-the network error behind it was noticed late. Wait in bounded intervals of a few
-minutes. After each, read the controller's status and its last error event: an
-errored turn needs a supported retry or a decision, not another wait. A wait
-that returns late is not evidence of progress.
+Every wake re-reads the orchestrator's whole context. In 3.6 about 25 of 38
+three-minute waits timed out, and the wakes, not the wait output, made the cost.
+Prefer a host event that fires when a controller turn finishes, fails or is
+interrupted: end your turn and continue when it arrives. Only when the host has
+no such event, or your turn must not end, wait in bounded intervals of about
+fifteen minutes. After each timeout read only the controller's status and its
+last error, not its log. A failed provider call can leave a controller errored
+while a wait for completion keeps waiting (3.5: a 30-minute wait returned after
+46 minutes): an errored turn needs a supported retry or a decision, not another
+wait. A wait that returns late is not evidence of progress.
 
 Resume a controller from `specadoc_step.py status <slug>` and its
 `runs/handoff.md`, not by re-reading spec, plan and design: in 3.5 the
@@ -66,8 +71,11 @@ orchestrator re-read plan.md five times.
 ## Keep sessions few and small
 
 - Continue the controller that finished a change for its integration fix and
-  archive. Archive dispatches no worker, so the dispatch context guard does not
-  force a new session.
+  final gate. It hands the archive run to a worker (Specadoc `archive.md`), so
+  archive is no reason to keep or replace a session.
+- Decide a fresh controller session only at a phase boundary, by the rule in
+  Specadoc `model-routing.md` → Session boundaries, using the `Context` line
+  of the envelope.
 - A controller ends its turn only in an envelope state: checkpoint, blocked,
   failed or locally-ready. Starting a worker is not a reason to end the turn.
 - When the host can fork a session, prepare one base controller session with only
@@ -113,6 +121,7 @@ Ask controllers to end a turn at checkpoints rather than wait mid-run for a repl
     State: working | checkpoint | blocked | failed | locally-ready
     Result and artifact references:
     Diff/contract revision and verification/review evidence:
+    Context: <observed tokens, or unknown>
     Question, recommendation, and next action:
 
 Record a checkpoint key from the host event ID or controller+slug+phase+revision.

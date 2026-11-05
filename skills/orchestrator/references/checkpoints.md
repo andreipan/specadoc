@@ -9,6 +9,14 @@ Without that explicit user mandate, relay required plan approvals to the user.
 Follow stricter host/repository requirements; a mandate does not create permission
 to waive them or to impersonate a human approver.
 
+A mandate recorded earlier in the coordination record stays in force for later
+steps of the same roadmap while the step stays inside its goal, repositories,
+contracts and risk boundary. Cite it (`inherited from <record> D<n>`) instead of
+asking again, and ask only when no record exists or the step falls outside it.
+Per-step permissions (a test database run, archive, commit, push) do not carry
+over to the next step. In 3.6 the orchestrator missed the standing mandate,
+recorded "no delegation" and brought ordinary approvals to the user.
+
 Suggested bounded question:
 
 > May I accept local plans within this goal and these contracts, returning to you

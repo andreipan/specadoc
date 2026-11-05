@@ -1,8 +1,12 @@
 # Coordination state without another lifecycle
 
-Use an existing authorized shared plan when one exists. Otherwise choose a small
-coordination directory in an authorized workspace, for example
-`orchestration/<task>/`, containing:
+Use an existing authorized shared plan when one exists. Before creating a
+record, search the work area for one (`orchestration/*/`, or the directory the
+brief names) covering the same repository or roadmap; a later step of that
+roadmap appends to it. Keep the record in the project work area, not in
+host-private session storage: the next step may run in another session or host.
+Otherwise choose a small coordination directory in an authorized workspace, for
+example `orchestration/<task>/`, containing:
 
 - **brief.md:** shared goal, verbatim user invariants, boundaries, mandate,
   acceptance scenario, and shared contract ownership/revisions.
