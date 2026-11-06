@@ -1031,6 +1031,7 @@ def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP, next_type:
     """Refuse to dispatch a reviewer for the `limit`-th new-diff round.
 
     Counts only `### G<n>` blocks under `Review result` with `Type: initial`
+    that are not stale (a stale round was cut short by a change, not reviewed)
     — the already-bounded single `re-review` after fixes never counts. A
     plan with no `### G<n>` blocks at all (every change created before this
     mechanism existed) is a silent no-op, not a violation. Checked from
@@ -1048,6 +1049,7 @@ def check_review_round_cap(plan: Document, *, limit: int = ROUND_CAP, next_type:
         1
         for _, start, end in rounds
         if task_fields(plan, start, end).get("Type", "").strip().lower() == "initial"
+        and not round_is_stale(task_fields(plan, start, end))
     )
     if new_diff_rounds < limit:
         return []
@@ -1087,13 +1089,28 @@ def documentation_followup(plan: Document, current: dict, previous: dict, previo
             and policy == previous.get("Policy snapshot", "").strip() == review_policy_hash(plan))
 
 
+def round_is_stale(fields: dict[str, str]) -> bool:
+    """A round settled against a snapshot or approval that changed while it ran."""
+    return fields.get("Snapshot status", "").strip().lower() == "stale"
+
+
 def check_review_round_structure(plan: Document) -> list[Violation]:
-    """One targeted re-review, then at most one guarded documentation follow-up."""
+    """One targeted re-review, then at most one guarded documentation follow-up.
+
+    A stale re-review (code or approval changed while it ran) uses no allowance: the round
+    after it gets the allowances the stale round had and may cite it as Previous. A stale
+    initial round still opens one re-review; the cap does not count it.
+    """
     violations: list[Violation] = []
     may_re_review = False
     previous, previous_id = {}, ""
+    stale_ids: set[str] = set()
     for identifier, start, end in plan.blocks("Review result", "G"):
         fields = task_fields(plan, start, end)
+        before = (may_re_review, previous, previous_id, stale_ids)
+        if previous_id and fields.get("Previous", "").strip() in stale_ids:
+            # Judge the round against the last round that was not stale.
+            fields = {**fields, "Previous": previous_id}
         round_type = fields.get("Type", "").strip().lower()
         if round_type not in ("initial", "re-review"):
             violations.append(
@@ -1105,36 +1122,38 @@ def check_review_round_structure(plan: Document) -> list[Violation]:
             )
             may_re_review = False
             previous, previous_id = {}, ""
-            continue
-        if round_type == "initial":
+        elif round_type == "initial":
             if previous and fields.get("Reason", "").strip().lower() == "corrections":
                 violations.append(Violation(plan.display, start + 1,
                     f"{identifier}: corrections remain a re-review; do not relabel to bypass the round limit"))
             may_re_review = True
             previous, previous_id = fields, identifier
-            continue
-        decision = fields.get("Review decision", "").strip()
-        explicit = (bool(decision) and not PENDING.search(decision) and decision.lower() not in ("n/a", "none", "-")
-                    and fields.get("Previous", "").strip() == previous_id)
-        # One uncapped review of executable MINOR fixes after a MINOR-only PASS; never chained.
-        minor_fixes = (fields.get("Reason", "").strip().lower() == "minor-fixes"
-                       and previous.get("Reason", "").strip().lower() != "minor-fixes"
-                       and fields.get("Previous", "").strip() == previous_id
-                       and minor_only_pass(plan, previous_id))
-        if minor_fixes:
+        else:
+            decision = fields.get("Review decision", "").strip()
+            explicit = (bool(decision) and not PENDING.search(decision)
+                        and decision.lower() not in ("n/a", "none", "-")
+                        and fields.get("Previous", "").strip() == previous_id)
+            # One uncapped review of executable MINOR fixes after a MINOR-only PASS; never chained.
+            minor_fixes = (fields.get("Reason", "").strip().lower() == "minor-fixes"
+                           and previous.get("Reason", "").strip().lower() != "minor-fixes"
+                           and fields.get("Previous", "").strip() == previous_id
+                           and minor_only_pass(plan, previous_id))
+            if (not minor_fixes and not may_re_review and not explicit
+                    and not documentation_followup(plan, fields, previous, previous_id)):
+                violations.append(
+                    Violation(
+                        plan.display,
+                        start + 1,
+                        f"{identifier}: at most one re-review may follow an initial round; a documentation-only follow-up needs unchanged Snapshot/Policy snapshot and prior documentation-only FAIL",
+                    )
+                )
             may_re_review = False
             previous, previous_id = fields, identifier
-            continue
-        if not may_re_review and not explicit and not documentation_followup(plan, fields, previous, previous_id):
-            violations.append(
-                Violation(
-                    plan.display,
-                    start + 1,
-                    f"{identifier}: at most one re-review may follow an initial round; a documentation-only follow-up needs unchanged Snapshot/Policy snapshot and prior documentation-only FAIL",
-                )
-            )
-        may_re_review = False
-        previous, previous_id = fields, identifier
+        if round_is_stale(fields) and round_type == "re-review":
+            may_re_review, previous, previous_id, stale_ids = before
+            stale_ids = stale_ids | {identifier}
+        else:
+            stale_ids = set()
 
     return violations
 

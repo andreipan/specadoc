@@ -125,7 +125,8 @@ the synthetic specification contract; task `Files:` remains implementation
 metadata and may contain symbols. Add a new or previously unplanned executable
 file to Review scope before review. Use `!path` for an intentional deletion.
 At 160k or more before a round, hand off first (`status` says so): 4.1's
-apply session ran out during its post-review fixes.
+apply session ran out during its post-review fixes. Re-running a stale round on
+an unchanged diff needs no fixes and no handoff.
 Each round goes to a fresh reviewer agent; do not continue the previous one
 (`--same-reviewer-reason` records an exception). Record a native reviewer with
 `review-result <slug> --from-agent <id>`: its final reply is saved verbatim
@@ -177,7 +178,11 @@ the user. A blanket archive request is not a round-cap override. Extra-round
 decisions are consumed by the named round. If code or approval changes during
 review, the returned verdict is saved as stale/FAIL against the original
 manifest and `review-result` names the cause (changed paths, or approval/policy);
-reconcile Review scope and start the next round without restoring old code.
+reconcile Review scope and start the next round without restoring old code. A
+stale round uses no review allowance: record the same round type again. Settle
+approval before a round: `pre-review` refuses spec/design changed since approval,
+and `approve` refuses while a round is pending (`pre-review --withdraw` removes
+it). In 4.3 a re-approval during G2 turned its PASS into a stale FAIL.
 
 ## Completion gate
 

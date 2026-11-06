@@ -8,7 +8,7 @@ from pathlib import Path
 from run_role import _parse_json_text, schema_errors, schema_path
 from task_state import digest, safe_path
 from validate_change import (Document, PENDING, check_review_round_structure, ids_in,
-                             latest_review_round, minor_only_pass, review_policy_hash)
+                             latest_review_round, minor_only_pass, review_policy_hash, round_is_stale)
 from review_snapshot import SnapshotError, compute, diff, manifest_hash
 from reviewer_reply import previous_agent
 
@@ -23,6 +23,9 @@ def insert_round(change: Path, snapshot: dict, review_type: str, reason: str, de
         raise ValueError('a targeted re-review needs a previous round')
     if review_type == 're-review' and latest and reason == 'corrections' and minor_only_pass(plan, latest[0]):
         reason = 'minor-fixes'
+    if (review_type == 're-review' and latest and reason == 'corrections' and round_is_stale(latest[1])
+            and latest[1].get('Reason', '').strip().lower() == 'minor-fixes'):
+        reason = 'minor-fixes'  # re-run of a stale minor-fixes round
     if review_type == 'initial' and latest and reason == 'corrections':
         raise ValueError('corrections remain re-review; do not relabel rounds')
     if decision and (PENDING.search(decision) or decision.lower() in ('none', 'n/a', '-')):
@@ -57,11 +60,38 @@ def insert_round(change: Path, snapshot: dict, review_type: str, reason: str, de
     return identifier
 
 
-def stale_cause(policy_changed: bool, stored: dict, current: dict | None, error: str = '') -> str | None:
+def withdraw_round(change: Path) -> str:
+    """Remove the latest round while it is still Pending and no reply was recorded."""
+    path = change / 'plan.md'
+    plan = Document(path, str(path))
+    latest = latest_review_round(plan)
+    if not latest:
+        raise ValueError('no review round to withdraw')
+    identifier, fields, _ = latest
+    if fields.get('Outcome', '').strip().upper() in ('PASS', 'FAIL') or fields.get('Result source'):
+        raise ValueError(f'{identifier} is settled; settled review history is immutable')
+    _, start, end = plan.blocks('Review result', 'G')[-1]
+    lines = plan.lines[:start] + plan.lines[end:]
+    path.write_text('\n'.join(lines).rstrip('\n') + '\n', encoding='utf-8')
+    (change / 'runs' / f'{identifier}-manifest.json').unlink(missing_ok=True)
+    return identifier
+
+
+def approval_note(change: Path) -> str:
+    """The recorded approval, for a stale cause: when and under which source."""
+    try:
+        record = json.loads((change / 'runs' / 'approval.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ''
+    return f" (approval re-recorded at {record.get('at', '?')} by {record.get('by', '?')}: {record.get('source', '?')})"
+
+
+def stale_cause(policy_changed: bool, stored: dict, current: dict | None, error: str = '',
+                note: str = '') -> str | None:
     """Why a returned verdict cannot accept the current work, or None when it still can."""
     causes = []
     if policy_changed:
-        causes.append('approval or review policy changed')
+        causes.append('approval or review policy changed' + note)
     if current is None:
         causes.append(f'Review scope unresolvable ({error or "reconcile Review scope"})')
     elif current != stored:
@@ -112,7 +142,8 @@ def record_result(change: Path, source: str, agent: str | None = None,
         current_manifest = compute(change, Path.cwd())
     except SnapshotError as exc:
         current_manifest, error = None, str(exc)
-    cause = stale_cause(fields.get('Policy snapshot') != review_policy_hash(plan), manifest, current_manifest, error)
+    cause = stale_cause(fields.get('Policy snapshot') != review_policy_hash(plan), manifest, current_manifest, error,
+                        approval_note(change))
     stale = cause is not None
     outcome = 'FAIL' if stale else payload['verdict']
     block = re.sub(r'(- \*\*Outcome:\*\*)[^\n]*', rf'\1 {outcome}', block, count=1)

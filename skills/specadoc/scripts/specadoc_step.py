@@ -65,7 +65,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import resolve_root  # noqa: E402
 from specadoc_config import normalize_runtime  # noqa: E402
-from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash, latest_review_round  # noqa: E402
+from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash, latest_review_round, round_is_stale  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
 
@@ -854,12 +854,19 @@ def status(slug: str, root: str | None, controller: str | None = None,
         lines.append(f"  {task} {owner} {state}")
     latest = latest_review_round(plan)
     outcome = latest[1].get("Outcome", "").strip() if latest else ""
-    lines.append(f"review: {latest[0]} {outcome or 'missing'} ({latest[1].get('Type', '-').strip()})" if latest
-                 else "review: none")
+    lines.append(f"review: {latest[0]} {outcome or 'missing'} ({latest[1].get('Type', '-').strip()}"
+                 f"{', stale' if round_is_stale(latest[1]) else ''})" if latest else "review: none")
+    pending = bool(latest) and outcome.upper() not in ("PASS", "FAIL")
+    stale_round = bool(latest) and round_is_stale(latest[1])
     if design_gate.rows(plan) and design_gate.review_error(plan):
         next_step = f"design review: specadoc_step.py design-brief {slug}, reviewer, design-review"
     elif approval:
         next_step = "obtain plan approval"
+    elif drift and pending:
+        next_step = (f"{', '.join(drift)} changed while {latest[0]} is pending: pre-review {slug} --withdraw, "
+                     "then approve, then pre-review again")
+    elif drift:
+        next_step = f"re-approve ({', '.join(drift)} changed): approve {slug} --by <user|orchestrator> --source '<decision>'"
     elif working:
         next_step = f"finish {working[0]}: report, then accept"
     elif stale:
@@ -868,6 +875,11 @@ def status(slug: str, root: str | None, controller: str | None = None,
         errors = readiness(plan, unstarted[0])
         next_step = (f"dispatch {unstarted[0]}" if not errors
                      else f"{unstarted[0]} not ready: {'; '.join(errors)}")
+    elif stale_round:
+        cause = latest[1].get("Stale reason", "").split(";")[0].strip()
+        kind = ("re-review" if "content changed" in cause
+                else latest[1].get("Type", "re-review").strip() or "re-review")
+        next_step = f"pre-review --review-type {kind} ({latest[0]} stale: {cause}; it uses no review allowance)"
     elif not latest or outcome.upper() == "FAIL":
         next_step = "pre-review" + (" --review-type re-review after fixing the findings" if latest else "")
     elif outcome.upper() not in ("PASS", "FAIL"):
@@ -890,10 +902,12 @@ def status(slug: str, root: str | None, controller: str | None = None,
         # Locally ready: review passed and only the final gate or an external run remains.
         locally_ready = bool(latest) and outcome.upper() == "PASS" and not (working or stale or unstarted)
         advice = ""
+        # A stale round re-run on an unchanged diff needs no fixes (~5–6k), not a fresh session.
+        rerun = stale_round and "content changed" not in latest[1].get("Stale reason", "")
         if context_tokens >= PHASE_BOUNDARY_CONTEXT and apply_start:
             advice = ("; phase boundary: fresh session recommended before worker dispatch "
                       f"(at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
-        elif context_tokens >= REVIEW_HANDOFF_CONTEXT and next_step.startswith("pre-review"):
+        elif context_tokens >= REVIEW_HANDOFF_CONTEXT and next_step.startswith("pre-review") and not rerun:
             advice = ("; review boundary: write the handoff and review in a fresh session; a round and its "
                       f"fixes need about 40k (at least {REVIEW_HANDOFF_CONTEXT // 1000}k)")
         elif context_tokens >= PHASE_BOUNDARY_CONTEXT and locally_ready:
@@ -939,6 +953,11 @@ def approve(slug: str, root: str | None, by: str, source: str, bindings: str | N
     import design_gate
     if design_gate.rows(plan) and (error := design_gate.review_error(plan)):
         return emit(checked + ["design review"], "BLOCKED", [], error, "finish the design review before approval")
+    latest = latest_review_round(plan)
+    if latest and latest[1].get("Outcome", "").strip().upper() not in ("PASS", "FAIL"):
+        return emit(checked + ["review round"], "BLOCKED", [],
+                    f"{latest[0]} is recorded but not reviewed; an approval change now would make it stale",
+                    f"pre-review {slug} --withdraw, then approve, then pre-review again")
     gate = run_script("validate_change.py", slug, "--phase", "plan", *root_args(root))
     if gate.returncode:
         return emit(checked, "BLOCKED", [], tail(gate.stderr + gate.stdout), "fix the plan, then approve")
@@ -976,6 +995,15 @@ def approve(slug: str, root: str | None, by: str, source: str, bindings: str | N
                 "approval recorded; start apply (status, then dispatch)")
 
 
+def review_type_of(change: Path, identifier: str) -> str:
+    """The Type of a recorded round (initial or re-review)."""
+    plan = Document(change / "plan.md", "plan.md")
+    for found, start, end in plan.blocks("Review result", "G"):
+        if found == identifier:
+            return task_fields(plan, start, end).get("Type", "re-review").strip() or "re-review"
+    return "re-review"
+
+
 def approval_drift(change: Path) -> list[str]:
     """Approved artifacts that changed after `approve`."""
     try:
@@ -996,13 +1024,22 @@ def capability_gap(change: Path, artifact_root: str, slug: str) -> str:
 
 
 def review_drift(plan: Document, change: Path, latest: tuple) -> str:
-    """Why the latest PASS no longer covers the change: a changed diff or an unreviewed task."""
-    from review_snapshot import SnapshotError, compute, manifest_hash
-    from validate_change import expand_ids
+    """Why the latest PASS no longer covers the change: a changed diff or an unreviewed task.
+
+    Test- or prose-only MINOR fixes after a MINOR-only PASS need no round (`tdd-and-review.md`),
+    the same rule the final gate applies (`review_snapshot.verify_latest`).
+    """
+    from review_snapshot import NON_EXECUTABLE, SnapshotError, compute, manifest_hash
+    from validate_change import expand_ids, minor_only_pass
     reasons = []
     try:
-        if manifest_hash(compute(change, Path.cwd())) != latest[1].get("Snapshot", "").strip():
-            reasons.append(f"diff changed since {latest[0]}")
+        current = compute(change, Path.cwd())
+        if manifest_hash(current) != latest[1].get("Snapshot", "").strip():
+            paths = sorted({path for values in diff(latest[2] or {}, current).values() for path in values})
+            exempt = (latest[2] is not None and minor_only_pass(plan, latest[0]) and CONTRACT_KEY not in paths
+                      and paths and all(NON_EXECUTABLE.search(path) for path in paths))
+            if not exempt:
+                reasons.append(f"diff changed since {latest[0]}")
     except SnapshotError as exc:
         reasons.append(f"Review scope cannot be hashed: {exc}")
     header = "\n".join(line for _, line in plan.body("Review result"))
@@ -1087,7 +1124,17 @@ def task_manifest(slug: str, task: str, root: str | None) -> int:
 
 def pre_review(slug: str, root: str | None, controller: str | None = None, *,
                review_type: str = "initial", reason: str | None = None,
-               decision: str | None = None, record_round: bool = False) -> int:
+               decision: str | None = None, record_round: bool = False, withdraw: bool = False) -> int:
+    change = Path(resolve_root(root).path) / slug
+    if withdraw:
+        from review_state import withdraw_round
+        identifier = withdraw_round(change)
+        return emit(["withdraw pending round"], "PASS", ["plan.md"], "",
+                    f"{identifier} withdrawn; settle the approval, then pre-review again")
+    if drift := approval_drift(change):
+        return emit(["approval current"], "BLOCKED", [],
+                    f"{', '.join(drift)} changed since approval; a round recorded now would settle stale",
+                    f"approve {slug} --by <user|orchestrator> --source '<decision that covers the change>', then pre-review")
     checked = binding_check("reviewer", controller) + ["validate pre-review"]
     extras = ["--review-decision", decision] if decision else []
     gate = run_script("validate_change.py", slug, "--phase", "pre-review", "--next-review-type", review_type,
@@ -1145,6 +1192,8 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--review-decision", help="Decision authorizing a bounded extra round, with its author: the user's words, "
                              "or 'orchestrator D<n> under mandate D<m>: <scope>'")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
+    review.add_argument("--withdraw", action="store_true",
+                        help="Remove the latest round while it is Pending (before an approval change)")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
     brief = steps.add_parser("design-brief", help="Write the design reviewer prompt from the Class inventory")
     brief.add_argument("change_slug")
@@ -1287,14 +1336,21 @@ def main() -> int:
             identifier, stale = record_result(change, source, args.from_agent, args.same_reviewer_reason)
             checked = ["review schema", "snapshot", "persist result"] + ([f"reply saved to {source}"] if args.from_agent else [])
             if stale:
+                kind = review_type_of(change, identifier)
+                if "content changed" in stale or "unresolvable" in stale:
+                    advice = ("reconcile Review scope (only the executable diff), then pre-review "
+                              "--review-type re-review")
+                else:
+                    advice = (f"the diff is unchanged: pre-review --review-type {kind} and dispatch a fresh "
+                              "reviewer on the same diff")
                 return emit(checked + [f"stale: {stale}"], "CHECKED", [], "",
-                            f"{identifier} recorded FAIL against a stale snapshot ({stale}); reconcile Review scope "
-                            "(only the executable diff), then pre-review --review-type re-review")
+                            f"{identifier} recorded FAIL against a stale snapshot ({stale}); a stale round "
+                            f"uses no review allowance; {advice}")
             return emit(checked, "CHECKED", [], "",
                         f"{identifier} saved; read findings before a user question or further edits")
         return pre_review(args.change_slug, args.root, args.controller_runtime,
                           review_type=args.review_type, reason=args.reason, decision=args.review_decision,
-                          record_round=not args.dry_run)
+                          record_round=not args.dry_run, withdraw=args.withdraw)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return emit([args.step], "BLOCKED", [], str(exc), "inspect the plan and handoff files, then retry")
 
