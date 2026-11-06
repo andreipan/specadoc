@@ -207,7 +207,7 @@ ownership, `worker` or `controller`, is required only on worker tasks. Overall
 high risk does not prevent a low-decision task from using a worker.
 
 `plan.md` is re-read at every task and review, so its size multiplies cost.
-Keep decisions, tasks, one-line evidence and current state; above 32 KiB
+Keep decisions, tasks, one-line evidence and current state; above 48 KiB
 `validate_change.py` warns.
 
 Before worker dispatch, record its bounded Decisions, Interfaces, Depends on,

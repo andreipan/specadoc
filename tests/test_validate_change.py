@@ -442,7 +442,7 @@ class ValidateChangeTest(unittest.TestCase):
         small = self.document("plan.md", self.task_plan(owner="controller", risk="low", files="`a.php`"))
         large = self.document("plan.md", "x" * (module.PLAN_SIZE_WARNING + 1))
         self.assertEqual(module.plan_size_warnings(small), [])
-        self.assertTrue(any("32768" in w for w in module.plan_size_warnings(large)))
+        self.assertTrue(any("49152" in w for w in module.plan_size_warnings(large)))
 
     def test_files_patterns_split_paths_symbols_and_prose(self) -> None:
         module = load_module()

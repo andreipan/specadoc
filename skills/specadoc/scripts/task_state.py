@@ -123,6 +123,20 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "deleted"
 
 
+ANGLE_TOKEN = re.compile(r"([^\s`]*<[A-Za-z][^<>`\n]*>[^\s`]*)")
+
+
+def code_spans(value: str) -> str:
+    """Backtick tokens such as `list<RoleChange>` outside inline code.
+
+    Script-written fields carry worker and controller text; a bare `<Name>` there reads as an
+    unfilled template placeholder to the gates (4.4: `accept` wrote a worker summary with
+    `list<RoleChange>` and the next dispatch was blocked).
+    """
+    parts = re.split(r"(`[^`]*`)", value)
+    return "".join(part if part.startswith("`") else ANGLE_TOKEN.sub(r"`\1`", part) for part in parts)
+
+
 def update_task(plan: Document, task: str, values: dict[str, str], *, complete: bool = False, reopen: bool = False) -> str:
     """Set task fields in place; repeated calls produce identical text."""
     start, end, _ = task_block(plan, task)
@@ -130,7 +144,7 @@ def update_task(plan: Document, task: str, values: dict[str, str], *, complete: 
     while block and not block[-1].strip():
         block.pop()
     for key, value in values.items():
-        value = " ".join(value.split())
+        value = code_spans(" ".join(value.split()))
         prefix = f"- **{key}:**"
         matches = [i for i, line in enumerate(block) if line.startswith(prefix)]
         if matches:

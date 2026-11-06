@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 
 import test_apply_reliability as fixtures
 
@@ -130,6 +131,41 @@ class Run45MinorFixTest(unittest.TestCase):
         self.repo.joinpath('label.py').write_text('def label():\n    return "changed"\n')
         status = self.run_step('status', 'demo')
         self.assertIn('next: pre-review --review-type re-review (diff changed since G1', status.stdout)
+
+
+
+class Run45PlanTextTest(unittest.TestCase):
+    """4.4: a worker summary `list<RoleChange>` read as a template placeholder and blocked dispatch."""
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+    run_step = fixtures.ApplyReliabilityTest.run_step
+
+    def test_script_written_fields_backtick_generic_types(self):
+        import sys
+        sys.path.insert(0, str(fixtures.SCRIPTS))
+        from task_state import update_task
+        from validate_change import Document
+        plan = Document(self.plan, 'plan.md')
+        text = update_task(plan, 'T1', {'Accepted result': 'transferOwnership(): list<RoleChange> and `Map<K>` kept'})
+        self.assertIn('`list<RoleChange>`', text)
+        self.assertIn('`Map<K>`', text)
+        self.assertNotIn('``', text)
+        self.plan.write_text(text)
+        self.assertEqual([], Document(self.plan, 'plan.md').placeholders('Tasks'))
+
+    def test_handoff_reads_a_draft_outside_the_repository(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            draft = Path(tmp) / 'handoff.md'
+            draft.write_text('# Handoff\n\nNext: T2.\n')
+            result = self.run_step('handoff', 'demo', '--file', str(draft))
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('Next: T2.', (self.change / 'runs' / 'handoff.md').read_text())
+
+    def test_change_folder_paths_are_not_controller_paths(self):
+        result = self.run_step('refresh', 'demo', '--controller-path', 'docs/specadoc/demo/research.md',
+                               '--reason', 'moved evidence')
+        self.assertIn('not task scope', result.stdout)
 
 
 if __name__ == '__main__':

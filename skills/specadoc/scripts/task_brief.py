@@ -125,7 +125,7 @@ def build_brief(change: Path, task_id: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-BRIEF_SIZE_WARNING = 8000
+BRIEF_SIZE_WARNING = 16000
 
 
 def brief_size_warning(brief: str) -> str | None:

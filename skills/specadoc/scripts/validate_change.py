@@ -69,7 +69,7 @@ TASK_FIELDS = (
 )
 
 WORKER_ONLY_FIELDS = ("Verification owner",)
-PLAN_SIZE_WARNING = 32 * 1024
+PLAN_SIZE_WARNING = 48 * 1024
 HANDOFF_SECTION_WARNING = 2 * 1024
 # `accept` executes Verification, so it holds only exact commands.
 VERIFICATION_COMMANDS = re.compile(r"\s*`[^`\n]+`(?:\s*;\s*`[^`\n]+`)*\s*")
@@ -504,7 +504,7 @@ def check_spec(spec: Document, root: str, *, expect_capabilities_applied: bool =
     for section in SPEC_SECTIONS:
         for number, placeholder in spec.placeholders(section):
             violations.append(
-                Violation(spec.display, number, f"unfilled template placeholder: {placeholder}")
+                Violation(spec.display, number, f"unfilled template placeholder: {placeholder}; wrap code such as list<T> in backticks if it is not a placeholder")
             )
 
     capabilities = " ".join(line for _, line in spec.body("Affected capabilities"))
@@ -880,7 +880,7 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
     for section in ("Technical approach", "Files and interfaces", "Tasks", "Requirement-to-check matrix"):
         for number, placeholder in plan.placeholders(section):
             violations.append(
-                Violation(plan.display, number, f"unfilled template placeholder: {placeholder}")
+                Violation(plan.display, number, f"unfilled template placeholder: {placeholder}; wrap code such as list<T> in backticks if it is not a placeholder")
             )
 
     tasks = plan.blocks("Tasks", "T")
@@ -1423,7 +1423,7 @@ def check_final(spec: Document, plan: Document) -> list[Violation]:
         for section in document.sections:
             for number, placeholder in document.placeholders(section):
                 violations.append(
-                    Violation(document.display, number, f"unfilled placeholder: {placeholder}")
+                    Violation(document.display, number, f"unfilled placeholder: {placeholder}; wrap code such as list<T> in backticks if it is not a placeholder")
                 )
 
     return violations

@@ -202,7 +202,7 @@ class Run42PlanSizeTest(unittest.TestCase):
     def test_status_names_the_largest_parts_of_an_oversized_plan(self):
         text = self.plan.read_text()
         self.plan.write_text(text.replace('## Technical approach\n',
-                                          '## Technical approach\n' + 'Bulky evidence line.\n' * 2000, 1))
+                                          '## Technical approach\n' + 'Bulky evidence line.\n' * 3000, 1))
         result = self.run_step('status', 'demo')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn('size: plan.md is', result.stdout)
@@ -346,5 +346,5 @@ class Run42ContextTest(unittest.TestCase):
         brief = task_brief.build_brief(self.change, 'T1')
         self.assertIn('formatter/style fixer once over all your changed files', brief)
         self.assertIsNone(task_brief.brief_size_warning(brief))
-        long = brief + '\n## Constraints\n\n' + 'constraint text\n' * 800
+        long = brief + '\n## Constraints\n\n' + 'constraint text\n' * 1200
         self.assertIn('Largest: Constraints', task_brief.brief_size_warning(long))

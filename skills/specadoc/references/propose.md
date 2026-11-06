@@ -20,7 +20,7 @@ Load this reference only for `specadoc propose`.
     `Controller justification` (an edit smaller than its brief, a decision
     made while editing). Merge
     adjacent mechanical steps with shared files/checks. Keep `plan.md` to decisions, tasks, one-line
-    evidence and current state; `validate_change.py` warns above 32 KiB.
+    evidence and current state; `validate_change.py` warns above 48 KiB.
     Reuse exact verifier commands, explicit project configs, baseline failures
     and DB/live permission limits in each task's bounded `Test context`.
     Before the preview, close what would otherwise stop implementation

@@ -206,7 +206,10 @@ def preflight_checks(slug: str, task: str, root: str | None, controller: str | N
         errors.append(str(exc))
     gate = run_script("validate_change.py", slug, "--phase", "plan", *root_args(root))
     if gate.returncode:
-        errors.append(tail(gate.stderr + gate.stdout))
+        # Size warnings do not block; listing them first hid the real violation (4.4).
+        output = tail(gate.stderr + gate.stdout)
+        errors.append("\n".join(line for line in output.splitlines()
+                                 if not line.strip().startswith("warning:")) or output)
     # Build in memory as well, so a missing requirement cannot leave a baseline.
     from task_brief import build_brief
     try:
@@ -653,7 +656,8 @@ def record_controller_changes(change: Path, artifact_root: str, paths: list[str]
         raise ValueError("--controller-path needs --reason naming the review finding or decision")
     literal = [safe_path(path).as_posix() for path in paths]
     if inside := [path for path in literal if _under(path, artifact_root)]:
-        raise ValueError(f"controller paths must be outside the artifact root: {', '.join(inside)}")
+        raise ValueError(f"controller paths must be outside the artifact root: {', '.join(inside)}; "
+                         "files in the change folder are not task scope and need no --controller-path")
     target = change / "runs" / CONTROLLER_CHANGES
     try:
         payload = json.loads(target.read_text(encoding="utf-8"))
@@ -785,8 +789,10 @@ HANDOFF_LIMIT = 4096
 
 def write_handoff(slug: str, root: str | None, source: str) -> int:
     """Overwrite the change's session handoff; plan.md keeps only its pointer."""
-    text = (sys.stdin.read() if source == "-"
-            else safe_path(source, allow_missing=False, allow_absolute=True).read_text(encoding="utf-8")).strip()
+    if source != "-" and not Path(source).is_file():
+        raise ValueError(f"file does not exist: {source}")
+    # Input only: a draft in the session temp directory is fine (4.5 was refused for $TMPDIR).
+    text = (sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")).strip()
     if not text:
         raise ValueError("handoff is empty")
     size = len((text + "\n").encode("utf-8"))
