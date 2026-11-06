@@ -203,7 +203,7 @@ class Run38Test(unittest.TestCase):
         self.assertLess(len(accepted), 480)
         self.assertIn('(full: runs/T1-report.md)', accepted)
         self.plan.write_text(self.plan.read_text().replace('## Reconnaissance evidence\n',
-                                                           '## Reconnaissance evidence\n' + 'x' * 40000 + '\n'))
+                                                           '## Reconnaissance evidence\n' + 'x' * 60000 + '\n'))
         warning = self.validate('plan').stderr
         self.assertIn('Largest: Reconnaissance evidence', warning)
 
