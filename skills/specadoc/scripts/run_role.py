@@ -34,6 +34,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from specadoc_config import normalize_runtime  # noqa: E402
+
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 ROLES = ("scout", "worker", "reviewer")
 RUNTIMES = ("codex", "claude", "opencode")
@@ -685,7 +688,8 @@ def build_parser() -> argparse.ArgumentParser:
     begin.add_argument("--runtime", choices=RUNTIMES)
     begin.add_argument("--model")
     begin.add_argument("--effort")
-    begin.add_argument("--controller-runtime", choices=RUNTIMES, help="resolve project routing and target model registry")
+    begin.add_argument("--controller-runtime", choices=RUNTIMES, type=normalize_runtime,
+                       help="resolve project routing and target model registry")
     begin.add_argument("--prompt-file", required=True, help="Brief or full dispatch prompt")
     begin.add_argument("--name", required=True, help="Run name, usually the task id")
     begin.add_argument("--cwd", default=".", help="Repository root the role works in")

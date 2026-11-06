@@ -6,6 +6,13 @@ from pathlib import Path
 
 CONFIG_FILE = ".specadoc.json"
 RUNTIMES = ("claude", "codex", "opencode")
+# Host provider ids that name a Specadoc runtime (4.1: `--controller-runtime claude-code` was refused).
+RUNTIME_ALIASES = {"claude-code": "claude"}
+
+
+def normalize_runtime(value: str) -> str:
+    """argparse `type=` for runtime options: map a host alias, keep `choices` validation."""
+    return RUNTIME_ALIASES.get(value.strip().lower(), value.strip().lower())
 ROLES = ("scout", "worker", "reviewer")
 
 

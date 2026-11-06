@@ -13,7 +13,7 @@ try:
 except ModuleNotFoundError:
     tomllib = None
 
-from specadoc_config import load_config, ROLES, RUNTIMES
+from specadoc_config import load_config, normalize_runtime, ROLES, RUNTIMES
 
 WRAPPER = re.compile(r"Default binding: runtime `([^`]+)`, model `([^`]+)`, effort `([^`]+)`")
 EFFORTS = {
@@ -116,7 +116,7 @@ def main() -> int:
     parser.add_argument("--change", metavar="SLUG",
                         help="Check only the roles this change's plan uses; other roles' errors become warnings")
     parser.add_argument("--root", help="Artifact root for --change (default: resolved)")
-    parser.add_argument("--controller-runtime", choices=RUNTIMES, required=True)
+    parser.add_argument("--controller-runtime", choices=RUNTIMES, required=True, type=normalize_runtime)
     parser.add_argument("--dry-run", action="store_true", help="read-only; this command never launches agents")
     parser.add_argument("--check-cli", action="store_true")
     parser.add_argument("--compact", action="store_true", help="JSON summary; omit source details")

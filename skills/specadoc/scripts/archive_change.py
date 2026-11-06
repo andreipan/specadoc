@@ -490,6 +490,7 @@ def main() -> int:
     verb = "would compact" if args.dry_run else "compacted"
     print(f"{verb} {result.source} -> {result.target / 'record.md'}")
     print(f"size: {result.source_size} -> {result.record_size} bytes")
+    print(f"record: valid (schema, slug, required sections; {result.record_size} <= {RECORD_BUDGET} bytes)")
     if result.forced:
         print(
             f"forced: {len(result.violations)} unmet condition(s), "

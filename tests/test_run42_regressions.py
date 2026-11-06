@@ -275,3 +275,45 @@ class Run42TokenWindowTest(unittest.TestCase):
                            capture_output=True, text=True, input='notes\n')
             ledger = json.loads((change / 'runs/sessions.json').read_text())
             self.assertEqual(['propose'], [item['mode'] for item in ledger['claude']])
+
+
+class Run42SmallToolTest(unittest.TestCase):
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+    run_step = fixtures.ApplyReliabilityTest.run_step
+
+    def test_status_on_a_new_slug_is_not_started(self):
+        result = self.run_step('status', 'organization-members')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('NOT STARTED', result.stdout)
+        self.assertIn('init_change.py organization-members', result.stdout)
+        self.assertNotIn('Errno', result.stdout)
+
+    def test_claude_code_is_accepted_as_the_claude_runtime(self):
+        result = self.run_step('status', 'demo', '--controller-runtime', 'claude-code')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        import subprocess
+        import sys
+        routing = subprocess.run([sys.executable, str(fixtures.SCRIPTS / 'role_routing.py'),
+                                  '--controller-runtime', 'claude-code', '--dry-run', '--compact'],
+                                 cwd=self.repo, capture_output=True, text=True)
+        self.assertNotIn('invalid choice', routing.stderr)
+
+    def test_approve_without_bindings_says_what_to_pass(self):
+        text = self.plan.read_text().replace('**Status:** Approved (synthetic test fixture)', '**Status:** Pending')
+        self.plan.write_text(text.replace('**Bindings shown:** worker claude/test/low', '**Bindings shown:** Pending'))
+        result = self.run_step('approve', 'demo', '--by', 'user', '--source', 'User said approve')
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertIn('pass --bindings', result.stdout)
+        self.assertIn('--bindings', result.stdout.split('next:')[1])
+        self.assertNotIn('inspect the plan and handoff files', result.stdout)
+
+    def test_risk_headers_must_agree(self):
+        self.change.joinpath('spec.md').write_text('**Risk:** High\n' + self.change.joinpath('spec.md').read_text())
+        self.plan.write_text('**Risk:** Medium\n' + self.plan.read_text())
+        import subprocess
+        import sys
+        result = subprocess.run([sys.executable, str(fixtures.SCRIPTS / 'validate_change.py'), 'demo',
+                                 '--phase', 'plan'], cwd=self.repo, capture_output=True, text=True)
+        self.assertIn('Risk headers differ (spec.md High, plan.md Medium)', result.stdout)
+        self.assertIn('plan.md', result.stdout.split('Risk headers')[0])

@@ -10,9 +10,10 @@ Load this reference only for `specadoc propose`.
    acceptance scenarios, non-goals, constraints, assumptions, and capability
    operations in `spec.md`.
 4. Run `validate_change.py <slug> --phase spec` and clear violations. Record
-   the risk. Do not stop for model approval: Specadoc fixes no model level.
+   one risk in the spec, design and plan headers. Do not stop for model
+   approval: Specadoc fixes no model level.
 5. Complete a small ordered set of independently verifiable tasks (usually
-    three to eight, a heuristic rather than a hard limit) and the
+    three to eight, a heuristic) and the
     requirement-to-check matrix in `plan.md`.
     A task with low decision risk, known Files and exact Verification gets
     `Owner: worker`; keep it with the controller only with a recorded
@@ -48,4 +49,4 @@ Load this reference only for `specadoc propose`.
 Plan approval is the only approval stop. An explicit uninterrupted execution
 request may waive it, but not specification or validation.
 
-Read `artifacts.md`, `model-routing.md` and `design-gate.md` while preparing the proposal.
+Read `artifacts.md`, `model-routing.md` and `design-gate.md` to propose.

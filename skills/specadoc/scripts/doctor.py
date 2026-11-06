@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from specadoc_root import legacy_warning, resolve_root  # noqa: E402
+from specadoc_config import normalize_runtime  # noqa: E402
 
 
 CAPABILITY = re.compile(r"^###\s+(?P<id>C\d+)\b\s*(?:—|-)?\s*(?P<title>.*)$")
@@ -213,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="artifact root (default: resolved, see specadoc_root.py)")
     parser.add_argument("--strict", action="store_true", help="return non-zero for warnings too")
-    parser.add_argument("--controller-runtime", choices=("claude", "codex", "opencode"), help="also inspect role routing, CLI presence and independence")
+    parser.add_argument("--controller-runtime", choices=("claude", "codex", "opencode"), type=normalize_runtime, help="also inspect role routing, CLI presence and independence")
     return parser
 
 

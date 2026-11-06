@@ -1456,6 +1456,28 @@ def legacy_capability_baseline(spec: Document, root: str, manifest: dict) -> dic
     return recovered
 
 
+HEADER_RISK = re.compile(r"^\*\*Risk:\*\*\s*(\w+)", re.I)
+
+
+def risk_mismatch(change: Path) -> list[Violation]:
+    """spec, design and plan headers must name one risk; it drives routing and review (4.2: medium vs High)."""
+    found: dict[str, tuple[str, int]] = {}
+    for name in ("spec.md", "design.md", "plan.md"):
+        path = change / name
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines()[:15], 1):
+            if match := HEADER_RISK.match(line.strip()):
+                found[name] = (match[1].capitalize(), number)
+                break
+    if len({value for value, _ in found.values()}) <= 1:
+        return []
+    shown = ", ".join(f"{name} {value}" for name, (value, _) in found.items())
+    reference = found.get("spec.md", next(iter(found.values())))[0]
+    return [Violation(str(change / name), line, f"Risk headers differ ({shown}); make them match spec.md")
+            for name, (value, line) in found.items() if value != reference]
+
+
 def main() -> int:
     args = build_parser().parse_args()
 
@@ -1510,7 +1532,7 @@ def main() -> int:
     violations = check_spec(spec, root, expect_capabilities_applied=args.phase == "final",
                             capability_baseline=capability_baseline)
     if args.phase in ("plan", "pre-review", "final"):
-        violations += check_plan(plan, requirement_ids)
+        violations += check_plan(plan, requirement_ids) + risk_mismatch(change)
     if args.phase == "pre-review":
         violations += check_pre_review(plan, next_type=args.next_review_type, decision=args.review_decision)
         from review_snapshot import ScopeError, SnapshotError, compute as compute_snapshot

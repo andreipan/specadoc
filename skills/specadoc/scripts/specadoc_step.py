@@ -64,6 +64,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import resolve_root  # noqa: E402
+from specadoc_config import normalize_runtime  # noqa: E402
 from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash, latest_review_round  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
@@ -803,6 +804,10 @@ def status(slug: str, root: str | None, controller: str | None = None,
     from validate_change import TASK_CHECKBOX, evidence_staleness, latest_review_round
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
+    if not plan_path.is_file():
+        print(f"change: {slug}; result: NOT STARTED ({plan_path} does not exist)\n"
+              f"next: explore, then init_change.py {slug} --risk <low|medium|high> and write spec.md and plan.md")
+        return 0
     plan = Document(plan_path, str(plan_path))
     approval = approval_error(plan)
     import design_gate
@@ -892,7 +897,21 @@ def status(slug: str, root: str | None, controller: str | None = None,
 APPROVAL_ARTIFACTS = ("spec.md", "design.md")
 
 
-def approve(slug: str, root: str | None, by: str, source: str, bindings: str | None = None) -> int:
+def plan_bindings(plan_path: Path, controller: str | None) -> str:
+    """`role runtime/model/effort` for the roles this plan dispatches, or "" when unresolvable."""
+    try:
+        from role_routing import plan_roles, resolve_role
+        runtime = default_controller(controller)
+        if not runtime:
+            return ""
+        routes = [resolve_role(Path.cwd(), role, runtime) for role in sorted(plan_roles(plan_path))]
+    except (OSError, ValueError):
+        return ""
+    return ", ".join(f"{r['role']} {r['runtime']}/{r['model']}/{r['effort']}" for r in routes)
+
+
+def approve(slug: str, root: str | None, by: str, source: str, bindings: str | None = None,
+            controller: str | None = None) -> int:
     """Record plan approval and its provenance; hash the approved spec and design.
 
     Replaces hand-written Status/Approved at lines and hand-computed sha256 sums
@@ -919,7 +938,11 @@ def approve(slug: str, root: str | None, by: str, source: str, bindings: str | N
     shown = " ".join((bindings or current).split())
     from validate_change import PENDING
     if placeholder(shown) or PENDING.search(shown):
-        raise ValueError("pass --bindings with the role bindings shown at approval")
+        suggested = plan_bindings(plan_path, controller)
+        command = (f"approve {slug} --by {by} --source '<as before>' --bindings '{suggested}' (show these to the "
+                   "approver)" if suggested else "role_routing.py --controller-runtime <rt> --change "
+                   f"{slug} --dry-run --compact, then approve with --bindings '<role runtime/model/effort, ...>'")
+        return emit(checked, "BLOCKED", [], "plan.md has no Bindings shown; pass --bindings", command)
     at = timestamp()
     provenance = (f"user decision: {' '.join(source.split())}" if by == "user"
                   else f"orchestrator decision under user mandate: {' '.join(source.split())}")
@@ -1117,7 +1140,7 @@ def build_parser() -> argparse.ArgumentParser:
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
     for step in (brief, reviewed):
-        step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
+        step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     approved = steps.add_parser("approve", help="Record plan approval, its provenance and the approved spec/design hashes")
     approved.add_argument("change_slug")
     approved.add_argument("--by", choices=("user", "orchestrator"), required=True,
@@ -1130,7 +1153,7 @@ def build_parser() -> argparse.ArgumentParser:
     state = steps.add_parser("status", help="Compact read-only state and the next allowed step")
     state.add_argument("change_slug")
     state.add_argument("--context-tokens", type=int, help="Observed current controller input context")
-    state.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
+    state.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     reported = steps.add_parser("report", help="Write the task report with its schema-valid result JSON")
     reported.add_argument("change_slug")
     reported.add_argument("task", help="Task id such as T3")
@@ -1165,11 +1188,11 @@ def build_parser() -> argparse.ArgumentParser:
         step.add_argument("--same-reviewer-reason",
                           help="Why the previous round's reviewer agent reviews again (default: refused)")
     for step in (steps.choices["preflight"], steps.choices["dispatch"], review):
-        step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
+        step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     # Accept the flag on every step, so a controller can pass it uniformly (3.7: amend rejected it).
     for step in steps.choices.values():
         if "--controller-runtime" not in step._option_string_actions:
-            step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"),
+            step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime,
                               help="Not used by this step; accepted so every call can pass it")
     return parser
 
@@ -1231,7 +1254,7 @@ def main() -> int:
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
                                  args.from_agent, args.same_reviewer_reason)
         if args.step == "approve":
-            return approve(args.change_slug, args.root, args.by, args.source, args.bindings)
+            return approve(args.change_slug, args.root, args.by, args.source, args.bindings, args.controller_runtime)
         if args.step == "handoff":
             return write_handoff(args.change_slug, args.root, args.file)
         if args.step == "status":
