@@ -39,6 +39,20 @@ sessions and hosts. When a new session still reports `environment changed:
 Entries are names or globs. With a list, other variables never invalidate
 evidence. Values are never stored, only a short digest per name.
 
+A command that only an external executor may run (an integration suite on a
+shared database) is listed by a fragment that identifies it, such as the suite's
+config file name, in `verification.external_only`:
+
+```json
+{"version": 1, "verification": {"external_only": ["<integration suite config>"]}}
+```
+
+`validate_change.py --phase plan` (and so `dispatch`) refuses a task whose
+`Verification` contains one. That task keeps a local static check in
+`Verification` and names the real run in `External verification` (4.4: the
+integration command in Verification was accepted with a skip override, and
+pre-review found the environment drift later).
+
 Keep a host or sandbox setting out of `Verification`: a command that starts
 with `NAME=value` or `env` freezes one session's runtime into the plan, and the
 next session, sandbox or validator runs it differently (3.7/3.8: an

@@ -24,11 +24,14 @@ def validate_config(data: object) -> dict:
         raise ValueError(f"expected known Specadoc keys; unknown: {', '.join(sorted(unknown))}")
     if "verification" in data:
         verification = data["verification"]
-        if not isinstance(verification, dict) or set(verification) - {"environment"}:
-            raise ValueError("verification: expected an object with environment only")
+        if not isinstance(verification, dict) or set(verification) - {"environment", "external_only"}:
+            raise ValueError("verification: expected an object with environment and external_only only")
         environment = verification.get("environment", [])
         if not isinstance(environment, list) or not all(isinstance(item, str) and item.strip() for item in environment):
             raise ValueError("verification.environment: expected a list of variable names or globs")
+        external = verification.get("external_only", [])
+        if not isinstance(external, list) or not all(isinstance(item, str) and item.strip() for item in external):
+            raise ValueError("verification.external_only: expected a list of command fragments")
     if "root" in data and (not isinstance(data["root"], str) or not data["root"].strip()):
         raise ValueError("expected nonempty root path")
     if "version" in data and (type(data["version"]) is not int or data["version"] != 1):

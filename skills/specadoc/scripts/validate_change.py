@@ -866,6 +866,20 @@ def plan_size_warnings(plan: Document) -> list[str]:
 ENV_PREFIX = re.compile(r"`\s*(?:env\b|[A-Za-z_][A-Za-z0-9_]*=)")
 
 
+def external_only_hits(verification: str) -> list[str]:
+    """Configured external-only command fragments found in a Verification value.
+
+    4.4: an integration run reserved for the parent sat in a task's Verification, so the
+    controller accepted it with a skip override and pre-review found the drift later.
+    """
+    try:
+        from specadoc_config import load_config
+        patterns = (load_config(Path.cwd()).get("verification") or {}).get("external_only") or []
+    except ValueError:
+        return []
+    return [pattern for pattern in patterns if pattern in verification]
+
+
 def verification_env_warnings(plan: Document) -> list[str]:
     """A runtime setting frozen into Verification diverges between sessions and sandboxes."""
     return [f"{identifier}: Verification sets an environment variable; a host or sandbox setting belongs "
@@ -952,6 +966,16 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                     f"{identifier}: Verification must be exact backticked commands separated by semicolons, "
                     "because accept executes them; move manual or reserved checks to External verification "
                     "and conditions to Done when",
+                )
+            )
+        if not complete and (hits := external_only_hits(verification)):
+            violations.append(
+                Violation(
+                    plan.display,
+                    start + 1,
+                    f"{identifier}: Verification runs an external-only command ({', '.join(hits)}, "
+                    ".specadoc.json verification.external_only); keep a local static check in Verification "
+                    "and put the real run in External verification",
                 )
             )
         verification_owner = fields.get("Verification owner", "").strip().lower()

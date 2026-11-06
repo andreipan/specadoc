@@ -177,6 +177,13 @@ def write_brief(change: Path) -> Path:
              "declared? Which input-format edge cases (truncated, oversized, trailing or malformed data) does it "
              "accept or reject? Which error code or outcome does each failure map to? A missing answer that "
              "affects a requirement is IMPORTANT.",
+             # 4.3-4.5: design rounds and the integration run found these after the plan was written.
+             "- Also ask: in what order does each operation check authorization, input, existence and state, and "
+             "what does each actor role get for valid, malformed and unknown input? Which rows and parent rows "
+             "(including those locked by foreign-key checks) does each transaction lock, in what order relative "
+             "to the other writers, and what does a deadlock or retry return? Which existing tests or fixtures "
+             "write a table whose constraints change, and are they in a task's Files? Does any planned exception "
+             "contradict a repository architecture rule (module boundaries, allowed bridges or consumers)?",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "

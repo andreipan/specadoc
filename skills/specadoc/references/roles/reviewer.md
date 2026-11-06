@@ -141,5 +141,9 @@ implementation, is each layer right, and is there a simpler shape with fewer
 files? Mirroring an existing feature is not a reason by itself. Then check the
 design as a whole: existing data states it must handle, platform requirements it
 adds and whether they are declared, input-format edge cases, and the error code
-each failure maps to. Return the same result JSON; a file or port without a
-reason, or a missing answer that affects a requirement, is IMPORTANT.
+each failure maps to; the check order per actor and input class; the lock order
+of each transaction, including parent rows locked by foreign-key checks; existing
+tests or fixtures that write a table whose constraints change; and any planned
+exception to a repository architecture rule. Return the same result JSON; a file
+or port without a reason, or a missing answer that affects a requirement, is
+IMPORTANT.

@@ -25,6 +25,11 @@
           "description": "Variable names or globs whose values verification depends on; others never invalidate evidence",
           "type": "array",
           "items": {"type": "string", "pattern": "\\S"}
+        },
+        "external_only": {
+          "description": "Command fragments that only an external executor runs; a task Verification containing one is refused",
+          "type": "array",
+          "items": {"type": "string", "pattern": "\\S"}
         }
       }
     }

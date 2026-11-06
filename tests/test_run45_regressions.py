@@ -202,5 +202,36 @@ class Run45WaitTest(unittest.TestCase):
         self.assertIn('still NEEDS_CONTEXT', result.stdout)
 
 
+
+class Run45ExternalOnlyTest(unittest.TestCase):
+    """4.4: the integration run reserved for the parent sat in a task's Verification."""
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+
+    def validate(self):
+        import subprocess
+        import sys
+        return subprocess.run([sys.executable, '-B', str(fixtures.SCRIPTS / 'validate_change.py'), 'demo',
+                               '--phase', 'plan'], cwd=self.repo, capture_output=True, text=True)
+
+    def test_external_only_command_in_verification_is_refused(self):
+        text = self.plan.read_text()
+        start = text.index('### T1')
+        self.plan.write_text(text[:start] + text[start:].replace('- [x] Complete', '- [ ] Complete', 1))
+        self.assertNotIn('external-only', self.validate().stdout)
+        self.repo.joinpath('.specadoc.json').write_text(json.dumps(
+            {'version': 1, 'verification': {'external_only': ['check_label.py']}}))
+        result = self.validate()
+        self.assertIn('T1: Verification runs an external-only command (check_label.py', result.stdout)
+
+    def test_config_rejects_a_malformed_external_only_list(self):
+        import sys
+        sys.path.insert(0, str(fixtures.SCRIPTS))
+        from specadoc_config import validate_config
+        self.assertTrue(validate_config({'verification': {'external_only': ['suite.xml']}}))
+        with self.assertRaises(ValueError):
+            validate_config({'verification': {'external_only': 'suite.xml'}})
+
+
 if __name__ == '__main__':
     unittest.main()

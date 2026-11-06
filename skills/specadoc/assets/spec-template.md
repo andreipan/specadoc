@@ -50,7 +50,8 @@ only ADDED operations are valid.
 ## Constraints
 
 - <Compatibility, security, platform, dependency, or performance constraint.>
-- <Existing data states, added platform requirements, input-format edge cases, error code of each failure.>
+- <Existing data states, added platform requirements, input-format edge cases, error code of each failure,
+  check order per actor and input class, lock order per transaction, existing tests touched by changed constraints.>
 
 ## Assumptions
 

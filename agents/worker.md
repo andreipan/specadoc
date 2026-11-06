@@ -70,6 +70,12 @@ Do:
 - Run the focused/neighboring checks assigned to this task; the controller owns
   the final integration set. Reuse one saved failure log for alternate views.
   Retry needs a change or a new hypothesis. Limit auto-fix to allowed files.
+- When the task's real run is External verification, nothing executes your
+  queries before the external run: check every table, column and stored value
+  the test uses against the schema source named in Test context (migrations or
+  a schema dump). A test that commits rows marks them with a run-unique value
+  and deletes them by recorded ids in a finally block, so a failure leaves no
+  residue (4.3: a dropped column failed the parent's run and left rows behind).
 
 Do not:
 - change spec.md;
