@@ -814,6 +814,8 @@ def status(slug: str, root: str | None, controller: str | None = None,
     lines = [f"change: {slug}; plan.md {plan_path.stat().st_size} bytes; approval: {approval or approved}",
              f"design: {design}",
              f"handoff: {handoff} ({handoff.stat().st_size} bytes)" if handoff.is_file() else "handoff: none"]
+    from validate_change import plan_size_warnings
+    lines += [f"size: {warning}" for warning in plan_size_warnings(plan)]
     working, stale, waiting, unstarted = [], [], [], []
     for task, start, end in plan.blocks("Tasks", "T"):
         fields = task_fields(plan, start, end)

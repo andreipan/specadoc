@@ -28,6 +28,13 @@ def load_module():
     return module
 
 
+
+def plan_and_sidecar(plan: Path) -> str:
+    """plan.md keeps totals; per-execution rows live in runs/tokens.md."""
+    sidecar = plan.parent / "runs" / "tokens.md"
+    return plan.read_text(encoding="utf-8") + (sidecar.read_text(encoding="utf-8") if sidecar.is_file() else "")
+
+
 class CollectTokensTest(unittest.TestCase):
     def write_jsonl(self, path, records):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -317,7 +324,7 @@ class CollectTokensTest(unittest.TestCase):
                   contextlib.redirect_stdout(io.StringIO())):
                 self.assertEqual(collect.main(), 0)
                 self.assertEqual(collect.main(), 0)
-            content = plan.read_text()
+            content = plan_and_sidecar(plan)
             self.assertIn("mode=apply codex keep", content)
             self.assertIn("status=provisional", content)
             self.assertIn("collected_at=", content)
@@ -387,8 +394,9 @@ class CollectTokensTest(unittest.TestCase):
             collect.append_to_plan(plan, ["mode=apply new", "total mode=apply codex"], "apply")
             collect.append_to_plan(plan, ["mode=explore replacement"], "explore")
 
-            content = plan.read_text(encoding="utf-8")
+            content = plan_and_sidecar(plan)
             self.assertIn("mode=apply new", content)
+            self.assertNotIn("mode=apply new", plan.read_text(encoding="utf-8"))
             self.assertIn("mode=explore replacement", content)
             self.assertNotIn("mode=explore old", content)
 
@@ -409,7 +417,7 @@ class CollectTokensTest(unittest.TestCase):
             self.assertNotIn(placeholder, content)
             self.assertIn("mode=explore keep", content)
             self.assertIn("<!-- note -->", content)
-            self.assertIn("mode=apply new", content)
+            self.assertIn("mode=apply new", plan_and_sidecar(plan))
             self.assertIn("total mode=apply codex", content)
 
 

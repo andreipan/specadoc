@@ -413,6 +413,10 @@ def append_to_plan(plan: Path, rows: list[str], mode: str,
         prefix = f"total mode={mode} " if line.startswith("total ") else f"mode={mode} "
         return line[len(prefix):].split(" ", 1)[0] == harness
 
+    # plan.md is re-read at every step: it keeps the totals; per-execution rows
+    # go to runs/tokens.md (4.1: plan.md reached 54 KB before archive).
+    totals = [row for row in rows if row.startswith("total ")]
+    executions = [row for row in rows if not row.startswith("total ")]
     existing = [
         line
         for line in lines[label + 1 : end]
@@ -420,9 +424,18 @@ def append_to_plan(plan: Path, rows: list[str], mode: str,
         and not PLACEHOLDER.fullmatch(line.strip())
     ]
     plan.write_text(
-        "\n".join(lines[: label + 1] + existing + rows + lines[end:]) + "\n",
+        "\n".join(lines[: label + 1] + existing + totals + lines[end:]) + "\n",
         encoding="utf-8",
     )
+    if executions:
+        sidecar = plan.parent / "runs" / TOKEN_SIDECAR
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        kept = ([line for line in sidecar.read_text(encoding="utf-8").splitlines()[1:]
+                 if line.strip() and not replaces(line)] if sidecar.is_file() else [])
+        sidecar.write_text("\n".join(["Execution tokens:", *kept, *executions]) + "\n", encoding="utf-8")
+
+
+TOKEN_SIDECAR = "tokens.md"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -612,7 +625,7 @@ def main() -> int:
             print(warning, file=sys.stderr)
         plan = Path(choice.path) / args.change_slug / "plan.md"
         append_to_plan(plan, rows, args.mode, args.harness)
-        print(f"written to {plan}")
+        print(f"written to {plan} (totals) and {plan.parent / 'runs' / TOKEN_SIDECAR} (per-execution rows)")
     return 0
 
 

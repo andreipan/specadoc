@@ -192,3 +192,30 @@ class Run42ControllerFixTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout)
         self.assertEqual('parent installed the missing extension',
                          self.state('T1')['blocker_resolution']['resolution'])
+
+
+class Run42PlanSizeTest(unittest.TestCase):
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+    run_step = fixtures.ApplyReliabilityTest.run_step
+
+    def test_status_names_the_largest_parts_of_an_oversized_plan(self):
+        text = self.plan.read_text()
+        self.plan.write_text(text.replace('## Technical approach\n',
+                                          '## Technical approach\n' + 'Bulky evidence line.\n' * 2000, 1))
+        result = self.run_step('status', 'demo')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('size: plan.md is', result.stdout)
+        self.assertIn('Largest: Technical approach', result.stdout)
+
+    def test_token_rows_go_to_a_sidecar_and_plan_keeps_totals(self):
+        import sys
+        sys.path.insert(0, str(fixtures.SCRIPTS))
+        import collect_tokens
+        plan = self.change / 'plan.md'
+        plan.write_text(plan.read_text() + '\n## Completion evidence\n\nExecution tokens:\nPending\n')
+        collect_tokens.append_to_plan(plan, ['mode=apply claude a1 unique=5', 'total mode=apply claude 1 run(s)'],
+                                      'apply', 'claude')
+        self.assertIn('total mode=apply claude 1 run(s)', plan.read_text())
+        self.assertNotIn('a1 unique=5', plan.read_text())
+        self.assertIn('a1 unique=5', (self.change / 'runs/tokens.md').read_text())

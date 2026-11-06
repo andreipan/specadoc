@@ -101,7 +101,8 @@ default. Collect again after corrective reviews; use `--final` only for the
 completed execution set; warnings about skipped/missing/unscoped inputs block
 that label rather than silently producing a partial final. It marks an as-of snapshot, not proof that future turns
 or archive work cost nothing. `--append` replaces only this mode/owner ledger,
-preserving other harness ledgers; archived records are never rewritten. Keep
+preserving other harness ledgers: totals go to plan.md, per-execution rows to
+`runs/tokens.md`; archived records are never rewritten. Keep
 historical worker reports and earlier provider semantics intact.
 
 The aggregate is reported context volume, not provider billing. Plan, pricing, and
