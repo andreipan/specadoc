@@ -1195,7 +1195,10 @@ def record_session(args: argparse.Namespace) -> None:
     try:
         change = Path(resolve_root(args.root).path) / args.change_slug
         from collect_tokens import remember_session
-        remember_session(change, "propose" if args.step in PROPOSE_STEPS else "apply")
+        # A handoff before the first dispatch closes propose (4.2 counted it, and the
+        # whole propose session, as apply).
+        before_apply = args.step == "handoff" and not any((change / "runs").glob("T*-baseline.json"))
+        remember_session(change, "propose" if args.step in PROPOSE_STEPS or before_apply else "apply")
     except (OSError, ValueError):
         pass  # bookkeeping never blocks a step
 

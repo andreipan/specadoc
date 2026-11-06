@@ -66,8 +66,9 @@ Each backend reads what its harness records:
 
 - **claude** — `~/.claude/projects/<slug>/<session>.jsonl`; with no path the
   collector uses every session of that mode recorded in `runs/sessions.json`
-  (writing `specadoc_step.py` steps of a Claude controller record it), else
-  this project's newest session, and says which. Never search other sessions'
+  (writing `specadoc_step.py` steps of a Claude controller record it; a session
+  shared by two modes counts only its span of this mode), else this project's
+  newest session, and says which. Never search other sessions'
   transcripts by hand. Pass only the
   session file, not its `subagents/` files. One API response is
   written as several lines, one per content block, each repeating the same usage:

@@ -80,9 +80,24 @@ class Execution:
 
 # --------------------------------------------------------------------- claude
 
-def _claude_scan(path: Path, execution: Execution) -> bool:
+Window = tuple[datetime | None, datetime | None]
+
+
+def _moment(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _claude_scan(path: Path, execution: Execution, window: Window = (None, None)) -> bool:
     """One API response is written as several lines, one per content block, each
-    carrying the same usage. Deduplicating on requestId is mandatory."""
+    carrying the same usage. Deduplicating on requestId is mandatory. A window
+    keeps only responses timestamped inside [since, until)."""
+    since, until = window
     requests: dict[str, dict[str, int]] = {}
     with path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -95,6 +110,11 @@ def _claude_scan(path: Path, execution: Execution) -> bool:
                 continue
             if record.get("type") != "assistant":
                 continue
+            if since is not None or until is not None:
+                moment = _moment(record.get("timestamp"))
+                if moment is not None and ((since is not None and moment < since)
+                                           or (until is not None and moment >= until)):
+                    continue
             if not execution.directory:
                 execution.directory = record.get("cwd", "")
             request_id = record.get("requestId")
@@ -121,7 +141,9 @@ def _claude_scan(path: Path, execution: Execution) -> bool:
     return bool(requests)
 
 
-def collect_claude(sources: list[Path]) -> list[Execution]:
+def collect_claude(sources: list[Path], windows: dict[Path, Window] | None = None) -> list[Execution]:
+    """`windows` maps a controller transcript to the part of it that belongs to
+    the requested mode; its subagents get the same window."""
     transcripts: list[Path] = []
     for source in sources:
         if source.is_dir():
@@ -131,17 +153,19 @@ def collect_claude(sources: list[Path]) -> list[Execution]:
 
     # Discover all children before scanning so explicit paths (in either order),
     # repeated directories and symlinks cannot turn a child into a controller.
-    discovered: dict[Path, None] = {}
+    discovered: dict[Path, Window] = {}
+    resolved_windows = {path.resolve(): value for path, value in (windows or {}).items()}
     for transcript in transcripts:
         if not transcript.is_file():
             print(f"warning: not a file: {transcript}", file=sys.stderr)
             continue
-        discovered[transcript.resolve()] = None
+        window = resolved_windows.get(transcript.resolve(), (None, None))
+        discovered.setdefault(transcript.resolve(), window)
         for child in sorted(transcript.with_suffix("").glob("subagents/*.jsonl")):
-            discovered[child.resolve()] = None
+            discovered.setdefault(child.resolve(), window)
 
     executions: list[Execution] = []
-    for transcript in discovered:
+    for transcript, window in discovered.items():
         is_child = transcript.parent.name == "subagents"
         role, description = ("subagent" if is_child else "controller"), ""
         if is_child:
@@ -157,11 +181,11 @@ def collect_claude(sources: list[Path]) -> list[Execution]:
             "claude", transcript.stem.removeprefix("agent-") if is_child else transcript.stem,
             role=role, parent=transcript.parent.parent.name if is_child else "-",
         )
-        if _claude_scan(transcript, execution):
+        if _claude_scan(transcript, execution, window):
             if description:
                 execution.notes.append(description)
             executions.append(execution)
-        else:
+        elif window == (None, None):
             print(f"warning: no usage in {transcript}", file=sys.stderr)
     return executions
 
@@ -534,6 +558,33 @@ def remember_session(change: Path, mode: str) -> None:
     temporary.replace(path)
 
 
+def ledger_windows(change: Path, mode: str) -> dict[Path, Window]:
+    """For each recorded transcript of `mode`, the time span that belongs to it.
+
+    One session can serve several modes (4.2: the propose controller wrote the
+    handoff after approval). A mode starts at its first recorded step, or at the
+    session start when it is the session's first mode, and ends where the next
+    mode of the same session starts.
+    """
+    try:
+        ledger = json.loads((change / "runs" / SESSION_LEDGER).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    entries = [item for item in ledger.get("claude", []) if isinstance(item, dict) and item.get("transcript")]
+    windows: dict[Path, Window] = {}
+    for item in entries:
+        if item.get("mode") != mode:
+            continue
+        start = _moment(item.get("at"))
+        others = sorted(moment for other in entries
+                        if other.get("transcript") == item["transcript"] and other.get("mode") != mode
+                        and (moment := _moment(other.get("at"))) is not None)
+        earlier = [moment for moment in others if start is not None and moment < start]
+        later = [moment for moment in others if start is not None and moment > start]
+        windows[Path(item["transcript"])] = (start if earlier else None, later[0] if later else None)
+    return windows
+
+
 def ledger_sessions(change: Path, mode: str) -> list[Path]:
     """Recorded Claude transcripts of this change and mode that still exist."""
     try:
@@ -549,6 +600,7 @@ def ledger_sessions(change: Path, mode: str) -> list[Path]:
 
 
 def _collect(args: argparse.Namespace) -> list[Execution]:
+    windows: dict[Path, Window] = {}
     if args.harness == "opencode":
         if not args.directory and not args.external_run:
             raise SystemExit("error: --harness opencode requires --directory")
@@ -561,8 +613,11 @@ def _collect(args: argparse.Namespace) -> list[Execution]:
             except ValueError:
                 change = None
             if change is not None and (recorded := ledger_sessions(change, args.mode)):
-                print(f"note: using {len(recorded)} {args.mode} session(s) recorded in runs/{SESSION_LEDGER}",
-                      file=sys.stderr)
+                windows = ledger_windows(change, args.mode)
+                shared = sum(1 for path in recorded if windows.get(path, (None, None)) != (None, None))
+                print(f"note: using {len(recorded)} {args.mode} session(s) recorded in runs/{SESSION_LEDGER}"
+                      + (f"; {shared} shared with another mode, counted only for the {args.mode} span"
+                         if shared else ""), file=sys.stderr)
                 args.sources = [str(path) for path in recorded]
         if not args.sources and not args.external_run and args.harness == "claude":
             if transcript := latest_claude_transcript(args.project):
@@ -572,7 +627,7 @@ def _collect(args: argparse.Namespace) -> list[Execution]:
         if not args.sources and not args.external_run:
             raise SystemExit(f"error: --harness {args.harness} requires transcript paths")
         paths = [Path(source) for source in args.sources]
-        executions = (collect_claude(paths) if args.harness == "claude"
+        executions = (collect_claude(paths, windows) if args.harness == "claude"
                        else collect_codex(paths))
     executions.extend(collect_external_runs(args.external_run))
     return executions

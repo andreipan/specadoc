@@ -219,3 +219,59 @@ class Run42PlanSizeTest(unittest.TestCase):
         self.assertIn('total mode=apply claude 1 run(s)', plan.read_text())
         self.assertNotIn('a1 unique=5', plan.read_text())
         self.assertIn('a1 unique=5', (self.change / 'runs/tokens.md').read_text())
+
+
+class Run42TokenWindowTest(unittest.TestCase):
+    """4.2: apply totals included the propose controller session and its design reviewer."""
+
+    def test_a_session_shared_by_propose_and_apply_is_split_by_time(self):
+        import contextlib
+        import io
+        import sys
+        sys.path.insert(0, str(fixtures.SCRIPTS))
+        import collect_tokens
+        with tempfile.TemporaryDirectory() as directory:
+            change = Path(directory) / 'docs/specadoc/demo'
+            (change / 'runs').mkdir(parents=True)
+            session = Path(directory) / 'home/projects/p/s1.jsonl'
+            session.parent.mkdir(parents=True)
+
+            def record(request, at, output):
+                return json.dumps({'type': 'assistant', 'requestId': request, 'timestamp': at,
+                                   'message': {'usage': {'input_tokens': 1, 'output_tokens': output}}})
+            session.write_text('\n'.join([record('r1', '2026-11-05T10:00:00Z', 100),
+                                          record('r2', '2026-11-05T11:30:00Z', 7)]) + '\n')
+            reviewer = session.with_suffix('') / 'subagents' / 'agent-design.jsonl'
+            reviewer.parent.mkdir(parents=True)
+            reviewer.write_text(record('r3', '2026-11-05T10:30:00Z', 50) + '\n')
+            (change / 'runs/sessions.json').write_text(json.dumps({'claude': [
+                {'transcript': str(session), 'mode': 'propose', 'at': '2026-11-05T10:10:00+00:00'},
+                {'transcript': str(session), 'mode': 'apply', 'at': '2026-11-05T11:00:00+00:00'}]}))
+            apply = collect_tokens.collect_claude([session], collect_tokens.ledger_windows(change, 'apply'))
+            self.assertEqual([('s1', 7)], [(e.execution_id, e.output) for e in apply])
+            propose = collect_tokens.collect_claude([session], collect_tokens.ledger_windows(change, 'propose'))
+            self.assertEqual({'s1': 100, 'design': 50}, {e.execution_id: e.output for e in propose})
+
+    def test_handoff_before_dispatch_records_the_propose_mode(self):
+        import os
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
+            change = repo / 'docs/specadoc/demo'
+            (change / 'runs').mkdir(parents=True)
+            from test_specadoc_step import PLAN, SPEC
+            change.joinpath('spec.md').write_text(SPEC)
+            change.joinpath('plan.md').write_text(PLAN)
+            home = repo / 'home'
+            (home / 'projects/p').mkdir(parents=True)
+            (home / 'projects/p/c1.jsonl').write_text('{}\n')
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', CLAUDE_CONFIG_DIR=str(home),
+                       CLAUDE_CODE_SESSION_ID='c1')
+            env.pop('SPECADOC_ROOT', None)
+            subprocess.run([sys.executable, '-B', str(fixtures.SCRIPTS / 'specadoc_step.py'), 'handoff', 'demo',
+                            '--file', '-', '--controller-runtime', 'claude'], cwd=repo, env=env,
+                           capture_output=True, text=True, input='notes\n')
+            ledger = json.loads((change / 'runs/sessions.json').read_text())
+            self.assertEqual(['propose'], [item['mode'] for item in ledger['claude']])
