@@ -9,7 +9,7 @@ Rules:
 
 - Standing constraints live once in the coordination `brief.md`: forbidden
   operations (commit, stash or stack edits, push, archive, the next step),
-  integration runs by the parent only, no DDL or migrations on shared databases,
+  integration runs by the integration verifier only, no DDL or migrations on shared databases,
   the test database, preserved files. The brief cites them by path and decision
   id; it does not restate them.
 - Write full sentences in the user's language with ordinary spacing. No
@@ -19,6 +19,9 @@ Rules:
 - Send it through a file or stdin (host notes), not as a shell argument.
 - A replacement controller gets the same shape: what is done, the checkpoint it
   starts from (`status` and `runs/handoff.md`), and what changed since.
+- Mandate, test database and routing are `brief.md D<n>` citations, never
+  retold; 4.1/4.2 propose briefs were 2.7–2.8k because they retold them.
+- Decision numbers come from `coordination_log.py` output (`last`, `get`).
 
 Shape (keep under about 2,000 characters):
 
@@ -33,7 +36,7 @@ Use Specadoc for this change. Start from `specadoc_step.py status <slug>`.
 
 ## This step only
 <what differs from the standing constraints: allowed dependency, external run,
-files the parent will run, anything newly authorized, with its D<n>>
+files the integration verifier will run, anything newly authorized, with its D<n>>
 
 ## Authority
 <decisions you may take; decisions that return to the parent; plan approval

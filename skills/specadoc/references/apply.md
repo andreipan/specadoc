@@ -71,7 +71,7 @@ Load this reference only for `specadoc apply <slug>`.
   attempt and starts from the current tree; only for code fixes, not staleness.
 - **Review rounds.** New requirements: `--review-type initial --reason
   requirements`; polish: `--reason polish`; corrections stay `re-review`. A
-  fourth `initial` needs `--review-decision '<user decision and scope>'`. One
+  fourth `initial` needs `--review-decision '<decision, author, scope>'`. One
   documentation-only follow-up is allowed after a documentation-only FAIL.
 - **Size.** Over eight tasks warns; add T9 rather than fold work into a done task.
 - `pre-review --dry-run` prints the snapshot without recording;

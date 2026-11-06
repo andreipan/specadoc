@@ -28,10 +28,13 @@ services, and deployment targets need explicit owners too.
 
 Append transitions and decisions as dated entries instead of rewriting earlier
 lines in place; keep one short current-state block at the top. Use
-`python3 <skill-root>/scripts/coordination_log.py decision <file> --title '<t>'
---file -` for a decision (numbered `### D<n>`, at most 2 KiB) and `state <file>
---file -` for the current-state block, not ad-hoc edit scripts (`<skill-root>`
-is this skill's directory). The orchestrator
+`python3 <skill-root>/scripts/coordination_log.py decision <file> --by
+user|orchestrator --title '<t>' --file -` for a decision (numbered `### D<n>`,
+at most 2 KiB) and `state <file> --file -` for the current-state block, not
+ad-hoc edit scripts (`<skill-root>` is this skill's directory). `--by user` only
+for the user's own words; `last <file>` and `get <file> D<n>` print what the log
+holds, so a message to a controller cites the number the command printed, never
+one from memory (4.1/4.2 sent D12 for D11 and D17 for D16). The orchestrator
 reads verdicts, not raw evidence: delegate bulk searches over controller
 artifacts, integration runs, and field-by-field contract comparison to a bounded
 scout or worker, then inspect the cited lines it returns.

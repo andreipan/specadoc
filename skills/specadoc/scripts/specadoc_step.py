@@ -1138,7 +1138,8 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("change_slug")
     review.add_argument("--review-type", choices=("initial", "re-review"), default="initial")
     review.add_argument("--reason", choices=("implementation", "corrections", "minor-fixes", "requirements", "polish"))
-    review.add_argument("--review-decision", help="Actual user decision authorizing a bounded extra round")
+    review.add_argument("--review-decision", help="Decision authorizing a bounded extra round, with its author: the user's words, "
+                             "or 'orchestrator D<n> under mandate D<m>: <scope>'")
     review.add_argument("--dry-run", action="store_true", help="Run the gate and print the snapshot without recording a round")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
     brief = steps.add_parser("design-brief", help="Write the design reviewer prompt from the Class inventory")

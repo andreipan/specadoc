@@ -1423,7 +1423,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="Emit violations as JSON")
     parser.add_argument("--next-review-type", choices=("initial", "re-review"), default="initial",
                         help="The proposed dispatch, not a relabelled historical round")
-    parser.add_argument("--review-decision", help="Explicit user decision for the proposed extra review")
+    parser.add_argument("--review-decision", help="Decision for the proposed extra review, with its author (user, or orchestrator under mandate)")
     parser.add_argument(
         "--files-hash",
         metavar="FIELD",

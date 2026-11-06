@@ -63,6 +63,16 @@ hashes; never write
 these lines or hashes by hand. Give controllers this command in the brief so
 they never record an orchestrator decision as an explicit user instruction.
 
+### Extra review rounds
+
+Specadoc caps new-diff review rounds at three. Under a plan mandate the
+orchestrator may grant one extra round per change: record it with
+`coordination_log.py decision --by orchestrator`, give the controller
+`--review-decision 'orchestrator D<n> under mandate D<m>: one extra round for
+<scope>'`, and name it in the final report. A second extra round, or one without
+a mandate, is the user's decision. Never write "user-approved" without the
+user's words.
+
 An explicit uninterrupted-execution request is handled by existing Specadoc
 rules. It does not waive specifications, testing, review, or completion evidence.
 
@@ -78,6 +88,7 @@ rules. It does not waive specifications, testing, review, or completion evidence
 | Network access, dependency install or update, a sandbox bypass, or any command a runtime denied | User, for that exact command; the orchestrator never runs it for a controller, and nobody calls it approved without a recorded approval |
 | Runtime/model routing, role files, `.specadoc.json`, or a controller's runtime | User; show the mismatch and ask, never edit to make a launch fit |
 | Independent review result | Independent reviewer; neither controller nor orchestrator may invent PASS |
+| One extra review round past the cap, under a plan mandate | Orchestrator, recorded `--by orchestrator` and reported; a second one is the user's |
 
 Use the simplest reversible option within the mandate. For an escalation, give
 context, viable options including deferral, costs/risks, and a recommendation.

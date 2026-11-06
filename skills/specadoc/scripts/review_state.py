@@ -26,7 +26,7 @@ def insert_round(change: Path, snapshot: dict, review_type: str, reason: str, de
     if review_type == 'initial' and latest and reason == 'corrections':
         raise ValueError('corrections remain re-review; do not relabel rounds')
     if decision and (PENDING.search(decision) or decision.lower() in ('none', 'n/a', '-')):
-        raise ValueError('review decision must cite the actual user decision and bounded scope')
+        raise ValueError('review decision must cite the decision, its author (user or orchestrator under mandate) and bounded scope')
     if decision:
         decision = ' '.join(decision.split())
     ids = [int(identifier[1:]) for identifier, _, _ in plan.blocks('Review result', 'G')]

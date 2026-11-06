@@ -102,7 +102,9 @@ and the lines they cite: do not read repository code, tests, project skills or
 Specadoc script internals yourself, and do not run project quality tools,
 `validate_change.py` or tests; the owning controller runs them and reports
 (3.7/3.8: doing this yourself filled 200k of orchestrator context). Give a check
-that needs them to a scout or the integration verifier. Local review PASS
+that needs them to a scout or the integration verifier. Recording an accepted
+change (archive, stack refresh) uses the controller's final-gate evidence; do
+not rerun quality tools or tests before it. Local review PASS
 does not establish integration success. The integration verifier runs the
 agreed end-to-end scenario in the authorized environment with compatible
 component versions. If integration

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Append-only coordination log: numbered decisions and one current-state block.
 
-    coordination_log.py decision <file> --title '<title>' --file <path|->
+    coordination_log.py decision <file> --by user|orchestrator --title '<title>' --file <path|->
     coordination_log.py state <file> --file <path|->
+    coordination_log.py last <file>
+    coordination_log.py get <file> D<n>
 
-`decision` appends `### D<n> — <title> (<UTC time>)` after the highest existing
-D<n>; earlier entries are never rewritten. `state` replaces only the block
+`decision` appends `### D<n> — <title> [by <author>] (<UTC time>)` after the
+highest existing D<n>; earlier entries are never rewritten. `--by user` is for
+the user's own words; `--by orchestrator` for a decision under the mandate.
+`last` prints the newest decision's header and `get` one entry, so a message to
+a controller cites the number the log assigned (4.1/4.2: D12 sent for D11). `state` replaces only the block
 between the current-state markers, created under the first heading when absent.
 Both refuse oversized text: the log records verdicts and references, not logs.
 """
@@ -42,7 +47,7 @@ def write(path: Path, text: str) -> None:
     temporary.replace(path)
 
 
-def decision(path: Path, title: str, body: str) -> str:
+def decision(path: Path, title: str, body: str, by: str) -> str:
     if len(body.encode("utf-8")) > DECISION_LIMIT:
         raise ValueError(f"decision is over {DECISION_LIMIT} bytes; cite artifacts instead of pasting evidence")
     title = " ".join(title.split())
@@ -51,9 +56,23 @@ def decision(path: Path, title: str, body: str) -> str:
     current = path.read_text(encoding="utf-8") if path.exists() else ""
     number = max((int(n) for n in DECISION.findall(current)), default=0) + 1
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    entry = f"### D{number} — {title} ({stamp})\n{bullets(body)}\n"
+    entry = f"### D{number} — {title} [by {by}] ({stamp})\n{bullets(body)}\n"
     write(path, (current.rstrip("\n") + "\n\n" if current.strip() else "") + entry)
     return f"D{number}"
+
+
+def entries(path: Path) -> list[tuple[str, str]]:
+    """(`D<n>`, entry text) in file order."""
+    text = path.read_text(encoding="utf-8")
+    starts = [match.start() for match in DECISION.finditer(text)] + [len(text)]
+    found = []
+    for begin, end in zip(starts, starts[1:]):
+        chunk = text[begin:end]
+        # An entry ends at the next heading of any level.
+        cut = re.search(r"^#{1,3} ", chunk[4:], re.M)
+        chunk = chunk[:cut.start() + 4] if cut else chunk
+        found.append((f"D{DECISION.match(chunk)[1]}", chunk.rstrip()))
+    return found
 
 
 def state(path: Path, body: str) -> None:
@@ -74,17 +93,35 @@ def state(path: Path, body: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     actions = parser.add_subparsers(dest="action", required=True)
-    for name in ("decision", "state"):
+    for name in ("decision", "state", "last", "get"):
         action = actions.add_parser(name)
         action.add_argument("log", type=Path)
-        action.add_argument("--file", required=True, help="Entry text file, or - for stdin")
+        if name in ("decision", "state"):
+            action.add_argument("--file", required=True, help="Entry text file, or - for stdin")
         if name == "decision":
             action.add_argument("--title", required=True)
+            action.add_argument("--by", required=True, choices=("user", "orchestrator"),
+                                help="user: the user's own decision; orchestrator: decided under the mandate")
+        if name == "get":
+            action.add_argument("id", help="Decision id such as D12")
     args = parser.parse_args()
     try:
+        if args.action in ("last", "get"):
+            found = entries(args.log)
+            if args.action == "last":
+                if not found:
+                    raise ValueError(f"no decisions in {args.log}")
+                print(found[-1][1].splitlines()[0].removeprefix("### "))
+                return 0
+            match = next((text for key, text in found if key == args.id.upper()), None)
+            if match is None:
+                raise ValueError(f"{args.id} is not in {args.log}; the newest is "
+                                 f"{found[-1][0] if found else 'none'}")
+            print(match)
+            return 0
         body = read_text(args.file)
         if args.action == "decision":
-            print(f"{decision(args.log, args.title, body)} appended to {args.log}")
+            print(f"{decision(args.log, args.title, body, args.by)} appended to {args.log}")
         else:
             state(args.log, body)
             print(f"current state replaced in {args.log}")
