@@ -86,6 +86,8 @@ CONTEXT_GUARD = 200_000
 # Context at a phase boundary from which a fresh session pays back before the next
 # phase that dispatches workers (model-routing.md -> Session boundaries).
 PHASE_BOUNDARY_CONTEXT = 120_000
+# A review round plus MINOR fixes took about 40k in 4.1; above this, hand off before the review.
+REVIEW_HANDOFF_CONTEXT = 160_000
 
 
 def run_script(script: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -272,6 +274,7 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     if brief.returncode != 0:
         return emit(checked, "BLOCKED", [], tail(brief.stderr + brief.stdout), "fix the plan task, then rerun dispatch")
     brief_path = Path(brief.stdout.strip())
+    checked += [line.strip() for line in brief.stderr.splitlines() if line.startswith("warning: brief")]
     if uncheckable:
         reason = f"Files items that are not paths: {', '.join(uncheckable)}"
         return emit(checked, "FAIL", [], reason, "make every Files item a path, then rerun dispatch")
@@ -886,6 +889,9 @@ def status(slug: str, root: str | None, controller: str | None = None,
         if context_tokens >= PHASE_BOUNDARY_CONTEXT and apply_start:
             advice = ("; phase boundary: fresh session recommended before worker dispatch "
                       f"(at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
+        elif context_tokens >= REVIEW_HANDOFF_CONTEXT and next_step.startswith("pre-review"):
+            advice = ("; review boundary: write the handoff and review in a fresh session; a round and its "
+                      f"fixes need about 40k (at least {REVIEW_HANDOFF_CONTEXT // 1000}k)")
         elif context_tokens >= PHASE_BOUNDARY_CONTEXT and locally_ready:
             advice = ("; phase boundary: locally ready; continue for the final gate, but start a later fix "
                       f"in a fresh session (at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")

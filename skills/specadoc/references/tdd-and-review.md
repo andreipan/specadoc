@@ -124,6 +124,8 @@ executable diff. Snapshot computation reads only this literal-path scope and
 the synthetic specification contract; task `Files:` remains implementation
 metadata and may contain symbols. Add a new or previously unplanned executable
 file to Review scope before review. Use `!path` for an intentional deletion.
+At 160k or more before a round, hand off first (`status` says so): 4.1's
+apply session ran out during its post-review fixes.
 Each round goes to a fresh reviewer agent; do not continue the previous one
 (`--same-reviewer-reason` records an exception). Record a native reviewer with
 `review-result <slug> --from-agent <id>`: its final reply is saved verbatim

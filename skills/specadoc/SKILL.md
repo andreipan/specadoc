@@ -43,7 +43,7 @@ Without an explicit mode:
   state, approvals, evidence, and the compact archive summary.
 - A `worker` implements each task with low decision risk, known Files and an
   exact Verification; the controller keeps open decisions and justified small
-  edits. A `scout` is optional and bounded; one final read-only `reviewer`
+  edits. A bounded `scout` takes broad reads; one final read-only `reviewer`
   covers each stable executable diff. The controller owns all final verification.
 - Role startup, symbol-aware tools and code graphs are independent capabilities.
   Distinguish absence after discovery from a failed exposed call; cite a call

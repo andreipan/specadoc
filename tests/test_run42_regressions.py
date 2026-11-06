@@ -317,3 +317,26 @@ class Run42SmallToolTest(unittest.TestCase):
                                  '--phase', 'plan'], cwd=self.repo, capture_output=True, text=True)
         self.assertIn('Risk headers differ (spec.md High, plan.md Medium)', result.stdout)
         self.assertIn('plan.md', result.stdout.split('Risk headers')[0])
+
+
+class Run42ContextTest(unittest.TestCase):
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+    run_step = fixtures.ApplyReliabilityTest.run_step
+
+    def test_status_advises_a_handoff_before_review_at_high_context(self):
+        result = self.run_step('status', 'demo', '--context-tokens', '170000')
+        self.assertIn('next: pre-review', result.stdout)
+        self.assertIn('review boundary: write the handoff', result.stdout)
+        low = self.run_step('status', 'demo', '--context-tokens', '90000')
+        self.assertNotIn('review boundary', low.stdout)
+
+    def test_worker_brief_orders_the_fixer_once_and_warns_when_long(self):
+        import sys
+        sys.path.insert(0, str(fixtures.SCRIPTS))
+        import task_brief
+        brief = task_brief.build_brief(self.change, 'T1')
+        self.assertIn('formatter/style fixer once over all your changed files', brief)
+        self.assertIsNone(task_brief.brief_size_warning(brief))
+        long = brief + '\n## Constraints\n\n' + 'constraint text\n' * 800
+        self.assertIn('Largest: Constraints', task_brief.brief_size_warning(long))

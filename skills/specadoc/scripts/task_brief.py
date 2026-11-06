@@ -92,6 +92,7 @@ def build_brief(change: Path, task_id: str) -> str:
         f"- Finish with `python3 {Path(__file__).with_name('specadoc_step.py').resolve()} report {change.name} {task_id} --status DONE --summary '<delivered behavior and interfaces>' --red '<observed failing test>' --green '<observed passing checks>'` (pass `--root <root>` before `report` for a custom artifact root). Status is DONE, DONE_WITH_CONCERNS (add `--concern '<text>'` per concern), NEEDS_CONTEXT, or BLOCKED; `--body-file <path>` appends longer notes. It records your actual changed paths, writes `{runs / f'{task_id}-report.md'}` with the validated JSON, and prints that JSON: return it unchanged as your result. Never write the result JSON by hand.",
         f"- Only without a shell: write the report yourself and return JSON matching `{SCHEMA.resolve()}`, embedded as the report's last fenced block.",
         "- Run focused task checks; the controller owns the final integration suite. Save a failure once, then inspect that log instead of rerunning it for a different output view.",
+        "- Order: finish RED, implement to GREEN, then run the formatter/style fixer once over all your changed files, then the Verification commands. Do not alternate fixer and tests file by file.",
         "- Use the exact Verification commands and project configuration in Test context. Verification inputs are read-only dependencies, not additional write scope. Report missing context instead of guessing a default formatter or broad test suite.",
         "- Stop at NEEDS_CONTEXT before required wiring, exports or dependent tests outside Files and Derived files; stop at BLOCKED for a new architecture, compatibility or catalog decision, or when requirements conflict. Never weaken a test, threshold or requirement to make it pass. Disclosing a deviation is not approval to make it.",
         "",
@@ -124,6 +125,23 @@ def build_brief(change: Path, task_id: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+BRIEF_SIZE_WARNING = 8000
+
+
+def brief_size_warning(brief: str) -> str | None:
+    """A long brief is re-read on every worker turn (4.1 T1: 9.4k); name what to shorten in plan.md."""
+    size = len(brief.encode("utf-8"))
+    if size <= BRIEF_SIZE_WARNING:
+        return None
+    parts: list[tuple[int, str]] = []
+    for chunk in brief.split("\n## ")[1:]:
+        title, _, body = chunk.partition("\n")
+        parts.append((len(body.encode("utf-8")), title.strip()))
+    largest = ", ".join(f"{title} {size_} B" for size_, title in sorted(parts, reverse=True)[:3])
+    return (f"brief is {size} bytes (> {BRIEF_SIZE_WARNING}); shorten the task's plan fields or the spec text "
+            f"it pulls in. Largest: {largest}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("change_slug")
@@ -146,6 +164,8 @@ def main() -> int:
     target = change / RUNS_DIR / f"{args.task}-brief.md"
     ensure_runs(target.parent)
     target.write_text(brief, encoding="utf-8")
+    if warning := brief_size_warning(brief):
+        print(f"warning: {warning}", file=sys.stderr)
     print(target)
     return 0
 

@@ -42,7 +42,7 @@ Avoid a general repository tour.
 
 ## Scout dispatch contract
 
-Scout policy — optional, at most one running scout, and non-blocking — lives
+Scout policy — required for broad reads, at most one running scout, and non-blocking — lives
 in `explore.md`. This
 section defines only what a scout is given and what it returns.
 
