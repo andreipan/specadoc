@@ -289,6 +289,14 @@ class Run42SmallToolTest(unittest.TestCase):
         self.assertIn('init_change.py organization-members', result.stdout)
         self.assertNotIn('Errno', result.stdout)
 
+    def test_status_on_an_archived_slug_says_archived(self):
+        record = self.repo / 'docs/specadoc/archive/old-change/record.md'
+        record.parent.mkdir(parents=True)
+        record.write_text('schema: specadoc.archive/v1\n')
+        result = self.run_step('status', 'old-change')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('ARCHIVED', result.stdout)
+
     def test_claude_code_is_accepted_as_the_claude_runtime(self):
         result = self.run_step('status', 'demo', '--controller-runtime', 'claude-code')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)

@@ -807,6 +807,10 @@ def status(slug: str, root: str | None, controller: str | None = None,
     from validate_change import TASK_CHECKBOX, evidence_staleness, latest_review_round
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
+    record = Path(resolve_root(root).path) / "archive" / slug / "record.md"
+    if not plan_path.is_file() and record.is_file():
+        print(f"change: {slug}; result: ARCHIVED ({record})\nnext: none for this change")
+        return 0
     if not plan_path.is_file():
         print(f"change: {slug}; result: NOT STARTED ({plan_path} does not exist)\n"
               f"next: explore, then init_change.py {slug} --risk <low|medium|high> and write spec.md and plan.md")
