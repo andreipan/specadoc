@@ -165,7 +165,8 @@ A PASS with only MINOR findings closes the review. Fix the MINOR findings:
   no new round; the final gate accepts them and asks you to name them in the
   Archive summary;
 - executable fixes take one `re-review`, recorded as `minor-fixes`; it does not
-  count toward the cap and is never chained. MINOR findings it returns are
+  count toward the cap and is never chained. Record the controller's fix first
+  with `refresh <slug> --controller-path <p> --reason '<finding>'` (no `amend`). MINOR findings it returns are
   recorded as residual risks.
 
 Correction rounds stay `re-review`; new user requirements or polish use a

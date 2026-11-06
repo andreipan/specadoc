@@ -107,3 +107,88 @@ class Run42ReviewTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+from test_run35_regressions import OVERLAP_PLAN  # noqa: E402
+
+
+class Run42ControllerFixTest(unittest.TestCase):
+    """4.1/4.2: a controller MINOR fix after review sent T3 back to dispatched and refresh stopped at each task."""
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+    run_step = fixtures.ApplyReliabilityTest.run_step
+    report = fixtures.ApplyReliabilityTest.report
+
+    def state(self, task):
+        return json.loads(self.change.joinpath(f'runs/{task}-baseline.json').read_text())
+
+    def accept_t1_and_t2(self, t1_status='DONE', resolved=None):
+        self.plan.write_text(OVERLAP_PLAN)
+        self.repo.joinpath('extra.py').write_text('x = 1\n')
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T1').returncode)
+        self.report(status=t1_status)
+        extra = ('--resolved', resolved) if resolved else ()
+        result = self.run_step('accept', 'demo', 'T1', *extra)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, self.run_step('dispatch', 'demo', 'T2').returncode)
+        self.repo.joinpath('extra.py').write_text('x = 2\n')
+        self.report(task='T2', files=('extra.py',))
+        result = self.run_step('accept', 'demo', 'T2')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+    def controller_fix(self):
+        # One MINOR fix touches a T1 file and a T2 file, like 4.1's Handler.php and its test.
+        self.repo.joinpath('check_label.py').write_text(
+            'from label import label\nassert label() == "ready", "label must be ready"\n')
+        self.repo.joinpath('extra.py').write_text('x = 3\n')
+
+    def test_refresh_without_controller_path_lists_every_failure_and_the_fix(self):
+        self.accept_t1_and_t2()
+        self.controller_fix()
+        result = self.run_step('refresh', 'demo')
+        self.assertNotEqual(0, result.returncode, result.stdout)
+        self.assertIn('T2:', result.stdout)
+        self.assertIn('check_label.py', result.stdout)
+        self.assertIn('--controller-path', result.stdout)
+        self.assertIn('T1 accepted', result.stdout)
+
+    def test_refresh_controller_path_reaccepts_all_tasks_in_one_call(self):
+        self.accept_t1_and_t2()
+        self.controller_fix()
+        result = self.run_step('refresh', 'demo', '--controller-path', 'check_label.py',
+                               '--controller-path', 'extra.py', '--reason', 'G1 MINOR: assertion message')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('controller changes recorded: check_label.py', result.stdout)
+        self.assertEqual('accepted', self.state('T1')['state'])
+        self.assertEqual('accepted', self.state('T2')['state'])
+        payload = json.loads(self.change.joinpath('runs/controller-changes.json').read_text())
+        self.assertIn('check_label.py', payload['changes'])
+        self.assertEqual('G1 MINOR: assertion message', payload['history'][0]['reason'])
+
+    def test_controller_path_needs_a_reason_and_stays_outside_artifacts(self):
+        self.accept_t1_and_t2()
+        result = self.run_step('refresh', 'demo', '--controller-path', 'check_label.py')
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertIn('--reason', result.stdout)
+        result = self.run_step('refresh', 'demo', '--controller-path', 'docs/specadoc/demo/plan.md',
+                               '--reason', 'oops')
+        self.assertIn('outside the artifact root', result.stdout)
+
+    def test_amend_controller_path_keeps_an_accepted_task_accepted(self):
+        self.accept_t1_and_t2()
+        self.controller_fix()
+        result = self.run_step('amend', 'demo', 'T2', '--controller-path', 'check_label.py',
+                               '--reason', 'G1 MINOR: assertion message')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual('accepted', self.state('T2')['state'])
+        self.assertIn('verification', self.state('T2'))
+        self.assertIn('[x] Complete', self.plan.read_text().split('### T2')[1].split('### T3')[0])
+
+    def test_refresh_keeps_a_resolved_blocker_acceptance(self):
+        self.accept_t1_and_t2(t1_status='BLOCKED', resolved='parent installed the missing extension')
+        self.controller_fix()
+        result = self.run_step('refresh', 'demo', '--controller-path', 'check_label.py',
+                               '--controller-path', 'extra.py', '--reason', 'G1 MINOR: assertion message')
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual('parent installed the missing extension',
+                         self.state('T1')['blocker_resolution']['resolution'])

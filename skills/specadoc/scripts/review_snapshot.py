@@ -503,6 +503,19 @@ def main() -> int:
     return 0
 
 
+CONTROLLER_CHANGES = "controller-changes.json"
+
+
+def change_level_controller_changes(change: Path) -> Manifest:
+    """`{path: digest}` of controller edits recorded with `refresh --controller-path`."""
+    try:
+        payload = json.loads((runs_dir(change) / CONTROLLER_CHANGES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    changes = payload.get("changes") if isinstance(payload, dict) else None
+    return {k: v for k, v in changes.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(changes, dict) else {}
+
+
 def _worker_scope(action: str, change: Path, artifact_root: str, task: str | None) -> int:
     if not task or not re.fullmatch(r"T\d+", task):
         print("error: --task T<n> is required for baseline and check-scope", file=sys.stderr)
@@ -567,7 +580,11 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
     if record.get("hash") != manifest_hash(baseline):
         print("unresolvable: baseline hash mismatch; do not reset the attempt", file=sys.stderr)
         return 2
-    for path, digest in record.get("controller_changes", {}).items():
+    # Task-level amendments, then change-level controller edits after review
+    # (`refresh --controller-path`), which apply to every task's baseline.
+    overlay = dict(record.get("controller_changes", {}))
+    overlay.update(change_level_controller_changes(change))
+    for path, digest in overlay.items():
         if digest == DELETED_DIGEST:
             baseline.pop(path, None)
         else:

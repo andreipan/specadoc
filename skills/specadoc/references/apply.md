@@ -60,12 +60,12 @@ Load this reference only for `specadoc apply <slug>`.
 
 - **Scope.** Fix a missing-context brief and resume the same worker. A required
   path outside the task: `amend <slug> T<n> --allow|--derived <path> --reason
-  '<decision>'`; controller edits outside the artifact root: `--controller-path`.
+  '<decision>'`; controller edits after review: `refresh <slug> --controller-path
+  <p> --reason '<finding>'` (all tasks at once; acceptances kept).
   Verification and plan approval are frozen at dispatch; only `amend` changes
   them. Never widen Files silently.
 - **Stale evidence.** `refresh <slug>` re-accepts stale tasks in dependency
-  order with their report and frozen Verification. Edits inside a later task's
-  `Files` are attributed to it. Without `Verification inputs` any later edit
+  order with their report and frozen Verification, listing every failure. Without `Verification inputs` any later edit
   makes a task stale; declare them when checks are narrow.
 - **Corrective work.** `dispatch <slug> T<n> --reopen '<reason>'` archives the
   attempt and starts from the current tree; only for code fixes, not staleness.

@@ -31,8 +31,10 @@ Steps:
   the result of a task's `External verification:`. Its `accept` ends in
   EXTERNAL-PENDING: review may open, `--phase final` requires a PASS.
   `--supersede '<why>'` corrects a recorded result for the same content.
-- `refresh <slug>` — re-accept every settled task whose evidence went stale after
-  later tasks, in dependency order, with the same report and frozen Verification.
+- `refresh <slug> [--controller-path <p> --reason '<finding>']` — re-accept every
+  settled task whose evidence went stale, in dependency order, with the same
+  report and frozen Verification; controller edits after review are recorded for
+  every task first, and all failing tasks are listed at once.
 - `design-brief <slug>` / `design-review <slug> --from-agent <id>|--result-file
   <reply>` — the design gate: a fresh independent reviewer checks `## Class
   inventory` before apply; dispatch needs a PASS bound to the current inventory.
@@ -640,11 +642,36 @@ def dependency_order(plan: Document) -> list[str]:
     return order
 
 
-def refresh(slug: str, root: str | None, verification_timeout: float = 600) -> int:
+def record_controller_changes(change: Path, artifact_root: str, paths: list[str], reason: str | None) -> list[str]:
+    """Record controller edits after review for every task's scope check (`runs/controller-changes.json`)."""
+    from review_snapshot import CONTROLLER_CHANGES, _under
+    if not reason or placeholder(reason):
+        raise ValueError("--controller-path needs --reason naming the review finding or decision")
+    literal = [safe_path(path).as_posix() for path in paths]
+    if inside := [path for path in literal if _under(path, artifact_root)]:
+        raise ValueError(f"controller paths must be outside the artifact root: {', '.join(inside)}")
+    target = change / "runs" / CONTROLLER_CHANGES
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload = {}
+    changes = payload.setdefault("changes", {})
+    for path in literal:
+        changes[path] = digest(Path(path))
+    payload.setdefault("history", []).append({"at": timestamp(), "paths": literal, "reason": " ".join(reason.split())})
+    save(target, payload)
+    return literal
+
+
+def refresh(slug: str, root: str | None, verification_timeout: float = 600,
+            controller_paths: list[str] | None = None, reason: str | None = None) -> int:
     """Re-verify every settled task whose evidence went stale, in dependency order.
 
     Stale evidence after later tasks is not corrective work: the same report and
     frozen Verification are re-accepted against today's tree, without --reopen.
+    `controller_paths` first records controller edits made after review (MINOR
+    fixes), so no task blames them as out of scope. Every stale task is tried;
+    the result lists all that could not be re-accepted.
     """
     import contextlib
     import io
@@ -652,6 +679,10 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600) -> i
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
     checked: list[str] = []
+    failures: list[tuple[str, int, str]] = []
+    if controller_paths:
+        recorded = record_controller_changes(change, resolve_root(root).path, controller_paths, reason)
+        checked.append("controller changes recorded: " + ", ".join(recorded))
     for task in dependency_order(Document(plan_path, str(plan_path))):
         state_path = change / "runs" / f"{task}-baseline.json"
         try:
@@ -665,19 +696,35 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600) -> i
         if fresh is not False:
             continue
         if reason.startswith("Verification changed"):
-            return emit(checked + [f"{task}: {reason}"], "BLOCKED", [], f"{task}: {reason}",
-                        f"settle the Verification change with amend, or dispatch {task} --reopen for corrective work")
+            failures.append((task, 2, f"{reason}; settle it with amend {slug} {task} --reason '<decision>', "
+                                      f"or dispatch {task} --reopen for corrective work"))
+            continue
         output = io.StringIO()
+        resolution = (record.get("blocker_resolution") or {}).get("resolution")
         with contextlib.redirect_stdout(output):
-            code = accept(slug, task, root, note=record.get("note"), verification_timeout=verification_timeout)
+            code = accept(slug, task, root, note=record.get("note"), verification_timeout=verification_timeout,
+                          resolved=resolution)
         if code != 0:
-            print(output.getvalue().rstrip())
-            return emit(checked + [f"{task}: {reason}"], "FAIL" if code == 1 else "BLOCKED", [],
-                        f"{task} could not be re-accepted; see its accept result above",
-                        f"fix {task} (dispatch --reopen for code changes), then rerun refresh")
+            lines = output.getvalue().splitlines()
+            why = next((value for line in lines if line.startswith("blocking reason: ")
+                        and (value := line.removeprefix("blocking reason: ").strip()) != "-"), "")
+            files = next((value for line in lines if line.startswith("changed files: ")
+                          and (value := line.removeprefix("changed files: ").strip()) != "-"), "")
+            found = [files] if files else []
+            hint = (f"edits outside {task}'s scope: rerun refresh --controller-path <path> --reason '<finding>' for "
+                    "controller edits" if "outside the task scope" in why else
+                    f"fix {task} (dispatch {task} --reopen for code changes)")
+            failures.append((task, code, f"{why or 'not re-accepted'} ({reason})"
+                             + (f": {found[0]}" if found else "") + f"; {hint}"))
+            continue
         result = next((line.removeprefix("result: ") for line in output.getvalue().splitlines()
                        if line.startswith("result: ")), "ACCEPTED")
         checked.append(f"{task} {result.lower()} ({reason})")
+    if failures:
+        status = "FAIL" if any(code == 1 for _, code, _ in failures) else "BLOCKED"
+        return emit(checked + [f"{task}: {detail}" for task, _, detail in failures], status, [],
+                    f"{len(failures)} task(s) not re-accepted: {', '.join(task for task, _, _ in failures)}",
+                    "resolve each listed task as its line says, then rerun refresh")
     if not checked:
         return emit(["evidence staleness"], "PASS", [], "", "no stale task evidence; continue")
     return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
@@ -949,6 +996,17 @@ def amend(slug: str, task: str, root: str | None, allowed: list[str], controller
         raise ValueError("worker scope cannot include the controller-owned artifact root")
     for path in controller_paths:
         safe_path(path)
+    if controller_paths and not paths and not derived_paths and record.get("state") in SETTLED_STATES:
+        # A controller edit on accepted work changes no scope: keep the acceptance, let refresh re-verify.
+        changes = record.setdefault("controller_changes", {})
+        for path in controller_paths:
+            changes[path] = digest(Path(path))
+        record.setdefault("amendments", []).append({"at": timestamp(), "allow": [], "derived": [],
+                                                    "controller_paths": controller_paths, "reason": reason})
+        save(baseline_path, record)
+        return emit(["explicit controller amendment", f"{task} stays {record['state']}"], "CHECKED",
+                    controller_paths, "", f"run refresh {slug} to re-verify stale evidence "
+                    "(refresh --controller-path records edits for all tasks at once)")
     scope = record.get("scope", [])
     from validate_change import files_patterns
     if not scope:
@@ -1092,6 +1150,9 @@ def build_parser() -> argparse.ArgumentParser:
     refreshed = steps.add_parser("refresh", help="Re-verify stale accepted task evidence without --reopen")
     refreshed.add_argument("change_slug")
     refreshed.add_argument("--verification-timeout", type=float, default=600)
+    refreshed.add_argument("--controller-path", action="append", default=[],
+                           help="A file the controller changed after review (e.g. a MINOR fix); repeatable")
+    refreshed.add_argument("--reason", help="The finding or decision behind --controller-path")
     settled = steps.add_parser("review-result")
     settled.add_argument("change_slug")
     for step in (reviewed, settled):
@@ -1177,7 +1238,7 @@ def main() -> int:
             return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log,
                                    args.supersede)
         if args.step == "refresh":
-            return refresh(args.change_slug, args.root, args.verification_timeout)
+            return refresh(args.change_slug, args.root, args.verification_timeout, args.controller_path, args.reason)
         if args.step == "review-result":
             from review_state import record_result
             change = Path(resolve_root(args.root).path) / args.change_slug
