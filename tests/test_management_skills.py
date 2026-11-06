@@ -93,6 +93,17 @@ class ManagementSkillsTest(unittest.TestCase):
         self.assertIn("coordination_log.py decision", (root / "references/state.md").read_text())
         self.assertTrue((root / "scripts/coordination_log.py").is_file())
 
+    def test_orchestrator_guards_from_run_45(self) -> None:
+        root = SKILLS / "orchestrator"
+        checkpoints = (root / "references/checkpoints.md").read_text()
+        controllers = (root / "references/controllers.md").read_text()
+        brief = (root / "references/controller-brief.md").read_text()
+        self.assertIn("one targeted re-review\nafter each; a stale round", checkpoints)
+        self.assertIn("Decide an\n  exception at approval, not after review", checkpoints)
+        self.assertIn("re-approves before the next review round, never during one", checkpoints)
+        self.assertIn("A turn that failed on authentication", controllers)
+        self.assertIn("never the whole\n  decision log", brief)
+
     def test_integration_verifier_reports_and_never_fixes(self) -> None:
         text = (SKILLS / "orchestrator/references/roles/integration-verifier.md").read_text()
         self.assertEqual(1, text.count("<!-- specadoc:tooling:begin -->"))

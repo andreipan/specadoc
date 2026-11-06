@@ -145,6 +145,11 @@ local plan and accepted evidence, and record the new identifier. After compactio
 read back the coordination record and current local checkpoints; revalidate
 dependencies before continuing. Persist quota/rate-limit blockers without retry
 storms, silent provider changes, or letting dependent work proceed on guesses.
+A turn that failed on authentication (an expired or time-limited login) is not
+retried: no retry succeeds until the user signs in again. Record it, dispatch
+nothing new, and give the user the exact sign-in step; after it, retry the failed
+turns once and reconcile from status (4.5: the orchestrator and a controller both
+failed and waited 16 minutes for an unprompted "go").
 
 An exposed permission question is separate from a lifecycle checkpoint. Answer
 only when the host permits delegated approval and the explicit user mandate

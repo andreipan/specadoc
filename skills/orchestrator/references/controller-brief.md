@@ -22,6 +22,11 @@ Rules:
 - Mandate, test database and routing are `brief.md D<n>` citations, never
   retold; 4.1/4.2 propose briefs were 2.7–2.8k because they retold them.
 - Decision numbers come from `coordination_log.py` output (`last`, `get`).
+- The step's source excerpt (roadmap row, sweep section) lives in a step file in
+  the coordination directory; the brief cites it instead of quoting it. Name the
+  decisions the step relies on; the controller reads each one, never the whole
+  decision log (4.3–4.5 propose briefs were 2.8–3.6k characters and controllers
+  read the 25 KB log whole).
 
 Shape (keep under about 2,000 characters):
 

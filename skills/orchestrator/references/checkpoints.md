@@ -36,7 +36,11 @@ all of these hold, and record the provenance line below:
 - no escalation trigger: no row of Decision boundaries that belongs to the user
   (new behavior, incompatible contract, added repository, material risk or
   scope change, production, destructive or external effects, routing), and no
-  open decision the controller marked for the user.
+  open decision the controller marked for the user;
+- every exception the plan makes to a repository architecture rule (module
+  boundaries, allowed bridges or consumers) is allowed by that rule. Decide an
+  exception at approval, not after review: in 4.3 the orchestrator reversed one
+  after G1, which cost a design re-review and three more code rounds.
 
 Otherwise bring the checkpoint to the user. A design FAIL is never approved by
 the orchestrator; return it to the controller.
@@ -65,13 +69,21 @@ they never record an orchestrator decision as an explicit user instruction.
 
 ### Extra review rounds
 
-Specadoc caps new-diff review rounds at three. Under a plan mandate the
-orchestrator may grant one extra round per change: record it with
-`coordination_log.py decision --by orchestrator`, give the controller
+Specadoc allows three initial (new-diff) rounds and one targeted re-review
+after each; a stale round (code or approval changed while it ran) uses neither.
+Under a plan mandate the orchestrator may grant one extra round per change:
+record it with `coordination_log.py decision --by orchestrator`, give the controller
 `--review-decision 'orchestrator D<n> under mandate D<m>: one extra round for
 <scope>'`, and name it in the final report. A second extra round, or one without
-a mandate, is the user's decision. Never write "user-approved" without the
-user's words.
+a mandate, is the user's decision, unless the mandate itself allows a further
+round when everything changed since the last round is test or prose files
+(Specadoc's non-executable rule); then record it `--by orchestrator` citing that
+mandate entry and name it in the final report. Never write "user-approved"
+without the user's words.
+
+A decision that changes the approved design (a port, an adapter, an exception)
+says whether it also authorizes re-approving that change; the controller then
+re-approves before the next review round, never during one.
 
 An explicit uninterrupted-execution request is handled by existing Specadoc
 rules. It does not waive specifications, testing, review, or completion evidence.
@@ -88,7 +100,7 @@ rules. It does not waive specifications, testing, review, or completion evidence
 | Network access, dependency install or update, a sandbox bypass, or any command a runtime denied | User, for that exact command; the orchestrator never runs it for a controller, and nobody calls it approved without a recorded approval |
 | Runtime/model routing, role files, `.specadoc.json`, or a controller's runtime | User; show the mismatch and ask, never edit to make a launch fit |
 | Independent review result | Independent reviewer; neither controller nor orchestrator may invent PASS |
-| One extra review round past the cap, under a plan mandate | Orchestrator, recorded `--by orchestrator` and reported; a second one is the user's |
+| One extra review round past the limits, under a plan mandate | Orchestrator, recorded `--by orchestrator` and reported; a second one is the user's unless the mandate allows it for test-only changes |
 
 Use the simplest reversible option within the mandate. For an escalation, give
 context, viable options including deferral, costs/risks, and a recommendation.

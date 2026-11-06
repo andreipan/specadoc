@@ -45,8 +45,10 @@ split one tightly coupled diff across competing controllers.
 Give each controller a bounded brief: local outcome and why, user requirements
 verbatim, shared contract/version, verified facts versus assumptions, scope and
 prohibitions, dependency readiness, checkpoint authority, and completion evidence.
-Quote the extracted source excerpt (roadmap row, decisions) so the controller
-does not re-read the whole source. Tell it explicitly to use Specadoc for the
+Extract the source excerpt (roadmap row, sweep section) once into a step file in
+the coordination directory and cite it with the decision numbers the step needs,
+so the controller reads neither the whole source nor the whole decision log.
+Tell it explicitly to use Specadoc for the
 local change. Write it from `references/controller-brief.md`: cite the standing
 constraints in the coordination brief instead of repeating them, in full
 sentences. Let it choose its local
