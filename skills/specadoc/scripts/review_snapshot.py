@@ -11,8 +11,9 @@ relative path in `plan.md`'s `Review scope`, plus one synthetic
 `spec.md#contract` entry covering spec.md's `Requirements`, `Acceptance
 scenarios`, `Constraints`, and `Affected capabilities` sections (so an approved
 requirement edit changes the snapshot too, per `references/apply.md`).
-`plan.md` itself and capability-document provenance-table-only edits are
-excluded, matching `SKILL.md`'s existing PASS-durability rule.
+Files under the change folder (plan.md, spec.md, runs/) are refused in Review
+scope: Specadoc writes them during review, so hashing them would make every
+round stale on recording.
 
 `baseline` and `check-scope` guard one delegated task instead: `baseline`
 records a content manifest of the whole working tree (git's file list when
@@ -66,11 +67,12 @@ class ScopeError(SnapshotError):
     """The Review scope declaration is absent, unsafe, or contradictory."""
 
 
-def review_scope(plan: Document, repo_root: Path) -> dict[str, str]:
+def review_scope(plan: Document, repo_root: Path, change: Path | None = None) -> dict[str, str]:
     if "Review scope" not in plan.sections:
         raise ScopeError("missing ## Review scope")
 
     repo_root = repo_root.resolve()
+    artifacts = change.resolve() if change is not None else None
     entries: dict[str, str] = {}
     for number, line in plan.body("Review scope"):
         if not line.strip():
@@ -100,6 +102,9 @@ def review_scope(plan: Document, repo_root: Path) -> dict[str, str]:
             resolved.relative_to(repo_root)
         except ValueError as exc:
             raise ScopeError(f"line {number}: Review scope path leaves repository: {raw}") from exc
+        if artifacts is not None and resolved.is_relative_to(artifacts):
+            raise ScopeError(f"line {number}: Review scope lists a Specadoc artifact: {normalized}; "
+                             "list only the executable diff")
         if state == "present" and not resolved.is_file():
             raise ScopeError(f"line {number}: Review scope file does not exist: {normalized}")
         if state == "deleted" and (resolved.exists() or resolved.is_symlink()):
@@ -130,7 +135,7 @@ def compute(change: Path, repo_root: Path | None = None) -> Manifest:
 
     base = (repo_root or Path.cwd()).resolve()
     manifest: Manifest = {}
-    for candidate, state in review_scope(plan, base).items():
+    for candidate, state in review_scope(plan, base, change).items():
         if state == "deleted":
             manifest[candidate] = DELETED_DIGEST
             continue

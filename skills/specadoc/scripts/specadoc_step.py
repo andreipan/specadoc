@@ -33,9 +33,12 @@ Steps:
   `--supersede '<why>'` corrects a recorded result for the same content.
 - `refresh <slug>` — re-accept every settled task whose evidence went stale after
   later tasks, in dependency order, with the same report and frozen Verification.
-- `design-brief <slug>` / `design-review <slug> --result-file <json>` — the
-  design gate: an independent reviewer checks `## Class inventory` before apply;
-  dispatch needs a PASS bound to the current inventory.
+- `design-brief <slug>` / `design-review <slug> --from-agent <id>|--result-file
+  <reply>` — the design gate: a fresh independent reviewer checks `## Class
+  inventory` before apply; dispatch needs a PASS bound to the current inventory.
+- `review-result <slug> --from-agent <id>|--result-file <reply>` — settle the
+  pending round; a native reviewer's reply is saved verbatim under `runs/`, and
+  a stale snapshot is reported with its cause.
 - `status <slug>` — compact task states, latest review and the next allowed step;
   read it instead of plan.md when resuming.
 - `handoff <slug> --file <path|->` — overwrite `runs/handoff.md` (at most 4 KiB);
@@ -59,7 +62,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import resolve_root  # noqa: E402
-from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash  # noqa: E402
+from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash, latest_review_round  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
 
@@ -696,17 +699,29 @@ def design_brief(slug: str, root: str | None, controller: str | None) -> int:
              f"--prompt-file {path} --name design" if route and route["dispatch"] == "external"
              else f"the native reviewer with {path}")
     return emit(checked + [f"wrote {path}"], "PASS", [], "",
-                f"run {start} (strongest reviewer binding); then design-review {slug} --result-file <json>")
+                f"run {start} (strongest reviewer binding, a fresh agent each round); then design-review {slug} "
+                "--from-agent <id> (native) or --result-file <reply> (external)")
 
 
-def design_review(slug: str, root: str | None, source: str, controller: str | None) -> int:
+def reviewer_source(change: Path, source: str | None, agent: str | None, name: str) -> str:
+    """The result file to parse: --result-file as given, or the agent's own reply saved to runs/<name>."""
+    if source:
+        return source
+    from reviewer_reply import save_reply
+    return str(save_reply(agent, change / "runs" / name))
+
+
+def design_review(slug: str, root: str | None, source: str | None, controller: str | None,
+                  agent: str | None = None, same_reviewer_reason: str | None = None) -> int:
     import design_gate
     change = Path(resolve_root(root).path) / slug
     checked = binding_check("reviewer", controller)
     reviewer = next((item.removeprefix("resolved reviewer ") for item in checked if item.startswith("resolved ")),
                     "host reviewer")
-    verdict = design_gate.record(change, source, reviewer)
-    checked += ["reviewer schema", "inventory hash", "recorded Design review"]
+    number = len(list((change / "runs").glob("design-review-*-reply.md"))) + 1
+    source = reviewer_source(change, source, agent, f"design-review-{number}-reply.md")
+    verdict = design_gate.record(change, source, reviewer, agent, same_reviewer_reason)
+    checked += ["reviewer schema", "inventory hash", "recorded Design review"] + ([f"reply saved to {source}"] if agent else [])
     if verdict == "PASS":
         return emit(checked, "PASS", [], "", "design gate passed; present the plan for approval (or apply the "
                     "orchestrator mandate), then dispatch")
@@ -1041,7 +1056,6 @@ def build_parser() -> argparse.ArgumentParser:
     brief.add_argument("change_slug")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
-    reviewed.add_argument("--result-file", required=True)
     for step in (brief, reviewed):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
     approved = steps.add_parser("approve", help="Record plan approval, its provenance and the approved spec/design hashes")
@@ -1080,7 +1094,13 @@ def build_parser() -> argparse.ArgumentParser:
     refreshed.add_argument("--verification-timeout", type=float, default=600)
     settled = steps.add_parser("review-result")
     settled.add_argument("change_slug")
-    settled.add_argument("--result-file", required=True)
+    for step in (reviewed, settled):
+        source = step.add_mutually_exclusive_group(required=True)
+        source.add_argument("--result-file", help="Reviewer reply file (external runs); it ends in the result JSON")
+        source.add_argument("--from-agent", metavar="ID",
+                            help="Native reviewer agent id: its final reply is saved verbatim under runs/")
+        step.add_argument("--same-reviewer-reason",
+                          help="Why the previous round's reviewer agent reviews again (default: refused)")
     for step in (steps.choices["preflight"], steps.choices["dispatch"], review):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"))
     # Accept the flag on every step, so a controller can pass it uniformly (3.7: amend rejected it).
@@ -1142,7 +1162,8 @@ def main() -> int:
         if args.step == "design-brief":
             return design_brief(args.change_slug, args.root, args.controller_runtime)
         if args.step == "design-review":
-            return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime)
+            return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
+                                 args.from_agent, args.same_reviewer_reason)
         if args.step == "approve":
             return approve(args.change_slug, args.root, args.by, args.source, args.bindings)
         if args.step == "handoff":
@@ -1159,8 +1180,17 @@ def main() -> int:
             return refresh(args.change_slug, args.root, args.verification_timeout)
         if args.step == "review-result":
             from review_state import record_result
-            identifier = record_result(Path(resolve_root(args.root).path) / args.change_slug, args.result_file)
-            return emit(["review schema", "snapshot", "persist result"], "CHECKED", [], "",
+            change = Path(resolve_root(args.root).path) / args.change_slug
+            pending = latest_review_round(Document(change / "plan.md", "plan.md"))
+            source = reviewer_source(change, args.result_file, args.from_agent,
+                                     f"{pending[0] if pending else 'G0'}-reply.md")
+            identifier, stale = record_result(change, source, args.from_agent, args.same_reviewer_reason)
+            checked = ["review schema", "snapshot", "persist result"] + ([f"reply saved to {source}"] if args.from_agent else [])
+            if stale:
+                return emit(checked + [f"stale: {stale}"], "CHECKED", [], "",
+                            f"{identifier} recorded FAIL against a stale snapshot ({stale}); reconcile Review scope "
+                            "(only the executable diff), then pre-review --review-type re-review")
+            return emit(checked, "CHECKED", [], "",
                         f"{identifier} saved; read findings before a user question or further edits")
         return pre_review(args.change_slug, args.root, args.controller_runtime,
                           review_type=args.review_type, reason=args.reason, decision=args.review_decision,

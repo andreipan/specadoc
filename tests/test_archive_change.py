@@ -406,7 +406,8 @@ class ArchiveChangeTest(unittest.TestCase):
     def test_snapshot_messages_flags_a_change_since_the_recorded_pass(self) -> None:
         archive_module = load_module()
         change = self.change()
-        handler = change / "Handler.php"
+        handler = self.repo / "src" / "Handler.php"
+        handler.parent.mkdir(exist_ok=True)
         handler.write_text("original\n", encoding="utf-8")
         change.joinpath("spec.md").write_text(
             "## Requirements\n\n### R1 — One\n\ntext\n\n"
@@ -434,7 +435,8 @@ class ArchiveChangeTest(unittest.TestCase):
     def test_snapshot_messages_rejects_a_real_mismatch_even_with_a_waiver(self) -> None:
         archive_module = load_module()
         change = self.change()
-        handler = change / "Handler.php"
+        handler = self.repo / "src" / "Handler.php"
+        handler.parent.mkdir(exist_ok=True)
         handler.write_text("original\n", encoding="utf-8")
         change.joinpath("spec.md").write_text(
             "## Requirements\n\n### R1 — One\n\ntext\n\n"
@@ -463,7 +465,8 @@ class ArchiveChangeTest(unittest.TestCase):
     def test_snapshot_messages_allows_unresolvable_scope_with_a_waiver(self) -> None:
         archive_module = load_module()
         change = self.change()
-        handler = change / "Handler.php"
+        handler = self.repo / "src" / "Handler.php"
+        handler.parent.mkdir(exist_ok=True)
         handler.write_text("current\n", encoding="utf-8")
         change.joinpath("spec.md").write_text(
             "## Requirements\n\n### R1 — One\n\ntext\n",

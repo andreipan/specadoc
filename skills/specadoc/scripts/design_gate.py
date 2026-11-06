@@ -193,8 +193,10 @@ def write_brief(change: Path) -> Path:
     return path
 
 
-def record(change: Path, source: str, reviewer: str) -> str:
+def record(change: Path, source: str, reviewer: str, agent: str | None = None,
+           same_reviewer_reason: str | None = None) -> str:
     """Write `## Design review` from a reviewer-schema result, bound to the inventory hash."""
+    from reviewer_reply import previous_agent
     from run_role import _parse_json_text, schema_errors, schema_path
     from task_state import digest, safe_path
     plan_path = change / "plan.md"
@@ -202,7 +204,13 @@ def record(change: Path, source: str, reviewer: str) -> str:
     current = inventory_hash(plan)
     if not rows(plan):
         raise ValueError("plan.md has no Class inventory rows to review")
-    result_path = safe_path(source, allow_missing=False, allow_absolute=True)
+    if agent and not same_reviewer_reason and DESIGN_REVIEW in plan.sections:
+        start, end = plan.sections[DESIGN_REVIEW]
+        if previous_agent("\n".join(plan.lines[start:end])) == agent:
+            raise ValueError(f"agent {agent} reviewed the previous design round; dispatch a fresh reviewer "
+                             "or pass --same-reviewer-reason")
+    result_path = safe_path(source, allow_missing=False, allow_absolute=True,
+                            hint=f"save it under {change}/runs/")
     payload = _parse_json_text(result_path.read_text(encoding="utf-8"))
     if isinstance(payload, dict) and "result" in payload and "exit" in payload:
         if payload["exit"] != 0:
@@ -214,7 +222,10 @@ def record(change: Path, source: str, reviewer: str) -> str:
         raise ValueError("design review PASS contradicts open BLOCKER/IMPORTANT findings")
     flat = lambda value: " ".join(value.split())  # noqa: E731
     body = ["", f"**Result:** {payload['verdict']}", f"**Inventory hash:** {current}",
-            f"**Reviewer:** {flat(reviewer)}", f"**Result source:** `{source}`",
+            f"**Reviewer:** {flat(reviewer)}",
+            *([f"**Reviewer agent:** `{agent}`"] if agent else []),
+            *([f"**Same reviewer reason:** {flat(same_reviewer_reason)}"] if agent and same_reviewer_reason else []),
+            f"**Result source:** `{source}`",
             f"**Result digest:** {digest(result_path)}", "", "### Findings", "",
             *([f"- {f['severity']}: {flat(f['location'])} — {flat(f['summary'])}" for f in payload["findings"]]
               or ["- None."]), ""]

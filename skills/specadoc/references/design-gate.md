@@ -16,19 +16,19 @@ checks them before the first task.
    name new files but the plan has no inventory.
 3. `specadoc_step.py design-brief <slug>` writes `runs/design-brief.md` from the
    requirements, decisions, approach, files and inventory. Run the strongest
-   available `reviewer` binding on it (for example an opus reviewer), read-only
-   and independent of the controller that wrote the plan.
-4. `specadoc_step.py design-review <slug> --result-file <json>` records the
-   verdict in `## Design review`, bound to the inventory hash. Resolve BLOCKER
-   and IMPORTANT findings by changing the approach or the inventory, then review
-   again. Changing the inventory later invalidates the PASS.
+   available `reviewer` binding on it, read-only and independent of the
+   controller that wrote the plan; a fresh agent per round.
+4. `specadoc_step.py design-review <slug> --from-agent <id>` (or `--result-file`)
+   records the verdict in `## Design review`, bound to the inventory hash.
+   Resolve BLOCKER and IMPORTANT findings by changing the approach or the
+   inventory, then review again. A later inventory change invalidates the PASS.
 5. Present the plan for approval with the design verdict. `dispatch` requires a
    current PASS.
 
 Answer the brief's whole-design questions (data states, platform requirements,
-input edge cases, error codes) in spec `Constraints` first; 3.8 met them in review.
+input edge cases, error codes) in spec `Constraints` first.
 
 During apply, `accept` and `report` fail on a new non-test file outside the
 inventory. Pre-review and the final gate check every file added since the first
 dispatch (`runs/apply-start.json`). A file you did not foresee is a design
-change: add its row with a reason, rerun the design review, then continue.
+change: add its row with a reason, rerun the design review.

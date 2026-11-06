@@ -9,7 +9,8 @@ from run_role import _parse_json_text, schema_errors, schema_path
 from task_state import digest, safe_path
 from validate_change import (Document, PENDING, check_review_round_structure, ids_in,
                              latest_review_round, minor_only_pass, review_policy_hash)
-from review_snapshot import SnapshotError, compute, manifest_hash
+from review_snapshot import SnapshotError, compute, diff, manifest_hash
+from reviewer_reply import previous_agent
 
 
 def insert_round(change: Path, snapshot: dict, review_type: str, reason: str, decision: str | None) -> str:
@@ -56,8 +57,25 @@ def insert_round(change: Path, snapshot: dict, review_type: str, reason: str, de
     return identifier
 
 
-def record_result(change: Path, source: str) -> str:
-    result_path = safe_path(source, allow_missing=False, allow_absolute=True)
+def stale_cause(policy_changed: bool, stored: dict, current: dict | None, error: str = '') -> str | None:
+    """Why a returned verdict cannot accept the current work, or None when it still can."""
+    causes = []
+    if policy_changed:
+        causes.append('approval or review policy changed')
+    if current is None:
+        causes.append(f'Review scope unresolvable ({error or "reconcile Review scope"})')
+    elif current != stored:
+        delta = diff(stored, current)
+        causes.append('content changed: ' + '; '.join(f"{key}={', '.join(values)}"
+                                                      for key, values in delta.items() if values))
+    return '; '.join(causes) or None
+
+
+def record_result(change: Path, source: str, agent: str | None = None,
+                  same_reviewer_reason: str | None = None) -> tuple[str, str | None]:
+    """Settle the pending round; return its id and the stale cause (None when current)."""
+    result_path = safe_path(source, allow_missing=False, allow_absolute=True,
+                            hint=f'save it under {change}/runs/')
     payload = _parse_json_text(result_path.read_text(encoding='utf-8'))
     if isinstance(payload, dict) and 'result' in payload and 'exit' in payload:
         if payload['exit'] != 0:
@@ -82,20 +100,31 @@ def record_result(change: Path, source: str) -> str:
         if (fields.get('Reviewer verdict', fields.get('Outcome', '')).upper() == payload['verdict']
                 and fields.get('Result digest') == digest(result_path)
                 and f'**Result source:** `{source}`' in block):
-            return identifier
+            return identifier, None
         raise ValueError('settled review history is immutable; start a new round instead')
+    if agent and not same_reviewer_reason:
+        earlier = '\n'.join(plan.lines[plan.sections['Review result'][0]:start])
+        if previous_agent(earlier) == agent:
+            raise ValueError(f'agent {agent} already reviewed an earlier round; dispatch a fresh reviewer '
+                             'or pass --same-reviewer-reason')
+    error = ''
     try:
         current_manifest = compute(change, Path.cwd())
-    except SnapshotError:
-        current_manifest = None
-    stale = (fields.get('Policy snapshot') != review_policy_hash(plan) or current_manifest != manifest)
+    except SnapshotError as exc:
+        current_manifest, error = None, str(exc)
+    cause = stale_cause(fields.get('Policy snapshot') != review_policy_hash(plan), manifest, current_manifest, error)
+    stale = cause is not None
     outcome = 'FAIL' if stale else payload['verdict']
     block = re.sub(r'(- \*\*Outcome:\*\*)[^\n]*', rf'\1 {outcome}', block, count=1)
     block += f'\n- **Reviewer verdict:** {payload["verdict"]}'
     if stale:
         block += ('\n- **Snapshot status:** stale\n'
                   f'- **Superseded by current diff:** {manifest_hash(current_manifest) if current_manifest is not None else "unresolvable; reconcile Review scope"}\n'
-                  '- **Stale reason:** executable diff or approval changed during review; returned verdict is preserved but cannot accept current work.\n')
+                  f'- **Stale reason:** {cause}; the returned verdict is preserved but cannot accept current work.\n')
+    if agent:
+        block += f'\n- **Reviewer agent:** `{agent}`'
+        if same_reviewer_reason:
+            block += f'\n- **Same reviewer reason:** {" ".join(same_reviewer_reason.split())}'
     block += f'\n- **Result source:** `{source}`\n- **Result digest:** {digest(result_path)}\n\n#### Recorded findings\n\n'
     flat = lambda value: ' '.join(value.split())
     block += '\n'.join(f"- {f['severity']} ({identifier}-{i}): {flat(f['location'])} — {flat(f['summary'])}"
@@ -122,4 +151,4 @@ def record_result(change: Path, source: str) -> str:
         'resolve findings or record a user decision before continuing' if payload['findings'] else 'complete final evidence and archive summary')
     text = re.sub(r'(\*\*Plan checkpoint:\*\*)[^\n]*', lambda m: m[1] + ' ' + checkpoint, text, count=1)
     path.write_text(text, encoding='utf-8')
-    return identifier
+    return identifier, cause

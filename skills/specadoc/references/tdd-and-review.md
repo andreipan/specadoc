@@ -124,6 +124,10 @@ executable diff. Snapshot computation reads only this literal-path scope and
 the synthetic specification contract; task `Files:` remains implementation
 metadata and may contain symbols. Add a new or previously unplanned executable
 file to Review scope before review. Use `!path` for an intentional deletion.
+Each round goes to a fresh reviewer agent; do not continue the previous one
+(`--same-reviewer-reason` records an exception). Record a native reviewer with
+`review-result <slug> --from-agent <id>`: its final reply is saved verbatim
+under `runs/`, so nobody transcribes it.
 
 Check four things, in this order. The reviewer's role profile defines the
 response format; this list defines the scope.
@@ -169,8 +173,8 @@ justified `initial` round. Persist each result with `review-result` before askin
 the user. A blanket archive request is not a round-cap override. Extra-round
 decisions are consumed by the named round. If code or approval changes during
 review, the returned verdict is saved as stale/FAIL against the original
-manifest; reconcile Review scope and start the next round without restoring old
-code.
+manifest and `review-result` names the cause (changed paths, or approval/policy);
+reconcile Review scope and start the next round without restoring old code.
 
 ## Completion gate
 

@@ -104,7 +104,7 @@ def readiness(plan: Document, task: str) -> list[str]:
     return list(dict.fromkeys(errors))
 
 
-def safe_path(value: str, *, allow_missing: bool = True, allow_absolute: bool = False) -> Path:
+def safe_path(value: str, *, allow_missing: bool = True, allow_absolute: bool = False, hint: str = "") -> Path:
     """A literal path inside the repository. Brackets and braces are literal
     (`app/[slug]/page.tsx`); wildcards are not."""
     path = Path(value)
@@ -113,7 +113,7 @@ def safe_path(value: str, *, allow_missing: bool = True, allow_absolute: bool = 
         raise ValueError(f"expected a literal repository-relative path: {value}")
     resolved = path.resolve()
     if not resolved.is_relative_to(Path.cwd().resolve()):
-        raise ValueError(f"path leaves repository: {value}")
+        raise ValueError(f"path leaves repository: {value}" + (f"; {hint}" if hint else ""))
     if not allow_missing and not resolved.is_file():
         raise ValueError(f"file does not exist: {value}")
     return path

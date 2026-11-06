@@ -198,7 +198,8 @@ Immediately before review, `## Review scope` lists the actual executable diff
 as repository-relative literal file paths, one backticked bullet per path. It
 is deliberately separate from task `Files:`, which may contain paths or
 symbols. Prefix an intentional deletion with `!`; reject symbols, globs, brace
-expressions, directories, absolute paths, and paths containing `..`.
+expressions, directories, absolute paths, and paths containing `..`. Never list
+change-folder files; `pre-review` refuses them.
 
 Task ownership values are `worker` (for a task ready for one) or `controller`
 (`subagent-routing.md` → Routing policy). Verification

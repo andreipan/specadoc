@@ -33,7 +33,9 @@ class ReviewSnapshotTest(unittest.TestCase):
         self.root = self.repo / "docs" / "specadoc"
         self.change = self.root / "demo"
         self.change.mkdir(parents=True)
-        self.handler = self.change / "Handler.php"
+        self.src = self.repo / "src"
+        self.src.mkdir()
+        self.handler = self.src / "Handler.php"
         self.handler.write_text("original\n", encoding="utf-8")
 
     def tearDown(self) -> None:
@@ -167,7 +169,7 @@ class ReviewSnapshotTest(unittest.TestCase):
 
     def test_scope_accepts_present_and_explicitly_deleted_literal_paths(self) -> None:
         module = load_module()
-        deleted = self.change / "Deleted.php"
+        deleted = self.src / "Deleted.php"
         plan_path = self.change / "plan.md"
         plan_path.write_text(
             "## Review scope\n\n"
@@ -223,11 +225,24 @@ class ReviewSnapshotTest(unittest.TestCase):
                 with self.assertRaises(module.SnapshotError):
                     module.review_scope(plan, self.repo)
 
+    def test_scope_rejects_files_of_the_change_folder(self) -> None:
+        module = load_module()
+        self.write_plan_and_spec()
+        plan_path = self.change / "plan.md"
+        plan_path.write_text(plan_path.read_text(encoding="utf-8")
+                             + f"- `{plan_path.relative_to(self.repo)}`\n", encoding="utf-8")
+        plan = module.Document(plan_path, "plan.md")
+        self.assertEqual(2, len(module.review_scope(plan, self.repo)))
+        with self.assertRaisesRegex(module.ScopeError, "Specadoc artifact"):
+            module.review_scope(plan, self.repo, self.change)
+        with self.assertRaisesRegex(module.ScopeError, "Specadoc artifact"):
+            module.compute(self.change, self.repo)
+
     def test_diff_detects_a_review_scope_addition(self) -> None:
         module = load_module()
         self.write_plan_and_spec()
         before = module.compute(self.change, self.repo)
-        added = self.change / "Added.php"
+        added = self.src / "Added.php"
         added.write_text("new\n", encoding="utf-8")
         plan_path = self.change / "plan.md"
         plan_path.write_text(

@@ -42,9 +42,9 @@ Load this reference only for `specadoc apply <slug>`.
    PASS and Browser URL/state for UI, and fills literal Review scope from the
    executable diff (`!path` means deleted).
 7. On a stable diff, `pre-review <slug>` records the round; then
-   run one independent read-only `reviewer`. On return, before anything else, run
-   `review-result <slug> --result-file <reply>` on its saved reply (it ends in the
-   result JSON; never transcribe it).
+   run one independent read-only `reviewer` (a fresh agent). On return, before anything else, run
+   `review-result <slug> --from-agent <id>` (native) or `--result-file <reply>`
+   (external); never transcribe the reply.
 8. Fix confirmed findings in scope, then one targeted `pre-review <slug>
    --review-type re-review` on prior findings and changed files, without waiting
    for the user. After a PASS with only MINOR findings, fix them: test/doc-only
