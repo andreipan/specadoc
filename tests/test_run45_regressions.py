@@ -168,5 +168,39 @@ class Run45PlanTextTest(unittest.TestCase):
         self.assertIn('not task scope', result.stdout)
 
 
+
+class Run45WaitTest(unittest.TestCase):
+    """4.5: a loop waiting for DONE hid a resumed worker's NEEDS_CONTEXT for ten minutes."""
+    setUp = fixtures.ApplyReliabilityTest.setUp
+    tearDown = fixtures.ApplyReliabilityTest.tearDown
+    run_step = fixtures.ApplyReliabilityTest.run_step
+    report = fixtures.ApplyReliabilityTest.report
+
+    def test_wait_returns_on_a_new_report_of_any_status(self):
+        import os
+        import subprocess
+        import sys
+        import threading
+        self.report('NEEDS_CONTEXT')
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
+        env.pop('SPECADOC_ROOT', None)
+        waiting = subprocess.Popen([sys.executable, '-B', str(fixtures.SCRIPTS / 'specadoc_step.py'), 'wait',
+                                    'demo', 'T1', '--timeout', '20', '--interval', '0.2'],
+                                   cwd=self.repo, env=env, stdout=subprocess.PIPE, text=True)
+        timer = threading.Timer(1.0, lambda: self.report('BLOCKED'))
+        timer.start()
+        out, _ = waiting.communicate(timeout=30)
+        timer.join()
+        self.assertEqual(0, waiting.returncode, out)
+        self.assertIn('report: BLOCKED', out)
+        self.assertIn('make the missing decision', out)
+
+    def test_wait_times_out_with_the_current_status(self):
+        self.report('NEEDS_CONTEXT')
+        result = self.run_step('wait', 'demo', 'T1', '--timeout', '0.5', '--interval', '0.1')
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertIn('still NEEDS_CONTEXT', result.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

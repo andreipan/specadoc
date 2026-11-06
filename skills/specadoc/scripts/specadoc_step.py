@@ -45,6 +45,8 @@ Steps:
   read it instead of plan.md when resuming.
 - `handoff <slug> --file <path|->` — overwrite `runs/handoff.md` (at most 4 KiB);
   session notes never accumulate in plan.md.
+- `wait <slug> T<n> [--timeout s]` — wait for a new task report of any status
+  (a resumed worker answers asynchronously); prints the next step.
 - `pre-review <slug>` — the pre-review gate plus the snapshot manifest to record
   in the new `### G<n>` round.
 
@@ -1165,6 +1167,44 @@ def pre_review(slug: str, root: str | None, controller: str | None = None, *,
     return emit(checked, "PASS", changed, "", "record this snapshot in a new G<n> round and dispatch the reviewer", detail)
 
 
+REPORT_STATUS = re.compile(r'"status":\s*"(?P<status>DONE_WITH_CONCERNS|DONE|NEEDS_CONTEXT|BLOCKED)"')
+WAIT_NEXT = {"DONE": "accept {slug} {task}",
+             "DONE_WITH_CONCERNS": "resolve or record each concern, then accept {slug} {task}",
+             "NEEDS_CONTEXT": "add exactly the named context and dispatch again (foreground)",
+             "BLOCKED": "make the missing decision (or ask), update the plan, then dispatch again"}
+
+
+def wait_report(slug: str, task: str, root: str | None, timeout: float, interval: float = 5.0) -> int:
+    """Wait until a worker writes a new task report, whatever its status.
+
+    For a worker answering asynchronously (a resumed agent). A sub-agent's reply reaches the
+    controller only after the running command returns, so a long blocking loop that waits for
+    DONE alone hid a NEEDS_CONTEXT for ten minutes in 4.5.
+    """
+    import time
+    report = Path(resolve_root(root).path) / slug / "runs" / f"{task}-report.md"
+
+    def snapshot() -> tuple[float, str]:
+        try:
+            text = report.read_text(encoding="utf-8")
+        except OSError:
+            return 0.0, ""
+        found = REPORT_STATUS.findall(text)
+        return report.stat().st_mtime, (found[-1] if found else "")
+
+    start_mtime, start_status = snapshot()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
+        mtime, status = snapshot()
+        if status and mtime != start_mtime:
+            return emit(["task report"], "CHECKED", [], "", WAIT_NEXT[status].format(slug=slug, task=task),
+                        f"report: {status} ({report})")
+    before = f"still {start_status or 'no report'}"
+    return emit(["task report"], "BLOCKED", [], f"no new {task} report within {int(timeout)}s ({before})",
+                f"read any sub-agent reply that arrived, then wait again or inspect the worker")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", help="Artifact root (default: resolved, see specadoc_root.py)")
@@ -1191,6 +1231,12 @@ def build_parser() -> argparse.ArgumentParser:
             step.add_argument("--derived", action="append", default=[], help="Generated/wiring path the task may touch")
             step.add_argument("--controller-path", action="append", default=[], help="Current content explicitly changed by controller")
             step.add_argument("--reason", required=True)
+    waited = steps.add_parser("wait", help="Wait for a new task report of any status (a resumed worker)")
+    waited.add_argument("change_slug")
+    waited.add_argument("task")
+    waited.add_argument("--timeout", type=float, default=300.0, help="Seconds (default 300)")
+    waited.add_argument("--interval", type=float, default=5.0, help=argparse.SUPPRESS)
+    waited.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     review = steps.add_parser("pre-review")
     review.add_argument("change_slug")
     review.add_argument("--review-type", choices=("initial", "re-review"), default="initial")
@@ -1323,6 +1369,8 @@ def main() -> int:
             return approve(args.change_slug, args.root, args.by, args.source, args.bindings, args.controller_runtime)
         if args.step == "handoff":
             return write_handoff(args.change_slug, args.root, args.file)
+        if args.step == "wait":
+            return wait_report(args.change_slug, args.task, args.root, args.timeout, args.interval)
         if args.step == "status":
             return status(args.change_slug, args.root, args.controller_runtime, args.context_tokens)
         if args.step == "report":
