@@ -95,6 +95,11 @@ def build_brief(change: Path, task_id: str) -> str:
         "- Order: finish RED, implement to GREEN, then run the formatter/style fixer once over all your changed files, then the Verification commands. Do not alternate fixer and tests file by file.",
         "- Use the exact Verification commands and project configuration in Test context. Verification inputs are read-only dependencies, not additional write scope. Report missing context instead of guessing a default formatter or broad test suite.",
         "- Stop at NEEDS_CONTEXT before required wiring, exports or dependent tests outside Files and Derived files; stop at BLOCKED for a new architecture, compatibility or catalog decision, or when requirements conflict. Never weaken a test, threshold or requirement to make it pass. Disclosing a deviation is not approval to make it.",
+        *(["- The real run of this task is External verification, so nothing executes your queries before it: "
+           "check every table, column and stored value the test uses against the schema source in Test context "
+           "(migrations or a schema dump). Rows the test commits carry a run-unique marker and are deleted by "
+           "recorded ids in a finally block, so a failed run leaves no residue."]
+          if optional(fields.get("External verification")) else []),
         "",
         "## Task",
         "",

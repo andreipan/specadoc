@@ -224,6 +224,20 @@ class Run45ExternalOnlyTest(unittest.TestCase):
         result = self.validate()
         self.assertIn('T1: Verification runs an external-only command (check_label.py', result.stdout)
 
+    def test_brief_of_an_external_task_asks_for_a_schema_check_and_cleanup(self):
+        import sys
+        sys.path.insert(0, str(fixtures.SCRIPTS))
+        import task_brief
+        self.assertNotIn('schema source in Test context', task_brief.build_brief(self.change, 'T1'))
+        text = self.plan.read_text()
+        start = text.index('### T1')
+        self.plan.write_text(text[:start] + text[start:].replace(
+            '- **Surface:** code', '- **External verification:** the parent runs the integration suite after review\n'
+            '- **Surface:** code', 1))
+        brief = task_brief.build_brief(self.change, 'T1')
+        self.assertIn('schema source in Test context', brief)
+        self.assertIn('deleted by recorded ids in a finally block', brief)
+
     def test_config_rejects_a_malformed_external_only_list(self):
         import sys
         sys.path.insert(0, str(fixtures.SCRIPTS))
