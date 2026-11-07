@@ -70,7 +70,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import ensure_runs, resolve_root  # noqa: E402
 from specadoc_config import normalize_runtime  # noqa: E402
-from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash, latest_review_round, round_is_stale  # noqa: E402
+from validate_change import SETTLED_STATES, TASK_CHECKBOX, Document, external_verification, task_fields, review_policy_hash, latest_review_round, round_is_stale  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
 
@@ -253,6 +253,16 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     plan_path = Path(resolve_root(root).path) / slug / "plan.md"
     plan = Document(plan_path, str(plan_path))
     checked, errors = preflight_checks(slug, task, root, controller)
+    if errors and reopen is not None and all("accepted evidence is stale" in error for error in errors):
+        # 4.11: a reopen after a failed task found its dependencies stale (shared files); refresh is what
+        # the message asked for, so run it here instead of a second controller turn.
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            refreshed = refresh(slug, root)
+        checked, errors = preflight_checks(slug, task, root, controller)
+        checked.append("stale dependency evidence refreshed" if refreshed == 0 and not errors
+                       else "refresh before reopen: " + tail(output.getvalue()).replace("\n", " | "))
     if errors:
         return emit(checked, "FAIL" if any("paths" in error for error in errors) else "BLOCKED", [],
                     "; ".join(errors), "resolve all preflight errors before dispatch; no baseline written")
@@ -900,8 +910,8 @@ def status(slug: str, root: str | None, controller: str | None = None,
                 else latest[1].get("Type", "re-review").strip() or "re-review")
         next_step = f"pre-review --review-type {kind} ({latest[0]} stale: {cause}; it uses no review allowance)"
     elif not latest and tidy_missing(change):
-        next_step = (f"tidy {slug}: one worker pass over Review scope (runs/{TIDY_BRIEF}), "
-                     f"then refresh {slug}, then pre-review")
+        next_step = (f"scope {slug} (Review scope from the diff), then tidy {slug}: one worker pass over it "
+                     f"(runs/{TIDY_BRIEF}), then refresh {slug}, then pre-review")
     elif not latest or outcome.upper() == "FAIL":
         next_step = "pre-review" + (" --review-type re-review after fixing the findings" if latest else "")
     elif outcome.upper() not in ("PASS", "FAIL"):
@@ -1288,6 +1298,204 @@ WAIT_NEXT = {"DONE": "accept {slug} {task}",
              "BLOCKED": "make the missing decision (or ask), update the plan, then dispatch again"}
 
 
+def git_lines(*args: str) -> list[str]:
+    result = subprocess.run(["git", *args], capture_output=True, text=True, cwd=Path.cwd())
+    if result.returncode != 0:
+        raise ValueError(f"git {' '.join(args)}: {(result.stderr or result.stdout).strip()}")
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def scope(slug: str, root: str | None, *, base: str = "HEAD", dry_run: bool = False) -> int:
+    """Fill `## Review scope` from the executable diff: tracked changes since `base` plus untracked
+    files, relative to the current directory, without Specadoc artifacts (4.9–4.11: every apply
+    controller wrote the section by hand, and tidy refused the template paragraph left in it)."""
+    artifact_root = Path(resolve_root(root).path).resolve()
+    change = artifact_root / slug
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    if "Review scope" not in plan.sections:
+        return emit(["review scope"], "BLOCKED", [], "plan.md has no ## Review scope section",
+                    "add the section from assets/plan-template.md, then rerun scope")
+    try:
+        changed = git_lines("diff", "--name-status", "--relative", "--no-renames", base)
+        untracked = git_lines("ls-files", "--others", "--exclude-standard")
+    except ValueError as exc:
+        return emit(["git"], "BLOCKED", [], str(exc), "run scope from the repository the plan describes")
+    present: set[str] = set()
+    deleted: set[str] = set()
+    for line in changed:
+        status, _, path = line.partition("\t")
+        (deleted if status.startswith("D") else present).add(path.strip())
+    present.update(path.strip() for path in untracked)
+    cwd = Path.cwd().resolve()
+
+    def artifact(path: str) -> bool:
+        return (cwd / path).resolve().is_relative_to(artifact_root)
+    skipped = sorted(path for path in present | deleted if artifact(path))
+    present = {path for path in present if not artifact(path) and (cwd / path).is_file()}
+    deleted = {path for path in deleted if not artifact(path) and not (cwd / path).exists()}
+    checked = [f"git diff vs {base} + untracked", f"{len(present)} present, {len(deleted)} deleted"]
+    if skipped:
+        checked.append(f"artifacts left out: {', '.join(skipped)}")
+    if not present and not deleted:
+        return emit(checked, "BLOCKED", [], f"no executable diff against {base}",
+                    "pass --base <rev> when the step's changes are already committed")
+    bullets = [f"- `{path}`" for path in sorted(present)] + [f"- `!{path}`" for path in sorted(deleted)]
+    if dry_run:
+        return emit(checked + ["dry run"], "CHECKED", [], "", "rerun without --dry-run to write plan.md",
+                    "\n".join(bullets))
+    start, end = plan.sections["Review scope"]
+    text = "\n".join(plan.lines[:start + 1] + [""] + bullets + [""] + plan.lines[end:]).rstrip("\n") + "\n"
+    plan_path.write_text(text, encoding="utf-8")
+    return emit(checked, "PASS", ["plan.md"], "", f"tidy {slug} when it is not recorded yet, else pre-review {slug}",
+                "\n".join(bullets))
+
+
+FINAL_PROOFS = (
+    ("requirement maps", "matrix"), ("acceptance scenario", "matrix"), ("focused", "tasks"),
+    ("regression", "observed"), ("lint", "observed"), ("build", "observed"),
+    ("independent", "review"), ("blocker", "blocker"), ("important", "important"),
+)
+
+
+def finalize(slug: str, root: str | None, *, observed: str | None = None, requirements: str | None = None) -> int:
+    """Tick the `## Final verification` boxes the recorded state proves, drop the Round log template
+    example, and name what the controller still owns (4.9–4.11: three apply controllers edited the
+    checklist, the matrix and the template placeholders with python heredocs)."""
+    from validate_change import CHECKBOX, RECORDED_FINDING, evidence_staleness
+    change = Path(resolve_root(root).path) / slug
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    checked: list[str] = []
+    lines = list(plan.lines)
+    # 1. The Round log guidance and its indented example are template text once a real round exists.
+    if "Review result" in plan.sections:
+        start, end = plan.sections["Review result"]
+        log = next((i for i in range(start, end) if lines[i].strip() == "### Round log"), None)
+        if log is not None:
+            first = next((i for i in range(log + 1, end) if re.match(r"^###\s+G\d+\b", lines[i])), end)
+            keep, guidance, dropped = [], False, 0
+            for line in lines[log + 1:first]:
+                stripped = line.strip()
+                if guidance or stripped.startswith("<") or line.startswith("    ") or stripped == ">":
+                    guidance = (guidance or stripped.startswith("<")) and not stripped.endswith(">")
+                    dropped += 1
+                    continue
+                keep.append(line)
+            if dropped:
+                lines[log + 1:first] = [""] + [line for line in keep if line.strip()] + [""]
+                checked.append(f"round log template dropped ({dropped} lines)")
+    plan = Document(plan_path, str(plan_path), text="\n".join(lines))
+    # 2. Proofs from the recorded state.
+    why: dict[str, str] = {}
+    tasks = plan.blocks("Tasks", "T")
+    unproven = []
+    for task, t_start, t_end in tasks:
+        fields = task_fields(plan, t_start, t_end)
+        try:
+            state = json.loads((change / "runs" / f"{task}-baseline.json").read_text(encoding="utf-8")).get("state")
+        except (OSError, ValueError, AttributeError):
+            state = None
+        if state is None:
+            marks = [m["mark"] for line in plan.lines[t_start:t_end] if (m := TASK_CHECKBOX.match(line))]
+            if not marks or " " in marks:
+                unproven.append(f"{task} not complete")
+            continue
+        if state != "accepted":
+            unproven.append(f"{task} {state}")
+            continue
+        fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
+        if fresh is False:
+            unproven.append(f"{task} stale ({reason})")
+    proofs = {"tasks": not unproven}
+    if unproven:
+        why["tasks"] = "; ".join(unproven)
+    latest = latest_review_round(plan)
+    outcome = latest[1].get("Outcome", "").strip().upper() if latest else ""
+    proofs["review"] = bool(latest) and outcome == "PASS" and not round_is_stale(latest[1])
+    if not proofs["review"]:
+        why["review"] = (f"{latest[0]} {outcome or 'pending'}" + (", stale" if latest and round_is_stale(latest[1]) else "")
+                         if latest else "no review round")
+    remaining = {"BLOCKER": False, "IMPORTANT": False}
+    if "Review result" in plan.sections:
+        for _, line in plan.body("Review result"):
+            if line.strip() == "### Round log":
+                break
+            match = re.match(r"^- (BLOCKER|IMPORTANT)\b(.*)$", line.strip())
+            if match and "none recorded" not in match[2].lower():
+                remaining[match[1]] = True
+    if latest and outcome == "PASS":
+        _, r_start, r_end = plan.blocks("Review result", "G")[-1]
+        for line in plan.lines[r_start:r_end]:
+            if (m := RECORDED_FINDING.match(line)) and m["severity"] in remaining:
+                remaining[m["severity"]] = True
+    for severity in ("BLOCKER", "IMPORTANT"):
+        key = severity.lower()
+        proofs[key] = proofs["review"] and not remaining[severity]
+        if not proofs[key]:
+            why[key] = f"{severity} findings recorded" if remaining[severity] else why.get("review", "")
+    rows = plan.rows("Requirement-to-check matrix")
+    if requirements:
+        m_start, m_end = plan.sections["Requirement-to-check matrix"]
+        filled = 0
+        for i in range(m_start + 1, m_end):
+            cells = [cell.strip() for cell in lines[i].strip().strip("|").split("|")] if lines[i].strip().startswith("|") else []
+            if len(cells) >= 4 and cells[0] not in ("Requirement", "") and not cells[0].startswith("-") \
+                    and PENDING_MATRIX.match(cells[-1]):
+                cells[-1] = "PASS"
+                lines[i] = "| " + " | ".join(cells) + " |"
+                filled += 1
+        checked.append(f"matrix: {filled} Pending status(es) set to PASS ({' '.join(requirements.split())})")
+        plan = Document(plan_path, str(plan_path), text="\n".join(lines))
+        rows = plan.rows("Requirement-to-check matrix")
+    pending_rows = [cells[0] for _, cells in rows if cells and PENDING_MATRIX.match(cells[-1])]
+    proofs["matrix"] = bool(rows) and not pending_rows
+    if not proofs["matrix"]:
+        why["matrix"] = ("rows still Pending: " + ", ".join(pending_rows)) if pending_rows else "no matrix rows"
+    proofs["observed"] = bool(observed)
+    if not observed:
+        why["observed"] = "pass --observed '<full suite and gates: command, result>'"
+    # 3. Tick what is proven; record the observed run.
+    if "Final verification" not in plan.sections:
+        return emit(checked + ["final verification"], "BLOCKED", [], "plan.md has no ## Final verification section",
+                    "add the section from assets/plan-template.md")
+    f_start, f_end = plan.sections["Final verification"]
+    ticked, left = [], []
+    for i in range(f_start + 1, f_end):
+        match = CHECKBOX.match(lines[i].strip())
+        if not match:
+            continue
+        label = match["label"].strip()
+        if match["mark"] != " ":
+            continue
+        proof = next((key for needle, key in FINAL_PROOFS if needle in label.lower()), None)
+        if proof and proofs.get(proof):
+            lines[i] = lines[i].replace("[ ]", "[x]", 1)
+            ticked.append(label.rstrip("."))
+        else:
+            left.append(f"{label.rstrip('.')} ({why.get(proof, 'no recorded proof; tick it by evidence')})")
+    if observed:
+        text = " ".join(observed.split())
+        insert = f_end
+        while insert > f_start + 1 and not lines[insert - 1].strip():
+            insert -= 1
+        lines[insert:insert] = ["", f"Observed ({timestamp()}): {text}"]
+        checked.append("observed run recorded")
+    plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    if ticked:
+        checked.append("ticked: " + ", ".join(ticked))
+    if left:
+        checked.append("left to the controller: " + "; ".join(left))
+    if left:
+        return emit(checked, "CHECKED", ["plan.md"], "",
+                    f"tick the remaining boxes by evidence (or rerun finalize with --observed/--requirements), "
+                    f"then validate_change.py {slug} --phase final")
+    return emit(checked, "PASS", ["plan.md"], "", f"validate_change.py {slug} --phase final")
+
+
+PENDING_MATRIX = re.compile(r"^\s*(Pending|TBD)\b", re.I)
+
+
 def wait_report(slug: str, task: str, root: str | None, timeout: float, interval: float = 5.0) -> int:
     """Wait until a worker writes a new task report, whatever its status.
 
@@ -1345,6 +1553,19 @@ def build_parser() -> argparse.ArgumentParser:
             step.add_argument("--derived", action="append", default=[], help="Generated/wiring path the task may touch")
             step.add_argument("--controller-path", action="append", default=[], help="Current content explicitly changed by controller")
             step.add_argument("--reason", required=True)
+    scoped = steps.add_parser("scope", help="Fill ## Review scope from the executable diff (tracked changes "
+                                            "since --base plus untracked files, Specadoc artifacts left out)")
+    scoped.add_argument("change_slug")
+    scoped.add_argument("--base", default="HEAD", help="Revision the step's diff is measured against (default HEAD)")
+    scoped.add_argument("--dry-run", action="store_true", help="Print the bullets without writing plan.md")
+    final = steps.add_parser("finalize", help="Tick the Final verification boxes the recorded state proves, drop the "
+                                              "Round log template, and list what the controller still owns")
+    final.add_argument("change_slug")
+    final.add_argument("--observed", metavar="RUN",
+                       help="The full suite and gates the controller ran once: command and result (ticks regression, "
+                            "build/lint boxes)")
+    final.add_argument("--requirements", metavar="WHY",
+                       help="Set every Pending matrix Status to PASS, with the evidence in one line")
     waited = steps.add_parser("wait", help="Wait for a new task report of any status (a resumed worker)")
     waited.add_argument("change_slug")
     waited.add_argument("task")
@@ -1499,6 +1720,10 @@ def main() -> int:
                         agent=args.from_agent, skip=args.skip)
         if args.step == "wait":
             return wait_report(args.change_slug, args.task, args.root, args.timeout, args.interval)
+        if args.step == "scope":
+            return scope(args.change_slug, args.root, base=args.base, dry_run=args.dry_run)
+        if args.step == "finalize":
+            return finalize(args.change_slug, args.root, observed=args.observed, requirements=args.requirements)
         if args.step == "status":
             return status(args.change_slug, args.root, args.controller_runtime, args.context_tokens)
         if args.step == "report":

@@ -20,9 +20,9 @@ class EngineeringCompanionsTest(unittest.TestCase):
     def test_tidy_pass_precedes_the_independent_review(self) -> None:
         # After run 4.8 the cleanup is one pass over Review scope, once the scope is filled.
         apply = (REFERENCES / "apply.md").read_text()
-        verification = apply.index("Controller runs final affected-only checks once")
+        verification = apply.index("Controller runs the whole suite and the repository gates once")
         cleanup = apply.index("`tidy <slug>`")
-        review = apply.index("run one independent read-only `reviewer`")
+        review = apply.index("independent read-only `reviewer`")
         self.assertLess(verification, cleanup)
         self.assertLess(cleanup, review)
 

@@ -8,9 +8,9 @@ Paths below use the default root `docs/specadoc`. Scripts resolve the root in
 this order: `--root`, `$SPECADOC_ROOT`, `.specadoc.json` (`{"root": "<path>"}`)
 in the repository root, legacy `docs/agent` when it exists and
 `docs/specadoc` does not, then `docs/specadoc`. `doctor.py` and
-`init_change.py` print the resolved root; use that path wherever this
-reference says `docs/specadoc`. A legacy root triggers a warning; move it with
-`python3 <skill-root>/scripts/migrate_root.py` (dry run) and `--apply`.
+`init_change.py` print the resolved root; use it wherever this reference says
+`docs/specadoc`. A legacy root warns; move it with `scripts/migrate_root.py`
+(dry run) and `--apply`.
 
 Three roots, one responsibility each:
 
@@ -23,9 +23,9 @@ Three roots, one responsibility each:
 
 A capability file states observable behavior only: `C<n>` SHALL statements,
 invariants, at most five key paths, and a provenance row per contributing
-change. It never lists tasks, diffs, file-by-file inventories, or history
-narrative. It is written from the accepted `spec.md` at archive time, never from
-the diff, and never while the change is still in flight.
+change. It never lists tasks, diffs, file inventories or history. It is written
+from the accepted `spec.md` at archive time, never from the diff, and never
+while the change is still in flight.
 
 ### Declaring the change as operations
 
@@ -51,10 +51,9 @@ Every operation must cite at least one requirement it implements, in
 parentheses right after the `C<n>` id — `ADDED C8 (R7) — <effect>`. This is what
 lets `check_plan`'s requirement→task→matrix sweep actually see a capability
 delta: without a citation, a capability operation is invisible prose that can
-drift from `plan.md`'s tasks and the requirement-to-check matrix undetected
-until an expensive reviewer round happens to notice (this happened in
-practice — see the `d9c20354` incident referenced in the specadoc remediation
-plan). Cite every requirement the operation actually implements, not just one.
+drift from `plan.md`'s tasks and the requirement-to-check matrix until a
+reviewer round happens to notice (the `d9c20354` incident). Cite every
+requirement the operation implements, not just one.
 
 This is what makes the archive-time update mechanical rather than a rewrite from
 memory. `validate_change.py --phase spec` checks the syntax, the order, that
@@ -82,11 +81,9 @@ the shared package (library, SDK, or schema module) that carries the contract:
 - `docs/specadoc/contracts/<contract>.md` - the contract being changed, its consumers,
   and the version that delivers it.
 
-The package is the owner because it is where the contract is materialized and
-versioned; a consumer's reference to it is checkable from its dependency lock
-file. Do not
-place this file in the producing service, and do not centralize it outside the
-package.
+The package is the owner because it materializes and versions the contract; a
+consumer's reference to it is checkable from its dependency lock file. Do not
+place this file in the producing service or centralize it outside the package.
 
 Create one by copying the template:
 
@@ -195,11 +192,11 @@ vague activity or an entire subsystem. Retain corrective tasks as separate tasks
 with their dependencies; do not fold T9 into completed T8 to satisfy a number.
 
 Immediately before review, `## Review scope` lists the actual executable diff
-as repository-relative literal file paths, one backticked bullet per path. It
-is deliberately separate from task `Files:`, which may contain paths or
-symbols. Prefix an intentional deletion with `!`; reject symbols, globs, brace
-expressions, directories, absolute paths, and paths containing `..`. Never list
-change-folder files; `pre-review` refuses them.
+as repository-relative literal file paths, one backticked bullet per path
+(`specadoc_step.py scope` writes it). It is separate from task `Files:`, which
+may contain symbols. A deletion is `!path`; no symbols, globs, directories,
+absolute paths or `..`. Never list change-folder files; `pre-review` refuses
+them.
 
 Task ownership values are `worker` (for a task ready for one) or `controller`
 (`subagent-routing.md` → Routing policy). Verification
@@ -208,7 +205,7 @@ high risk does not prevent a low-decision task from using a worker.
 
 `plan.md` is re-read at every task and review, so its size multiplies cost.
 Keep decisions, tasks, one-line evidence and current state; above 48 KiB
-`validate_change.py` warns.
+`validate_change.py` warns (a warning only).
 
 Before worker dispatch, record its bounded Decisions, Interfaces, Depends on,
 and any Test context or explicit TDD exception. Include required composition-root

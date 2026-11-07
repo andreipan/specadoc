@@ -190,6 +190,9 @@ class Document:
         for number, line in self.body(section):
             if "specadoc:ignore-placeholder" in line or LEGACY_FIELD.match(line):
                 continue
+            # The Round log's indented `### G1` example stays a template until `finalize` drops it (4.11).
+            if section == "Review result" and line.startswith("    "):
+                continue
             bare = DISCLOSURE_TAG.sub("", INLINE_CODE.sub("", line))
             match = PLACEHOLDER.search(bare)
             if match:
@@ -865,7 +868,7 @@ def plan_size_warnings(plan: Document) -> list[str]:
         largest = ", ".join(f"{name} {bytes_} B" for bytes_, name in sorted(parts, reverse=True)[:4])
         warnings.append(f"plan.md is {size} bytes (> {PLAN_SIZE_WARNING}): keep only decisions, tasks, "
                         "one-line evidence and current state; move bulky evidence to research.md or drop it. "
-                        f"Largest: {largest}")
+                        f"Largest: {largest}. Warning only: no gate, worker or archive step waits for it")
     return warnings
 
 

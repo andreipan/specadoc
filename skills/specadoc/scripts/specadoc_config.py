@@ -24,8 +24,11 @@ def validate_config(data: object) -> dict:
         raise ValueError(f"expected known Specadoc keys; unknown: {', '.join(sorted(unknown))}")
     if "verification" in data:
         verification = data["verification"]
-        if not isinstance(verification, dict) or set(verification) - {"environment", "external_only"}:
-            raise ValueError("verification: expected an object with environment and external_only only")
+        if not isinstance(verification, dict) or set(verification) - {"environment", "external_only", "final"}:
+            raise ValueError("verification: expected an object with environment, external_only and final only")
+        final = verification.get("final", [])
+        if not isinstance(final, list) or not all(isinstance(item, str) and item.strip() for item in final):
+            raise ValueError("verification.final: expected a list of commands the controller runs once before review")
         environment = verification.get("environment", [])
         if not isinstance(environment, list) or not all(isinstance(item, str) and item.strip() for item in environment):
             raise ValueError("verification.environment: expected a list of variable names or globs")

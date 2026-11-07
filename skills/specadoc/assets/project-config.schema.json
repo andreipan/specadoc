@@ -30,6 +30,11 @@
           "description": "Command fragments that only an external executor runs; a task Verification containing one is refused",
           "type": "array",
           "items": {"type": "string", "pattern": "\\S"}
+        },
+        "final": {
+          "description": "Commands the controller runs once before the first review instead of the whole suite and gates; `finalize --observed` names them",
+          "type": "array",
+          "items": {"type": "string", "pattern": "\\S"}
         }
       }
     },

@@ -53,6 +53,14 @@ config file name, in `verification.external_only`:
 integration command in Verification was accepted with a skip override, and
 pre-review found the environment drift later).
 
+The apply controller runs the whole suite and the repository gates once before
+the first review (`apply.md` step 6). A project whose whole suite is too slow or
+needs a fixed set of commands names them; `finalize --observed` records the run:
+
+```json
+{"version": 1, "verification": {"final": ["<suite command>", "<gates command>"]}}
+```
+
 A project that wants every change tidied before its independent review sets:
 
 ```json

@@ -255,13 +255,18 @@ tree while a worker runs.
   updates the plan, and only then dispatches again; see Escalation.
 
 Dispatch a scout, worker or reviewer in the foreground when the next step needs
-its result; some hosts start native sub-agents in the background by default. A
-resumed agent (a follow-up message to a finished one) answers asynchronously:
+its result: Claude Code's Agent tool starts sub-agents in the background by
+default, so pass `run_in_background: false` (4.10: a background scout and
+re-review cost a 120 s timeout, a TaskStop and two sleep polls). A resumed
+task worker (a follow-up message to a finished one) answers asynchronously:
 right after the message run `specadoc_step.py wait <slug> T<n>`, which returns on
-a new report of any status or after its timeout. Never poll an agent's output
-file or run a long sleep loop: a reply reaches the controller only when the
-running command returns (4.3: a scout report waited 9 minutes, 4.5: a
-NEEDS_CONTEXT waited 10 minutes behind a loop that exited only on DONE).
+a new report of any status or after its timeout; it knows task reports only,
+not scouts, reviewers, tidy or archive workers. For those, end the turn and
+take the host's completion notice. Never poll an agent's output file or run a
+sleep loop: a reply reaches the controller only when the running command
+returns (4.3: a scout report waited 9 minutes, 4.5: a NEEDS_CONTEXT waited 10
+minutes behind a loop that exited only on DONE, 4.10: an archive worker was
+polled with `sleep 5`).
 
 ## Escalation
 

@@ -74,8 +74,14 @@ def review_scope(plan: Document, repo_root: Path, change: Path | None = None) ->
     repo_root = repo_root.resolve()
     artifacts = change.resolve() if change is not None else None
     entries: dict[str, str] = {}
+    guidance = False
     for number, line in plan.body("Review scope"):
-        if not line.strip():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # The template's `<Populate ...>` paragraph is guidance, not scope (4.9: tidy BLOCKED on it).
+        if guidance or stripped.startswith("<"):
+            guidance = not stripped.endswith(">")
             continue
         match = SCOPE_ENTRY.match(line)
         if match is None:

@@ -53,6 +53,10 @@ mapping once in the coordination record:
 
 ## Waiting
 
+A question to the user blocks your turn; a host delivers child wakes only after
+it ends. Ask before launching a controller or when every child is idle, never
+while one runs (4.9: a blocked controller waited 24 minutes behind a question).
+
 Every wake re-reads the orchestrator's whole context. In 3.6 about 25 of 38
 three-minute waits timed out, and the wakes, not the wait output, made the cost.
 Prefer a host event that fires when a controller turn finishes, fails or is
@@ -107,7 +111,12 @@ component revisions, the coordination directory, and contract snapshots. Save
 external sources such as wiki pages there as files first, because the verifier
 may lack the connector. Its role binding belongs to the installed harness;
 `.specadoc.json` does not route it. Route each failure it reports to the owning
-controller.
+controller. The verifier owns the run's evidence (row counts before and after,
+log, hash); the orchestrator reads its report instead of repeating the queries.
+Take the run command from the controller's checkpoint or the project notes, not
+from memory (4.10: a hand-written flag failed a round). Neither reads secret
+values: `.env` is read by key names only, never with `grep '^DB_'` into the
+transcript.
 
 A Specadoc task whose integration run belongs to the verifier carries
 `External verification:`. Its controller accepts the local Verification

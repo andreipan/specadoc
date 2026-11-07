@@ -1,90 +1,91 @@
 # Apply mode
 
-Load this reference only for `specadoc apply <slug>`.
+Load only for `specadoc apply <slug>`.
 
 1. Require validated spec/plan and recorded approval before edits. A fresh
    session orients from `specadoc_step.py status <slug>`, `runs/handoff.md` and
-   the task brief, never whole spec/plan/design. `status` prints observed context
-   and session advice; `dispatch` blocks near 200k: save notes with `handoff
-   <slug> --file -` and resume in a new session. Hosts other than Claude Code
-   pass `--context-tokens <n>`, never an invented count.
+   the task brief, not whole spec/plan/design. `status` prints observed context
+   and advice; `dispatch` blocks near 200k: `handoff <slug> --file -`,
+   then resume in a new session. Other hosts pass `--context-tokens <n>`.
 2. Close material decisions before RED. A ready task goes to a worker; the
    controller keeps tasks with open decisions or a Controller justification
-   (`subagent-routing.md` → Routing policy). A worker task names bounded
-   `Decisions`, `Interfaces`, `Depends on` and `Test context`; `Files` cover code
-   and tests, `Derived files` generated or wiring paths. A lockfile is derived when
-   its manifest is in scope (`go.mod` for `go.sum`, `<stem>` for `<stem>.lock`).
-   `low` risk authorizes no architecture, catalog or compatibility decision.
+   (`subagent-routing.md`). A worker task names bounded `Decisions`,
+   `Interfaces`, `Depends on` and `Test context`; `Files` cover code and tests,
+   `Derived files` generated or wiring paths (a lockfile whose manifest is in
+   scope). `low` risk authorizes no architecture or compatibility decision.
 3. `specadoc_step.py dispatch <slug> T<n>` checks readiness, paths, commands,
    routing and a current design review (`design-gate.md`), then writes
-   baseline/brief; it runs no Verification. `preflight` is an optional dry check;
-   retries keep the first baseline. A controller task uses the same gates without
-   a worker. One fully specified worker task at a time; serialize overlapping
-   writers. Routed projects pass `--controller-runtime` or rely on
-   `roles.controller.runtime` (`subagent-routing.md`).
+   baseline/brief; it runs no Verification. `preflight` is a dry check; retries
+   keep the first baseline. A controller task uses the same gates without a
+   worker. One worker task at a time; serialize overlapping writers. Routed
+   projects pass `--controller-runtime` or rely on `roles.controller.runtime`.
 4. The implementer uses RED-GREEN-REFACTOR; a `TDD exception` names the
-   deterministic check for mechanical work. Task checks are focused; the full
-   suite runs once in Final verification.
+   deterministic check for mechanical work. Task checks are focused; the whole
+   suite runs once at step 6.
    Note a fix later tasks may repeat in `runs/lessons.md`; briefs include it.
 5. The implementer ends with `report <slug> T<n> --status … --summary … --red …
    --green …`. Read the report, then `accept <slug> T<n>`: it validates the
-   result JSON, runs Verification (reused only for unchanged inputs, commands and
-   environment), checks scope and on **ACCEPTED** records Evidence and Accepted
-   result. Concerns give **NEEDS_DECISION**: rerun with `--note '<decision>'`. A
-   BLOCKED report whose blocker the parent or controller removed takes
-   `--resolved '<who and how>'`; never rewrite a worker report. A task with
+   result JSON, runs Verification (reused only for unchanged inputs, commands
+   and environment), checks scope and on **ACCEPTED** records Evidence. Concerns give **NEEDS_DECISION**: rerun with `--note '<decision>'`. A
+   BLOCKED report whose blocker was removed takes `--resolved '<who and
+   how>'`; never rewrite a worker report. A task with
    `External verification:` gives **EXTERNAL-PENDING**: dependents and review may
    start; record the run with `external-result <slug> T<n> --outcome PASS|FAIL
    --evidence '<run>'` (FAIL returns it to work; correct a recorded result with
-   `--supersede '<why>'`, never edit `runs/*.json`). A status is a claim, not evidence.
-6. Controller runs final affected-only checks once, records observed Build/Typecheck
-   PASS and Browser URL/state for UI, and fills literal Review scope from the
-   executable diff (`!path` means deleted).
-   Then one worker runs `tidy <slug>`'s brief, then `refresh`
-   (`interoperability.md`).
-7. On a stable diff, `pre-review <slug>` records the round; then
-   run one independent read-only `reviewer` (a fresh agent). On return, before anything else, run
+   `--supersede '<why>'`, never edit `runs/*.json`).
+6. Controller runs the whole suite and the repository gates once (or the
+   `verification.final` commands of `.specadoc.json`), never a path subset
+   (4.10: untouched-module architecture tests failed a step later);
+   `finalize <slug> --observed '<run>'` records it (and Browser state for UI).
+   `scope <slug>` fills Review scope from the diff since `--base` (HEAD).
+   Then one worker runs `tidy <slug>`'s brief, then `refresh`.
+7. On a stable diff, `pre-review <slug>` records the round; then run one
+   independent read-only `reviewer`, a fresh agent. On return, first run
    `review-result <slug> --from-agent <id>` (native) or `--result-file <reply>`
    (external); never transcribe the reply.
 8. Fix confirmed findings in scope, then one targeted `pre-review <slug>
    --review-type re-review` on prior findings and changed files, without waiting
    for the user. After a PASS with only MINOR findings, fix them: test/doc-only
    fixes need no round, executable ones one `re-review` (`minor-fixes`, outside the
-   cap). An executable fix goes to a worker (`--reopen`), not the controller. Defer a MINOR only by a parent or user decision, as a residual risk
-   (`tdd-and-review.md`). New BLOCKER/IMPORTANT after a re-review: stop and ask.
+   cap). An executable fix, comments and docblocks in source files included,
+   goes to a worker (`--reopen`, batched), never the controller. Defer a MINOR
+   only by a parent or user decision, as a residual risk (`tdd-and-review.md`).
+   New BLOCKER/IMPORTANT after a re-review: stop and ask.
 9. On PASS, update the capability specs spec.md declares (`status` names a
    missing one), the Archive summary (name post-review MINOR fixes) and residual
-   risks, collect tokens after all rounds, then `validate_change.py <slug>
-   --phase final`. Archive only when asked.
+   risks, collect tokens after all rounds, then `finalize <slug>` (ticks the
+   proven boxes, names the rest; no scripts of your own over plan.md) and
+   `validate_change.py <slug> --phase final`. Archive only when asked.
 
 ### Exceptions
 
 - **Scope.** Fix a missing-context brief and resume the same worker. A required
   path outside the task: `amend <slug> T<n> --allow|--derived <path> --reason
-  '<decision>'`; controller edits after review: `refresh <slug> --controller-path
-  <p> --reason '<finding>'` (all tasks at once; acceptances kept).
-  Verification and plan approval are frozen at dispatch; only `amend` changes
-  them. Never widen Files silently.
+  '<decision>'`; controller prose edits after review: `refresh <slug>
+  --controller-path <p> --reason '<finding>'` (acceptances kept). Verification
+  and plan approval are frozen at dispatch; only `amend` changes them.
 - **Stale evidence.** `refresh <slug>` re-accepts stale tasks in dependency
   order with their report and frozen Verification, listing every failure. Without `Verification inputs` any later edit
   makes a task stale; declare them when checks are narrow.
 - **Corrective work.** `dispatch <slug> T<n> --reopen '<reason>'` archives the
-  attempt and starts from the current tree; only for code fixes, not staleness.
+  attempt and starts from the current tree (stale dependencies are refreshed
+  first); only for code fixes, not staleness.
 - **Review rounds.** New requirements: `--review-type initial --reason
   requirements`; polish: `--reason polish`; corrections stay `re-review`. A
   fourth `initial` needs `--review-decision '<decision, author, scope>'`. One
-  documentation-only follow-up is allowed after a documentation-only FAIL.
+  documentation-only follow-up may follow a documentation-only FAIL.
 - **Size.** Over eight tasks warns; add T9 rather than fold work into a done task.
+  A plan.md over 48 KiB is a warning: no step, worker or archive waits for it.
 - `pre-review --dry-run` prints the snapshot without recording;
-  `review_snapshot.py diff <slug> --previous G<n>` lists changes since a round.
+  `review_snapshot.py diff <slug> --previous G<n>` lists changes since G<n>.
 
 ## Reading order
 
 | Reference | Read it when |
 |---|---|
-| `spec.md`, the task's `plan.md` section, its `Files:` targets, the relevant `AGENTS.md` | Before RED for that task |
-| `subagent-routing.md` | Before dispatching a worker or reviewer subagent |
-| `runners.md` | Before the first dispatch to a runtime other than the controller's |
+| `spec.md`, the task's `plan.md` section, its `Files:`, the relevant `AGENTS.md` | Before RED for that task |
+| `subagent-routing.md` | Before dispatching a worker or reviewer |
+| `runners.md` | Before the first dispatch to another runtime |
 | `measurement.md` | Before recording final evidence/tokens |
 | `tdd-and-review.md` | Before a review round |
 | `artifacts.md` | Only when changing spec.md/plan.md structure |
