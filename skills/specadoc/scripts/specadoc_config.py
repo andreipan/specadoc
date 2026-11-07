@@ -19,7 +19,7 @@ ROLES = ("scout", "worker", "reviewer")
 def validate_config(data: object) -> dict:
     if not isinstance(data, dict):
         raise ValueError("expected Specadoc config object")
-    unknown = set(data) - {"$schema", "root", "version", "roles", "verification"}
+    unknown = set(data) - {"$schema", "root", "version", "roles", "verification", "review"}
     if unknown:
         raise ValueError(f"expected known Specadoc keys; unknown: {', '.join(sorted(unknown))}")
     if "verification" in data:
@@ -32,6 +32,12 @@ def validate_config(data: object) -> dict:
         external = verification.get("external_only", [])
         if not isinstance(external, list) or not all(isinstance(item, str) and item.strip() for item in external):
             raise ValueError("verification.external_only: expected a list of command fragments")
+    if "review" in data:
+        review = data["review"]
+        if not isinstance(review, dict) or set(review) - {"tidy"}:
+            raise ValueError("review: expected an object with tidy only")
+        if review.get("tidy", "optional") not in ("required", "optional"):
+            raise ValueError("review.tidy: expected required or optional")
     if "root" in data and (not isinstance(data["root"], str) or not data["root"].strip()):
         raise ValueError("expected nonempty root path")
     if "version" in data and (type(data["version"]) is not int or data["version"] != 1):

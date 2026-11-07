@@ -27,6 +27,13 @@ Rules:
   decisions the step relies on; the controller reads each one, never the whole
   decision log (4.3–4.5 propose briefs were 2.8–3.6k characters and controllers
   read the 25 KB log whole).
+- Name every file by its repository-relative path, the skill references too
+  (`.claude/skills/orchestrator/references/controllers.md`, `roadmap.md` at the
+  root). 4.6–4.8 controllers searched for an unnamed file with `find /`, which
+  ran into the 120 s command timeout each time.
+- The plan checkpoint carries the bindings `role_routing.py` resolved; the
+  approval message repeats them as `--bindings '<...>'` (4.6: `approve` without
+  them was refused once).
 
 Shape (keep under about 2,000 characters):
 
@@ -45,9 +52,10 @@ files the integration verifier will run, anything newly authorized, with its D<n
 
 ## Authority
 <decisions you may take; decisions that return to the parent; plan approval
-under mandate D<n> is recorded with `specadoc_step.py approve`>
+under mandate D<n> is recorded with `specadoc_step.py approve --bindings`>
 
 ## Return
-The envelope from `controllers.md` at: plan approval, locally-ready,
-review-ready with the external run pending, or a blocker.
+The envelope from `.claude/skills/orchestrator/references/controllers.md` at:
+plan approval, locally-ready, review-ready with the external run pending, or a
+blocker.
 ```

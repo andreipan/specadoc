@@ -32,6 +32,16 @@
           "items": {"type": "string", "pattern": "\\S"}
         }
       }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tidy": {
+          "description": "required: pre-review refuses the first initial round until `specadoc_step.py tidy` recorded a pass over Review scope",
+          "enum": ["required", "optional"]
+        }
+      }
     }
   },
   "dependentRequired": {"roles": ["version"]},

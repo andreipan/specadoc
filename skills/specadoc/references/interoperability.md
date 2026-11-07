@@ -41,7 +41,9 @@ step they own and record which one ran:
 - **Behavior-preserving cleanup** — an optional worker/controller companion in
   REFACTOR before final verification and review, never a substitute for independent review.
   Use it when it has a concrete benefit or cleanup was requested; a trivial diff
-  needs no separate pass. Stay in the approved task/diff, no default helper
+  needs no separate pass. With `review.tidy: required` (`project-config.md`) one
+  worker pass over the whole Review scope is mandatory before the first initial
+  review: `specadoc_step.py tidy <slug>` writes its brief and records it. Stay in the approved task/diff, no default helper
   fan-out, and never a writing pass in the reviewer. Behavioral/security defects
   and new architecture choices go to the controller and the specification/plan,
   not silent cleanup. Executable edits after PASS invalidate the reviewed snapshot.

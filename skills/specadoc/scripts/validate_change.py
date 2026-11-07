@@ -92,6 +92,12 @@ FIELD = re.compile(r"^-\s+\*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*)$")
 CHECKBOX = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+(?P<label>.+)$")
 TASK_CHECKBOX = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+Complete\s*$")
 PENDING = re.compile(r"\b(Pending|TBD)\b")
+# A task field is still a placeholder only when its value starts with Pending/TBD;
+# the word inside domain prose ("a PENDING invitation") is not a placeholder (4.7).
+PENDING_VALUE = re.compile(r"^[\s`*_]*(Pending|TBD)\b")
+# Shared with task_state.readiness so plan validation and dispatch say the same thing (4.8).
+WORKER_DECISION_RISK = ("Owner: worker needs Decision risk: low; close the decision and set low, "
+                        "or set Owner: controller with a Controller justification")
 
 # The literal placeholder text shipped in assets/plan-template.md's Evidence
 # field; a task whose Evidence still contains this was never actually
@@ -925,7 +931,7 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
         for field, value in fields.items():
             if field in ("Evidence", "Evidence hash"):
                 continue
-            if PENDING.search(value):
+            if PENDING_VALUE.match(value):
                 violations.append(
                     Violation(plan.display, start + 1, f"{identifier}: **{field}:** still Pending")
                 )
@@ -944,6 +950,8 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                     f"{identifier}: Decision risk must be one of {', '.join(DECISION_RISKS)}",
                 )
             )
+        if owner == "worker" and not complete and decision_risk != "low":
+            violations.append(Violation(plan.display, start + 1, f"{identifier}: {WORKER_DECISION_RISK}"))
         if owner == "worker" and not complete and "Files" in fields:
             _, uncheckable = files_patterns(fields["Files"])
             if uncheckable:

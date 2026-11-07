@@ -52,6 +52,23 @@ def _coverage(spec: Document) -> dict[str, list[str]]:
     return table
 
 
+LESSONS_FILE = "lessons.md"
+LESSONS_LIMIT = 2048
+
+
+def run_lessons(change: Path) -> list[str]:
+    """`runs/lessons.md`: mistakes a worker already fixed in this change, so a later worker
+    does not repeat them (4.7: T3 fixed an object-identity assert, T4 wrote it again)."""
+    try:
+        text = (change / RUNS_DIR / LESSONS_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    if len(text.encode("utf-8")) > LESSONS_LIMIT:
+        text = text.encode("utf-8")[:LESSONS_LIMIT].decode("utf-8", "ignore").rsplit("\n", 1)[0]
+        text += f"\n(truncated at {LESSONS_LIMIT} bytes; keep {RUNS_DIR}/{LESSONS_FILE} short)"
+    return text.splitlines()
+
+
 def build_brief(change: Path, task_id: str) -> str:
     plan_path, spec_path = change / "plan.md", change / "spec.md"
     if not plan_path.is_file() or not spec_path.is_file():
@@ -98,7 +115,10 @@ def build_brief(change: Path, task_id: str) -> str:
         *(["- The real run of this task is External verification, so nothing executes your queries before it: "
            "check every table, column and stored value the test uses against the schema source in Test context "
            "(migrations or a schema dump). Rows the test commits carry a run-unique marker and are deleted by "
-           "recorded ids in a finally block, so a failed run leaves no residue."]
+           "recorded ids in a finally block, so a failed run leaves no residue. Compare query results by value, "
+           "not object identity (database rows are often plain objects), and leave per-request values (ids, "
+           "trace ids, timestamps) out of whole-response comparisons (4.7 and 4.8 failed their first real run "
+           "on exactly these)."]
           if optional(fields.get("External verification")) else []),
         "",
         "## Task",
@@ -118,6 +138,8 @@ def build_brief(change: Path, task_id: str) -> str:
         context.extend(line for _, line in plan.body("Confirmed decisions") if task_id in ids_in(line, "T"))
     if context:
         lines[-2:-2] = ["## Accepted dependency context", "", *context, ""]
+    if lessons := run_lessons(change):
+        lines += ["## Lessons from earlier tasks of this change", "", *lessons, ""]
     for requirement in requirements:
         lines += _block(spec, "Requirements", "R", requirement) + [""]
     if scenarios:

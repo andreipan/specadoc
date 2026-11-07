@@ -53,6 +53,16 @@ config file name, in `verification.external_only`:
 integration command in Verification was accepted with a skip override, and
 pre-review found the environment drift later).
 
+A project that wants every change tidied before its independent review sets:
+
+```json
+{"version": 1, "review": {"tidy": "required"}}
+```
+
+Then `pre-review` refuses the first `initial` round until `specadoc_step.py tidy
+<slug>` recorded one pass over Review scope (`apply.md` step 6). Re-reviews never
+need another pass. Default `optional`: tidy stays an opt-in REFACTOR companion.
+
 Keep a host or sandbox setting out of `Verification`: a command that starts
 with `NAME=value` or `env` freezes one session's runtime into the plan, and the
 next session, sandbox or validator runs it differently (3.7/3.8: an

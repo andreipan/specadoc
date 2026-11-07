@@ -6,16 +6,15 @@ Load this reference only for `specadoc apply <slug>`.
    session orients from `specadoc_step.py status <slug>`, `runs/handoff.md` and
    the task brief, never whole spec/plan/design. `status` prints observed context
    and session advice; `dispatch` blocks near 200k: save notes with `handoff
-   <slug> --file -` and resume in a new session. Claude Code context is read
-   automatically; other hosts pass `--context-tokens <n>`, never an invented count.
+   <slug> --file -` and resume in a new session. Hosts other than Claude Code
+   pass `--context-tokens <n>`, never an invented count.
 2. Close material decisions before RED. A ready task goes to a worker; the
    controller keeps tasks with open decisions or a Controller justification
    (`subagent-routing.md` → Routing policy). A worker task names bounded
    `Decisions`, `Interfaces`, `Depends on` and `Test context`; `Files` cover code
    and tests, `Derived files` generated or wiring paths. A lockfile is derived when
-   its manifest is in scope (`package.json` here or in a workspace package below,
-   `go.mod` for `go.sum`, a same-stem manifest for `<stem>.lock`). `low` risk does
-   not authorize architecture, catalog, contrast or compatibility decisions.
+   its manifest is in scope (`go.mod` for `go.sum`, `<stem>` for `<stem>.lock`).
+   `low` risk authorizes no architecture, catalog or compatibility decision.
 3. `specadoc_step.py dispatch <slug> T<n>` checks readiness, paths, commands,
    routing and a current design review (`design-gate.md`), then writes
    baseline/brief; it runs no Verification. `preflight` is an optional dry check;
@@ -24,9 +23,9 @@ Load this reference only for `specadoc apply <slug>`.
    writers. Routed projects pass `--controller-runtime` or rely on
    `roles.controller.runtime` (`subagent-routing.md`).
 4. The implementer uses RED-GREEN-REFACTOR; a `TDD exception` names the
-   deterministic check for mechanical work. REFACTOR may include
-   optional behavior-preserving cleanup (`interoperability.md`). Task checks are
-   focused; the full suite runs once in Final verification.
+   deterministic check for mechanical work. Task checks are focused; the full
+   suite runs once in Final verification.
+   Note a fix later tasks may repeat in `runs/lessons.md`; briefs include it.
 5. The implementer ends with `report <slug> T<n> --status … --summary … --red …
    --green …`. Read the report, then `accept <slug> T<n>`: it validates the
    result JSON, runs Verification (reused only for unchanged inputs, commands and
@@ -41,6 +40,8 @@ Load this reference only for `specadoc apply <slug>`.
 6. Controller runs final affected-only checks once, records observed Build/Typecheck
    PASS and Browser URL/state for UI, and fills literal Review scope from the
    executable diff (`!path` means deleted).
+   Then one worker runs `tidy <slug>`'s brief, then `refresh`
+   (`interoperability.md`).
 7. On a stable diff, `pre-review <slug>` records the round; then
    run one independent read-only `reviewer` (a fresh agent). On return, before anything else, run
    `review-result <slug> --from-agent <id>` (native) or `--result-file <reply>`
@@ -49,7 +50,7 @@ Load this reference only for `specadoc apply <slug>`.
    --review-type re-review` on prior findings and changed files, without waiting
    for the user. After a PASS with only MINOR findings, fix them: test/doc-only
    fixes need no round, executable ones one `re-review` (`minor-fixes`, outside the
-   cap). Defer a MINOR only by a parent or user decision, as a residual risk
+   cap). An executable fix goes to a worker (`--reopen`), not the controller. Defer a MINOR only by a parent or user decision, as a residual risk
    (`tdd-and-review.md`). New BLOCKER/IMPORTANT after a re-review: stop and ask.
 9. On PASS, update the capability specs spec.md declares (`status` names a
    missing one), the Archive summary (name post-review MINOR fixes) and residual

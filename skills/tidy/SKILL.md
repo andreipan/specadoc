@@ -45,5 +45,8 @@ Run the relevant existing tests and allowed lint/type checks afterwards; state
 missing checks instead of claiming equivalence. Executable edits after a review
 PASS invalidate that snapshot and need fresh verification and review.
 
+Under a tidy brief from a workflow, its file list is the scope and its last
+command records the result; run it instead of a free-form report.
+
 Report what was fixed, what was skipped and why, and the checks run. Do not
 commit, push, or publish unless separately authorized.

@@ -296,6 +296,11 @@ def render_record(
         "measurement": section(plan, "Completion evidence"),
     }
     values["review"] = _strip_round_manifests(values["review"])
+    try:  # runs/ is removed by archive; keep the pre-review tidy pass in the record.
+        tidy = json.loads((change / "runs" / "tidy.json").read_text(encoding="utf-8"))
+        values["review"] = f"Tidy {tidy.get('outcome', 'recorded')}: {tidy.get('summary', '-')}\n\n{values['review']}"
+    except (OSError, ValueError, AttributeError):
+        pass
     values["measurement"] = _token_totals_only(values["measurement"])
     if migration_summary.strip():
         values["summary"] = "\n\n".join(

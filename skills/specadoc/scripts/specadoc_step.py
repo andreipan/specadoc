@@ -47,6 +47,9 @@ Steps:
   session notes never accumulate in plan.md.
 - `wait <slug> T<n> [--timeout s]` — wait for a new task report of any status
   (a resumed worker answers asynchronously); prints the next step.
+- `tidy <slug> [--record --summary '<...>' | --skip '<reason>']` — one worker
+  pass of the tidy companion over Review scope before the first initial review;
+  required by pre-review when `.specadoc.json` sets `review.tidy: required`.
 - `pre-review <slug>` — the pre-review gate plus the snapshot manifest to record
   in the new `### G<n>` round.
 
@@ -65,7 +68,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
-from specadoc_root import resolve_root  # noqa: E402
+from specadoc_root import ensure_runs, resolve_root  # noqa: E402
 from specadoc_config import normalize_runtime  # noqa: E402
 from validate_change import SETTLED_STATES, Document, external_verification, task_fields, review_policy_hash, latest_review_round, round_is_stale  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
@@ -693,6 +696,12 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
     if controller_paths:
         recorded = record_controller_changes(change, resolve_root(root).path, controller_paths, reason)
         checked.append("controller changes recorded: " + ", ".join(recorded))
+        from review_snapshot import NON_EXECUTABLE
+        executable = [path for path in recorded if not NON_EXECUTABLE.search(path)]
+        if executable and not (reason or "").lower().startswith("tidy"):
+            # 4.6: a controller MINOR fix in production code introduced an IMPORTANT finding.
+            checked.append("WARN executable controller edit: " + ", ".join(executable)
+                           + "; prefer a worker (dispatch T<n> --reopen '<finding>') for production code")
     for task in dependency_order(Document(plan_path, str(plan_path))):
         state_path = change / "runs" / f"{task}-baseline.json"
         try:
@@ -860,6 +869,8 @@ def status(slug: str, root: str | None, controller: str | None = None,
         else:
             working.append(task)
         lines.append(f"  {task} {owner} {state}")
+    if tidy_state := tidy_status(change):
+        lines.append(f"tidy: {tidy_state}")
     latest = latest_review_round(plan)
     outcome = latest[1].get("Outcome", "").strip() if latest else ""
     lines.append(f"review: {latest[0]} {outcome or 'missing'} ({latest[1].get('Type', '-').strip()}"
@@ -888,6 +899,9 @@ def status(slug: str, root: str | None, controller: str | None = None,
         kind = ("re-review" if "content changed" in cause
                 else latest[1].get("Type", "re-review").strip() or "re-review")
         next_step = f"pre-review --review-type {kind} ({latest[0]} stale: {cause}; it uses no review allowance)"
+    elif not latest and tidy_missing(change):
+        next_step = (f"tidy {slug}: one worker pass over Review scope (runs/{TIDY_BRIEF}), "
+                     f"then refresh {slug}, then pre-review")
     elif not latest or outcome.upper() == "FAIL":
         next_step = "pre-review" + (" --review-type re-review after fixing the findings" if latest else "")
     elif outcome.upper() not in ("PASS", "FAIL"):
@@ -1130,6 +1144,102 @@ def task_manifest(slug: str, task: str, root: str | None) -> int:
     return 0
 
 
+TIDY_FILE = "tidy.json"
+TIDY_BRIEF = "tidy-brief.md"
+TIDY_SKILL = Path(__file__).resolve().parents[2] / "tidy" / "SKILL.md"
+
+
+def tidy_required() -> bool:
+    from specadoc_config import load_config
+    return ((load_config(Path.cwd()).get("review") or {}).get("tidy")) == "required"
+
+
+def tidy_missing(change: Path) -> bool:
+    """The project requires a tidy pass before the first initial review and none is recorded."""
+    return tidy_required() and not (change / "runs" / TIDY_FILE).is_file()
+
+
+def tidy_status(change: Path) -> str:
+    try:
+        record = json.loads((change / "runs" / TIDY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "required, not recorded" if tidy_required() else ""
+    return f"{record.get('outcome', 'recorded')}: {record.get('summary', '-')}"
+
+
+def tidy(slug: str, root: str | None, *, record: bool = False, summary: str | None = None,
+         agent: str | None = None, skip: str | None = None) -> int:
+    """One behavior-preserving pass over the whole Review scope before the first initial review.
+
+    Without flags: write runs/tidy-brief.md for one worker. `--record` (the worker's last step)
+    or `--skip '<reason>'` (a trivial diff) writes runs/tidy.json, which pre-review requires when
+    `.specadoc.json` sets review.tidy: required. Re-reviews never need another pass.
+    """
+    from review_snapshot import SnapshotError, review_scope
+    artifact_root = resolve_root(root).path
+    change = Path(artifact_root) / slug
+    plan = Document(change / "plan.md", "plan.md")
+    try:
+        scope = review_scope(plan, Path.cwd(), change)
+    except SnapshotError as exc:
+        return emit(["review scope"], "BLOCKED", [], str(exc),
+                    "fill ## Review scope from the executable diff (apply step 6), then tidy again")
+    present = sorted(path for path, state in scope.items() if state == "present")
+    target = change / "runs" / TIDY_FILE
+    if record or skip is not None:
+        if record and skip is not None:
+            raise ValueError("use --record or --skip, not both")
+        text = " ".join((skip or summary or "").split())
+        if placeholder(text):
+            raise ValueError("--record needs --summary 'fixed N: ...; skipped M: ... and why'"
+                             if record else "--skip needs the reason the diff needs no tidy pass")
+        ensure_runs(target.parent)
+        save(target, {"at": timestamp(), "outcome": "skipped" if skip is not None else "recorded", "summary": text,
+                      "agent": agent, "scope": present})
+        return emit(["tidy " + ("skip" if skip is not None else "record")], "PASS", [f"runs/{TIDY_FILE}"], "",
+                    f"refresh {slug} (tidy edits make task evidence stale), then pre-review {slug}")
+    if not TIDY_SKILL.is_file():
+        return emit(["tidy skill"], "BLOCKED", [], f"tidy skill not installed at {TIDY_SKILL}",
+                    f"install the Specadoc tidy companion, or tidy {slug} --skip '<reason>'")
+    if not present:
+        return emit(["review scope"], "BLOCKED", [], "Review scope lists no present file",
+                    f"tidy {slug} --skip 'deletions only'")
+    commands: list[str] = []
+    for task, _, _ in plan.blocks("Tasks", "T"):
+        for command in verification_commands(slug, task, root):
+            if command not in commands:
+                commands.append(command)
+    step = Path(__file__).resolve()
+    root_flag = f"--root {root} " if root else ""
+    brief = "\n".join([
+        f"# Tidy brief: `{slug}`",
+        "",
+        f"Read and follow `{TIDY_SKILL}` for exactly the files below: the change's executable diff",
+        "(Review scope), after every task was accepted and before the independent review.",
+        "",
+        *[f"- `{path}`" for path in present],
+        "",
+        "## Rules",
+        "",
+        "- Behavior-preserving only. Edit only the files above; never edit spec.md, plan.md or anything under "
+        f"`{artifact_root}`. Do not commit, stash, reset or start other agents.",
+        "- Look across files too: duplicated helpers or test doubles between tasks are in scope.",
+        "- Do not fix a correctness or security defect or make an architecture choice; list it in your summary "
+        "for the controller.",
+        "- After your edits run the formatter once over the files you changed, then these checks:",
+        *[f"  - `{command}`" for command in commands],
+        f"- Finish with `python3 {step} {root_flag}tidy {slug} --record --summary 'fixed N: <what>; skipped M: "
+        "<what and why>; for the controller: <defects or none>'` and return its output. Finding nothing is a "
+        "valid result: say so in the summary.",
+        "",
+    ])
+    path = change / "runs" / TIDY_BRIEF
+    ensure_runs(path.parent)
+    path.write_text(brief, encoding="utf-8")
+    return emit(["review scope", "tidy skill", "brief"], "PASS", [f"runs/{TIDY_BRIEF}"], "",
+                f"dispatch one worker with {path}; it ends with tidy {slug} --record; then refresh {slug}")
+
+
 def pre_review(slug: str, root: str | None, controller: str | None = None, *,
                review_type: str = "initial", reason: str | None = None,
                decision: str | None = None, record_round: bool = False, withdraw: bool = False) -> int:
@@ -1143,6 +1253,10 @@ def pre_review(slug: str, root: str | None, controller: str | None = None, *,
         return emit(["approval current"], "BLOCKED", [],
                     f"{', '.join(drift)} changed since approval; a round recorded now would settle stale",
                     f"approve {slug} --by <user|orchestrator> --source '<decision that covers the change>', then pre-review")
+    if record_round and review_type == "initial" and tidy_missing(change):
+        return emit(["tidy pass"], "BLOCKED", [],
+                    f"no tidy pass recorded (.specadoc.json review.tidy: required)",
+                    f"tidy {slug}, dispatch one worker with runs/{TIDY_BRIEF}, refresh {slug}, then pre-review")
     checked = binding_check("reviewer", controller) + ["validate pre-review"]
     extras = ["--review-decision", decision] if decision else []
     gate = run_script("validate_change.py", slug, "--phase", "pre-review", "--next-review-type", review_type,
@@ -1247,6 +1361,13 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--withdraw", action="store_true",
                         help="Remove the latest round while it is Pending (before an approval change)")
     review.add_argument("--record-round", action="store_true", help=argparse.SUPPRESS)  # default since 2026-10
+    tidied = steps.add_parser("tidy", help="Tidy pass over Review scope before the first initial review: "
+                                           "write the worker brief, or record its result")
+    tidied.add_argument("change_slug")
+    tidied.add_argument("--record", action="store_true", help="Record the tidy worker's result (its last step)")
+    tidied.add_argument("--summary", help="With --record: fixed N: ...; skipped M: ... and why")
+    tidied.add_argument("--from-agent", help="With --record: the tidy worker's agent id, if known")
+    tidied.add_argument("--skip", metavar="REASON", help="Record that this diff needs no tidy pass, and why")
     brief = steps.add_parser("design-brief", help="Write the design reviewer prompt from the Class inventory")
     brief.add_argument("change_slug")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
@@ -1332,8 +1453,12 @@ def record_session(args: argparse.Namespace) -> None:
         from collect_tokens import remember_session
         # A handoff before the first dispatch closes propose (4.2 counted it, and the
         # whole propose session, as apply).
-        before_apply = args.step == "handoff" and not any((change / "runs").glob("T*-baseline.json"))
-        remember_session(change, "propose" if args.step in PROPOSE_STEPS or before_apply else "apply")
+        dispatched = any((change / "runs").glob("T*-baseline.json"))
+        before_apply = args.step == "handoff" and not dispatched
+        # A re-approval during apply (4.8: Decision risk changed after T1) stays apply; recording it
+        # as propose ended the apply token window there and dropped every later worker and round.
+        propose = args.step in PROPOSE_STEPS and not (args.step == "approve" and dispatched)
+        remember_session(change, "propose" if propose or before_apply else "apply")
     except (OSError, ValueError):
         pass  # bookkeeping never blocks a step
 
@@ -1369,6 +1494,9 @@ def main() -> int:
             return approve(args.change_slug, args.root, args.by, args.source, args.bindings, args.controller_runtime)
         if args.step == "handoff":
             return write_handoff(args.change_slug, args.root, args.file)
+        if args.step == "tidy":
+            return tidy(args.change_slug, args.root, record=args.record, summary=args.summary,
+                        agent=args.from_agent, skip=args.skip)
         if args.step == "wait":
             return wait_report(args.change_slug, args.task, args.root, args.timeout, args.interval)
         if args.step == "status":
