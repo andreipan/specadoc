@@ -131,7 +131,8 @@ unproven requirements; mark them UNVERIFIABLE in the matrix.
 Verdict is FAIL when any BLOCKER or IMPORTANT finding exists.
 
 ## Result JSON
-End the reply with one fenced `json` block matching
+When the prompt is a Specadoc review (a change under the Specadoc artifact root,
+or a `runs/` brief), end the reply with one fenced `json` block matching
 `assets/reviewer-result.schema.json`, so the controller passes your reply
 file to `review-result` unchanged instead of transcribing it:
 
@@ -139,7 +140,8 @@ file to `review-result` unchanged instead of transcribing it:
 {"verdict": "PASS", "findings": [{"severity": "MINOR", "location": "path:line", "summary": "problem and minimal fix"}], "report": "one-paragraph summary"}
 ```
 
-Each finding above appears once in `findings`; use `[]` when there are none.
+Each finding above appears once in `findings` with exactly these keys; use `[]`
+when there are none.
 
 ## Design review before code
 
