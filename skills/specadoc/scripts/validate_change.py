@@ -1300,6 +1300,45 @@ def review_manifest_hash(manifest: dict[str, str]) -> str:
     return "sha256:" + hashlib.sha256(ordered.encode("utf-8")).hexdigest()
 
 
+FINAL_RUN = "final-verification.json"
+
+
+def final_commands(repo_root: Path) -> list[str]:
+    """`.specadoc.json` `verification.final`: the whole suite and gates, run by `finalize --run`."""
+    from specadoc_config import load_config
+    return list((load_config(repo_root).get("verification") or {}).get("final", []))
+
+
+def snapshot_hash(change: Path, repo_root: Path) -> str | None:
+    """The review snapshot hash of the current Review scope content, or None when it cannot be computed."""
+    from review_snapshot import ScopeError, SnapshotError, compute
+    try:
+        return review_manifest_hash(compute(change, repo_root))
+    except (ScopeError, SnapshotError):
+        return None
+
+
+def final_run_problem(change: Path, repo_root: Path, commands: list[str]) -> str | None:
+    """Why the recorded `finalize --run` does not prove the current code, or None when it does
+    (4.10: a controller's path-subset check missed an architecture test of an untouched module)."""
+    path = change / "runs" / FINAL_RUN
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "no `finalize --run` record"
+    except (OSError, ValueError) as exc:
+        return f"unreadable runs/{FINAL_RUN} ({exc})"
+    if not isinstance(record, dict) or record.get("commands") != commands:
+        return "the recorded commands differ from verification.final"
+    if record.get("passed") is not True:
+        failed = [f"`{item.get('command')}` exited {item.get('exit')}" for item in record.get("results", [])
+                  if isinstance(item, dict) and item.get("exit") != 0]
+        return "the recorded run failed: " + (", ".join(failed) or "no passing result")
+    if record.get("snapshot") != snapshot_hash(change, repo_root):
+        return f"Review scope or spec contract changed after the run of {record.get('at', '?')}"
+    return None
+
+
 RECORDED_FINDING = re.compile(r"^- (?P<severity>BLOCKER|IMPORTANT|MINOR) \((?P<round>G\d+)-\d+\):")
 
 
@@ -1610,6 +1649,14 @@ def main() -> int:
             Violation(plan.display, 1, message)
             for message in verify_latest(plan, change, Path.cwd())
         ]
+        try:
+            commands = final_commands(Path.cwd())
+            problem = final_run_problem(change, Path.cwd(), commands) if commands else None
+        except ValueError as exc:
+            problem = str(exc)
+        if problem:
+            violations.append(Violation(plan.display, 1, f"verification.final: {problem}; run "
+                                        f"specadoc_step.py finalize {args.change_slug} --run"))
 
     cross_violations, cross_warnings = cross_change_findings(spec, root, args.change_slug)
     violations += cross_violations

@@ -18,13 +18,16 @@ class EngineeringCompanionsTest(unittest.TestCase):
                 self.assertNotIn("specadoc", text.lower())
 
     def test_tidy_pass_precedes_the_independent_review(self) -> None:
-        # After run 4.8 the cleanup is one pass over Review scope, once the scope is filled.
+        # After run 4.8 the cleanup is one pass over Review scope, once the scope is filled; the whole
+        # suite runs after it, so the recorded run covers the tidied code.
         apply = (REFERENCES / "apply.md").read_text()
-        verification = apply.index("Controller runs the whole suite and the repository gates once")
+        scope = apply.index("`scope <slug>` fills Review scope")
         cleanup = apply.index("`tidy <slug>`")
+        verification = apply.index("the whole suite and\n   gates run once")
         review = apply.index("independent read-only `reviewer`")
-        self.assertLess(verification, cleanup)
-        self.assertLess(cleanup, review)
+        self.assertLess(scope, cleanup)
+        self.assertLess(cleanup, verification)
+        self.assertLess(verification, review)
 
     def test_companions_preserve_role_and_artifact_boundaries(self) -> None:
         companions = (REFERENCES / "interoperability.md").read_text()

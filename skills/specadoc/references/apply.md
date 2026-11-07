@@ -33,12 +33,11 @@ Load only for `specadoc apply <slug>`.
    start; record the run with `external-result <slug> T<n> --outcome PASS|FAIL
    --evidence '<run>'` (FAIL returns it to work; correct a recorded result with
    `--supersede '<why>'`, never edit `runs/*.json`).
-6. Controller runs the whole suite and the repository gates once (or the
-   `verification.final` commands of `.specadoc.json`), never a path subset
-   (4.10: untouched-module architecture tests failed a step later);
-   `finalize <slug> --observed '<run>'` records it (and Browser state for UI).
-   `scope <slug>` fills Review scope from the diff since `--base` (HEAD).
-   Then one worker runs `tidy <slug>`'s brief, then `refresh`.
+6. `scope <slug>` fills Review scope from the diff since `--base` (HEAD); one
+   worker runs `tidy <slug>`'s brief, then `refresh`. Then the whole suite and
+   gates run once, never a path subset (4.10): `finalize <slug> --run` runs
+   `verification.final` of `.specadoc.json`; without it run them yourself and
+   pass `--observed '<run>'` (and Browser state for UI).
 7. On a stable diff, `pre-review <slug>` records the round; then run one
    independent read-only `reviewer`, a fresh agent. On return, first run
    `review-result <slug> --from-agent <id>` (native) or `--result-file <reply>`
@@ -54,7 +53,7 @@ Load only for `specadoc apply <slug>`.
 9. On PASS, update the capability specs spec.md declares (`status` names a
    missing one), the Archive summary (name post-review MINOR fixes) and residual
    risks, collect tokens after all rounds, then `finalize <slug>` (ticks the
-   proven boxes, names the rest; no scripts of your own over plan.md) and
+   proven boxes; `--run` again if code changed since; no own scripts) and
    `validate_change.py <slug> --phase final`. Archive only when asked.
 
 ### Exceptions

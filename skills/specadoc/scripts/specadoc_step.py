@@ -41,8 +41,10 @@ Steps:
 - `review-result <slug> --from-agent <id>|--result-file <reply>` — settle the
   pending round; a native reviewer's reply is saved verbatim under `runs/`, and
   a stale snapshot is reported with its cause.
-- `status <slug>` — compact task states, latest review and the next allowed step;
-  read it instead of plan.md when resuming.
+- `status <slug> [--json]` — compact task states, latest review and the next allowed
+  step; read it instead of plan.md when resuming. `--json` gives a driver `next.kind`.
+- `scope <slug>` / `finalize <slug> [--run]` — fill Review scope from the diff; tick
+  the proven Final verification boxes; `--run` executes `verification.final`.
 - `handoff <slug> --file <path|->` — overwrite `runs/handoff.md` (at most 4 KiB);
   session notes never accumulate in plan.md.
 - `wait <slug> T<n> [--timeout s]` — wait for a new task report of any status
@@ -829,19 +831,24 @@ def write_handoff(slug: str, root: str | None, source: str) -> int:
 
 
 def status(slug: str, root: str | None, controller: str | None = None,
-           context_tokens: int | None = None) -> int:
-    """Compact read-only state for a controller or orchestrator; replaces re-reading plan.md."""
-    from validate_change import TASK_CHECKBOX, evidence_staleness, latest_review_round
+           context_tokens: int | None = None, *, as_json: bool = False) -> int:
+    """Compact read-only state for a controller or orchestrator; replaces re-reading plan.md.
+    `as_json` prints one object with the same facts and a `next.kind` a driver script can branch on."""
+    from validate_change import TASK_CHECKBOX, evidence_staleness, final_commands, final_run_problem, latest_review_round
+
+    def done(data: dict, lines: list[str]) -> int:
+        print(json.dumps({"change": slug, **data}, ensure_ascii=False) if as_json else "\n".join(lines))
+        return 0
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
     record = Path(resolve_root(root).path) / "archive" / slug / "record.md"
     if not plan_path.is_file() and record.is_file():
-        print(f"change: {slug}; result: ARCHIVED ({record})\nnext: none for this change")
-        return 0
+        return done({"result": "archived", "record": str(record), "next": {"kind": "none", "text": "none"}},
+                    [f"change: {slug}; result: ARCHIVED ({record})", "next: none for this change"])
     if not plan_path.is_file():
-        print(f"change: {slug}; result: NOT STARTED ({plan_path} does not exist)\n"
-              f"next: explore, then init_change.py {slug} --risk <low|medium|high> and write spec.md and plan.md")
-        return 0
+        text = f"explore, then init_change.py {slug} --risk <low|medium|high> and write spec.md and plan.md"
+        return done({"result": "not-started", "next": {"kind": "explore", "text": text}},
+                    [f"change: {slug}; result: NOT STARTED ({plan_path} does not exist)", f"next: {text}"])
     plan = Document(plan_path, str(plan_path))
     approval = approval_error(plan)
     import design_gate
@@ -850,12 +857,13 @@ def status(slug: str, root: str | None, controller: str | None = None,
     handoff = change / "runs" / "handoff.md"
     drift = approval_drift(change) if not approval else []
     approved = "approved" + (f"; changed since approval: {', '.join(drift)} (re-approve)" if drift else "")
+    approval_changed = list(drift)
     lines = [f"change: {slug}; plan.md {plan_path.stat().st_size} bytes; approval: {approval or approved}",
              f"design: {design}",
              f"handoff: {handoff} ({handoff.stat().st_size} bytes)" if handoff.is_file() else "handoff: none"]
     from validate_change import plan_size_warnings
     lines += [f"size: {warning}" for warning in plan_size_warnings(plan)]
-    working, stale, waiting, unstarted = [], [], [], []
+    working, stale, waiting, unstarted, task_rows = [], [], [], [], []
     for task, start, end in plan.blocks("Tasks", "T"):
         fields = task_fields(plan, start, end)
         owner = fields.get("Owner", "-").strip().lower() or "-"
@@ -864,6 +872,7 @@ def status(slug: str, root: str | None, controller: str | None = None,
             state = json.loads(state_path.read_text(encoding="utf-8")).get("state", "unknown")
         except (OSError, ValueError, AttributeError):
             state = None
+        stale_reason = None
         if state is None:
             marks = [m["mark"] for line in plan.lines[start:end] if (m := TASK_CHECKBOX.match(line))]
             state = "complete (no task state)" if marks and " " not in marks else "not started"
@@ -873,12 +882,14 @@ def status(slug: str, root: str | None, controller: str | None = None,
             fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
             if fresh is False:
                 stale.append(task)
+                stale_reason = reason
                 state += f", stale: {reason}"
             if state.startswith("external-pending"):
                 waiting.append(task)
         else:
             working.append(task)
         lines.append(f"  {task} {owner} {state}")
+        task_rows.append({"id": task, "owner": owner, "state": state.split(",")[0], "stale": stale_reason})
     if tidy_state := tidy_status(change):
         lines.append(f"tidy: {tidy_state}")
     latest = latest_review_round(plan)
@@ -886,46 +897,73 @@ def status(slug: str, root: str | None, controller: str | None = None,
     lines.append(f"review: {latest[0]} {outcome or 'missing'} ({latest[1].get('Type', '-').strip()}"
                  f"{', stale' if round_is_stale(latest[1]) else ''})" if latest else "review: none")
     pending = bool(latest) and outcome.upper() not in ("PASS", "FAIL")
+    final = final_commands(Path.cwd())
+    final_problem = final_run_problem(change, Path.cwd(), final) if final else None
+    if final:
+        lines.append(f"final run: {final_problem or 'PASS, covers the current Review scope'}")
     stale_round = bool(latest) and round_is_stale(latest[1])
     if design_gate.rows(plan) and design_gate.review_error(plan):
+        next_kind = "design-review"
         next_step = f"design review: specadoc_step.py design-brief {slug}, reviewer, design-review"
     elif approval:
+        next_kind = "approval"
         next_step = "obtain plan approval"
     elif drift and pending:
+        next_kind = "withdraw-and-reapprove"
         next_step = (f"{', '.join(drift)} changed while {latest[0]} is pending: pre-review {slug} --withdraw, "
                      "then approve, then pre-review again")
     elif drift:
+        next_kind = "re-approve"
         next_step = f"re-approve ({', '.join(drift)} changed): approve {slug} --by <user|orchestrator> --source '<decision>'"
     elif working:
+        next_kind = "finish-task"
         next_step = f"finish {working[0]}: report, then accept"
     elif stale:
+        next_kind = "refresh"
         next_step = f"specadoc_step.py refresh {slug} ({', '.join(stale)})"
     elif unstarted:
         errors = readiness(plan, unstarted[0])
+        next_kind = "dispatch" if not errors else "task-not-ready"
         next_step = (f"dispatch {unstarted[0]}" if not errors
                      else f"{unstarted[0]} not ready: {'; '.join(errors)}")
     elif stale_round:
         cause = latest[1].get("Stale reason", "").split(";")[0].strip()
         kind = ("re-review" if "content changed" in cause
                 else latest[1].get("Type", "re-review").strip() or "re-review")
+        next_kind = "stale-round"
         next_step = f"pre-review --review-type {kind} ({latest[0]} stale: {cause}; it uses no review allowance)"
     elif not latest and tidy_missing(change):
+        next_kind = "scope-and-tidy"
         next_step = (f"scope {slug} (Review scope from the diff), then tidy {slug}: one worker pass over it "
                      f"(runs/{TIDY_BRIEF}), then refresh {slug}, then pre-review")
+    elif not latest and final_problem:
+        next_kind = "final-run"
+        next_step = (f"finalize {slug} --run: verification.final once before the first review ({final_problem}), "
+                     "then pre-review")
     elif not latest or outcome.upper() == "FAIL":
+        next_kind = "pre-review"
         next_step = "pre-review" + (" --review-type re-review after fixing the findings" if latest else "")
     elif outcome.upper() not in ("PASS", "FAIL"):
+        next_kind = "reviewer"
         next_step = f"run the reviewer for {latest[0]}, then review-result"
     elif drift := review_drift(plan, change, latest):
+        next_kind = "re-review"
         next_step = f"pre-review --review-type re-review ({drift})"
     elif capability := capability_gap(change, resolve_root(root).path, slug):
+        next_kind = "capability-specs"
         next_step = f"apply step 9: update capability specs before the final gate ({capability})"
     elif waiting:
+        next_kind = "external-result"
         next_step = f"external-result {waiting[0]} after its external run"
+    elif final_problem:
+        next_kind = "final-run"
+        next_step = f"finalize {slug} --run ({final_problem}), then validate_change.py {slug} --phase final"
     else:
+        next_kind = "final-gate"
         next_step = f"validate_change.py {slug} --phase final"
     lines.append(f"next: {next_step}")
     context_tokens, context_source = observed_context(controller, context_tokens)
+    advice = ""
     if context_tokens is None:
         lines.append("context: not reported (pass --context-tokens from the host's observed count)")
     else:
@@ -933,7 +971,6 @@ def status(slug: str, root: str | None, controller: str | None = None,
         apply_start = next_step.startswith("dispatch ") and len(unstarted) == len(plan.blocks("Tasks", "T"))
         # Locally ready: review passed and only the final gate or an external run remains.
         locally_ready = bool(latest) and outcome.upper() == "PASS" and not (working or stale or unstarted)
-        advice = ""
         # A stale round re-run on an unchanged diff needs no fixes (~5–6k), not a fresh session.
         rerun = stale_round and "content changed" not in latest[1].get("Stale reason", "")
         if context_tokens >= PHASE_BOUNDARY_CONTEXT and apply_start:
@@ -946,8 +983,17 @@ def status(slug: str, root: str | None, controller: str | None = None,
             advice = ("; phase boundary: locally ready; continue for the final gate, but start a later fix "
                       f"in a fresh session (at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
         lines.append(f"context: {context_tokens} tokens ({context_source}){advice}")
-    print("\n".join(lines))
-    return 0
+    return done({
+        "result": "active", "plan_bytes": plan_path.stat().st_size,
+        "approval": {"ok": not approval and not approval_changed, "error": approval or None, "changed": approval_changed},
+        "design": design, "handoff": str(handoff) if handoff.is_file() else None,
+        "size_warnings": plan_size_warnings(plan), "tasks": task_rows, "tidy": tidy_status(change) or None,
+        "review": ({"round": latest[0], "outcome": outcome or None, "type": latest[1].get("Type", "-").strip(),
+                    "stale": round_is_stale(latest[1])} if latest else None),
+        "final_run": ({"commands": final, "ok": not final_problem, "problem": final_problem} if final else None),
+        "next": {"kind": next_kind, "text": next_step},
+        "context": {"tokens": context_tokens, "source": context_source, "advice": advice.lstrip("; ") or None},
+    }, lines)
 
 
 APPROVAL_ARTIFACTS = ("spec.md", "design.md")
@@ -1358,15 +1404,63 @@ FINAL_PROOFS = (
 )
 
 
-def finalize(slug: str, root: str | None, *, observed: str | None = None, requirements: str | None = None) -> int:
+def run_final(slug: str, change: Path, timeout: float) -> tuple[str | None, int | None]:
+    """Run `.specadoc.json` `verification.final` once and record it in runs/final-verification.json with
+    the Review scope snapshot it proves. Returns (observed text, None) or (None, emitted exit code)."""
+    import time
+    from validate_change import FINAL_RUN, final_commands, snapshot_hash
+    try:
+        commands = final_commands(Path.cwd())
+    except ValueError as exc:
+        return None, emit(["verification.final"], "BLOCKED", [], str(exc), "fix .specadoc.json")
+    if not commands:
+        return None, emit(["verification.final"], "BLOCKED", [], ".specadoc.json sets no verification.final",
+                          "run the whole suite and gates yourself, then finalize --observed '<command, result>'")
+    snapshot = snapshot_hash(change, Path.cwd())
+    if snapshot is None:
+        return None, emit(["review scope"], "BLOCKED", [], "Review scope cannot produce a snapshot",
+                          f"specadoc_step.py scope {slug}, then finalize --run")
+    results, logs = [], []
+    for command in commands:
+        started = time.monotonic()
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
+            code, output = result.returncode, result.stdout + result.stderr
+        except subprocess.TimeoutExpired:
+            code, output = None, f"timed out after {timeout:g}s"
+        results.append({"command": command, "exit": code, "seconds": round(time.monotonic() - started)})
+        logs.append(f"$ {command}\n{output}")
+    runs = ensure_runs(change / "runs")
+    (runs / "final-verification.log").write_text("\n".join(logs), encoding="utf-8")
+    passed = all(item["exit"] == 0 for item in results)
+    record = {"at": timestamp(), "commands": commands, "results": results, "passed": passed, "snapshot": snapshot}
+    (runs / FINAL_RUN).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    summary = "; ".join(f"`{item['command']}` exit {item['exit']} ({item['seconds']} s)" for item in results)
+    if not passed:
+        failed = next(i for i, item in enumerate(results) if item["exit"] != 0)
+        return None, emit(commands, "FAIL", [f"runs/{FINAL_RUN}"], summary,
+                          "fix the failure (executable fixes go to a worker), then finalize --run again",
+                          tail(logs[failed]))
+    return f"{summary} (finalize --run, runs/final-verification.log)", None
+
+
+def finalize(slug: str, root: str | None, *, observed: str | None = None, requirements: str | None = None,
+             run: bool = False, timeout: float = 1800) -> int:
     """Tick the `## Final verification` boxes the recorded state proves, drop the Round log template
     example, and name what the controller still owns (4.9–4.11: three apply controllers edited the
-    checklist, the matrix and the template placeholders with python heredocs)."""
+    checklist, the matrix and the template placeholders with python heredocs). `--run` executes
+    `verification.final` itself, so the whole-suite proof is a record, not a claim."""
     from validate_change import CHECKBOX, RECORDED_FINDING, evidence_staleness
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
     plan = Document(plan_path, str(plan_path))
     checked: list[str] = []
+    if run:
+        ran, failure = run_final(slug, change, timeout)
+        if failure is not None:
+            return failure
+        observed = f"{ran}; {observed}" if observed else ran
+        checked.append("verification.final PASS")
     lines = list(plan.lines)
     # 1. The Round log guidance and its indented example are template text once a real round exists.
     if "Review result" in plan.sections:
@@ -1566,6 +1660,10 @@ def build_parser() -> argparse.ArgumentParser:
                             "build/lint boxes)")
     final.add_argument("--requirements", metavar="WHY",
                        help="Set every Pending matrix Status to PASS, with the evidence in one line")
+    final.add_argument("--run", action="store_true",
+                       help="Run .specadoc.json verification.final once, record it with the Review scope snapshot "
+                            "(validate --phase final requires a fresh passing record when the key is set)")
+    final.add_argument("--timeout", type=float, default=1800, help="Seconds per verification.final command")
     waited = steps.add_parser("wait", help="Wait for a new task report of any status (a resumed worker)")
     waited.add_argument("change_slug")
     waited.add_argument("task")
@@ -1608,6 +1706,8 @@ def build_parser() -> argparse.ArgumentParser:
     state.add_argument("change_slug")
     state.add_argument("--context-tokens", type=int, help="Observed current controller input context")
     state.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
+    state.add_argument("--json", action="store_true",
+                       help="One JSON object (stable keys, next.kind) for a driver script instead of text")
     reported = steps.add_parser("report", help="Write the task report with its schema-valid result JSON")
     reported.add_argument("change_slug")
     reported.add_argument("task", help="Task id such as T3")
@@ -1723,9 +1823,11 @@ def main() -> int:
         if args.step == "scope":
             return scope(args.change_slug, args.root, base=args.base, dry_run=args.dry_run)
         if args.step == "finalize":
-            return finalize(args.change_slug, args.root, observed=args.observed, requirements=args.requirements)
+            return finalize(args.change_slug, args.root, observed=args.observed, requirements=args.requirements,
+                            run=args.run, timeout=args.timeout)
         if args.step == "status":
-            return status(args.change_slug, args.root, args.controller_runtime, args.context_tokens)
+            return status(args.change_slug, args.root, args.controller_runtime, args.context_tokens,
+                          as_json=args.json)
         if args.step == "report":
             return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
                                 args.green, args.concern, args.body_file)

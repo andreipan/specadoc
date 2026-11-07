@@ -54,8 +54,11 @@ integration command in Verification was accepted with a skip override, and
 pre-review found the environment drift later).
 
 The apply controller runs the whole suite and the repository gates once before
-the first review (`apply.md` step 6). A project whose whole suite is too slow or
-needs a fixed set of commands names them; `finalize --observed` records the run:
+the first review (`apply.md` step 6). A project names those commands here;
+`finalize --run` then executes them and records exit codes with the Review scope
+snapshot, and `validate --phase final` refuses a missing, failed or stale record
+(code changed after the run). Without the key, `finalize --observed` records a
+run the controller made:
 
 ```json
 {"version": 1, "verification": {"final": ["<suite command>", "<gates command>"]}}
