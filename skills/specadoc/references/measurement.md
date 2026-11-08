@@ -57,9 +57,9 @@ Collect every execution of a delivery change, controller included. A child-only
 sum is incomplete evidence.
 
 ```bash
-python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|light|propose|apply|archive> --harness claude   <session.jsonl|project-dir>...
-python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|light|propose|apply|archive> --harness codex    <rollout.jsonl|dir>...
-python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|light|propose|apply|archive> --harness opencode --directory <repo path>
+python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|light|propose|apply|archive> --harness claude   <session.jsonl|project-dir>... --append
+python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|light|propose|apply|archive> --harness codex    <rollout.jsonl|dir>... --append
+python3 <skill-root>/scripts/collect_tokens.py <slug> --mode <explore|light|propose|apply|archive> --harness opencode --directory <repo path> --append
 ```
 
 Each backend reads what its harness records:

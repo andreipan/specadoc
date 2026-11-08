@@ -254,10 +254,12 @@ tree while a worker runs.
 - `BLOCKED` — the controller makes the missing decision (or asks the user),
   updates the plan, and only then dispatches again; see Escalation.
 
-Dispatch a scout, worker or reviewer in the foreground when the next step needs
-its result: Claude Code's Agent tool starts sub-agents in the background by
-default, so pass `run_in_background: false` (4.10: a background scout and
-re-review cost a 120 s timeout, a TaskStop and two sleep polls). A resumed
+Dispatch every scout, worker, tidy worker and reviewer in the foreground, never
+with `run_in_background: true`: Claude Code's Agent tool starts sub-agents in the
+background by default, so pass `run_in_background: false`. Background work led to
+reading the code yourself and to polls (4.10: a 120 s timeout, a TaskStop, two
+sleep polls; 5.1: a background scout, `select` polls and propose at 169k; a
+background tidy and a `sleep 20` loop). A resumed
 task worker (a follow-up message to a finished one) answers asynchronously:
 right after the message run `specadoc_step.py wait <slug> T<n>`, which returns on
 a new report of any status or after its timeout; it knows task reports only,

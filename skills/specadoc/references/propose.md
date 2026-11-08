@@ -2,9 +2,9 @@
 
 Load this reference only for `specadoc propose`.
 
-1. Reuse accepted explore evidence; do not repeat reconnaissance. A scout reads
-   the code and returns a map; the controller opens only the files a decision
-   turns on (4.9–4.11: self-reading controllers ended propose at 144–188k).
+1. Reuse accepted explore evidence; do not repeat reconnaissance. A foreground
+   scout maps the local code to change and any external contract; open only
+   the files a decision turns on (4.9–5.1: self-reading reached 144–188k).
 2. Initialize `docs/specadoc/<slug>/spec.md` and `plan.md` with
    `scripts/init_change.py` from the repository root. Add design/research only
    when the artifact rules require them.

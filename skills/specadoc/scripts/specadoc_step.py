@@ -714,6 +714,7 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
             # 4.6: a controller MINOR fix in production code introduced an IMPORTANT finding.
             checked.append("WARN executable controller edit: " + ", ".join(executable)
                            + "; prefer a worker (dispatch T<n> --reopen '<finding>') for production code")
+    unsettled: list[str] = []
     for task in dependency_order(Document(plan_path, str(plan_path))):
         state_path = change / "runs" / f"{task}-baseline.json"
         try:
@@ -721,6 +722,10 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
         except (OSError, ValueError):
             continue
         if not isinstance(record, dict) or record.get("state") not in SETTLED_STATES:
+            # A report without acceptance: the worker finished or amend reset an accepted task. A task
+            # still in its worker's hands has no report and is not listed.
+            if isinstance(record, dict) and record.get("state") and (change / "runs" / f"{task}-report.md").is_file():
+                unsettled.append(f"{task} ({record['state']})")
             continue
         _, _, fields = task_block(Document(plan_path, str(plan_path)), task)
         fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
@@ -743,7 +748,8 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
                           and (value := line.removeprefix("changed files: ").strip()) != "-"), "")
             found = [files] if files else []
             hint = (f"edits outside {task}'s scope: rerun refresh --controller-path <path> --reason '<finding>' for "
-                    "controller edits" if "outside the task scope" in why else
+                    "controller or tidy edits (tidy --record records its own); never amend --allow for them"
+                    if "outside the task scope" in why else
                     f"fix {task} (dispatch {task} --reopen for code changes)")
             failures.append((task, code, f"{why or 'not re-accepted'} ({reason})"
                              + (f": {found[0]}" if found else "") + f"; {hint}"))
@@ -756,6 +762,11 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
         return emit(checked + [f"{task}: {detail}" for task, _, detail in failures], status, [],
                     f"{len(failures)} task(s) not re-accepted: {', '.join(task for task, _, _ in failures)}",
                     "resolve each listed task as its line says, then rerun refresh")
+    if unsettled:
+        # 5.1: amend reset T2–T4 to dispatched; refresh said "continue", the whole suite ran (3 min) and
+        # pre-review then refused the unaccepted tasks.
+        return emit(checked + [f"not accepted: {', '.join(unsettled)}"], "CHECKED", [], "",
+                    f"accept {slug} <task> for each task listed, then refresh again")
     if not checked:
         return emit(["evidence staleness"], "PASS", [], "", "no stale task evidence; continue")
     return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
@@ -1250,10 +1261,19 @@ def tidy(slug: str, root: str | None, *, record: bool = False, summary: str | No
             raise ValueError("--record needs --summary 'fixed N: ...; skipped M: ... and why'"
                              if record else "--skip needs the reason the diff needs no tidy pass")
         ensure_runs(target.parent)
+        changed = tidy_changes(change) if record else []
+        checked = ["tidy " + ("skip" if skip is not None else "record")]
+        if changed:
+            # 5.1: tidy moved a helper into T1's base test class and edited T2's test; refresh then flagged
+            # T2–T4 as out of scope and the controller ran amend --allow five times. Recorded tidy edits
+            # are no task's scope violation, so refresh re-accepts the tasks unchanged.
+            record_controller_changes(change, artifact_root, changed, f"tidy: {text}")
+            checked.append("tidy edits recorded for every task's scope check: " + ", ".join(changed))
         save(target, {"at": timestamp(), "outcome": "skipped" if skip is not None else "recorded", "summary": text,
-                      "agent": agent, "scope": present})
-        return emit(["tidy " + ("skip" if skip is not None else "record")], "PASS", [f"runs/{TIDY_FILE}"], "",
-                    f"refresh {slug} (tidy edits make task evidence stale), then pre-review {slug}")
+                      "agent": agent, "scope": present, "changed": changed})
+        return emit(checked, "PASS", [f"runs/{TIDY_FILE}"], "",
+                    f"refresh {slug} (re-accepts tasks whose evidence the tidy edits made stale), "
+                    f"then finalize {slug} --run when verification.final is set, then pre-review {slug}")
     if not TIDY_SKILL.is_file():
         return emit(["tidy skill"], "BLOCKED", [], f"tidy skill not installed at {TIDY_SKILL}",
                     f"install the Specadoc tidy companion, or tidy {slug} --skip '<reason>'")
@@ -1292,8 +1312,22 @@ def tidy(slug: str, root: str | None, *, record: bool = False, summary: str | No
     path = change / "runs" / TIDY_BRIEF
     ensure_runs(path.parent)
     path.write_text(brief, encoding="utf-8")
+    save(change / "runs" / TIDY_BASELINE, {"at": timestamp(), "digests": {item: digest(Path(item)) for item in present}})
     return emit(["review scope", "tidy skill", "brief"], "PASS", [f"runs/{TIDY_BRIEF}"], "",
                 f"dispatch one worker with {path}; it ends with tidy {slug} --record; then refresh {slug}")
+
+
+TIDY_BASELINE = "tidy-baseline.json"
+
+
+def tidy_changes(change: Path) -> list[str]:
+    """Review scope files the tidy pass changed or removed since its brief was written."""
+    try:
+        before = json.loads((change / "runs" / TIDY_BASELINE).read_text(encoding="utf-8")).get("digests", {})
+    except (OSError, ValueError, AttributeError):
+        return []
+    return sorted(path for path, value in before.items()
+                  if not Path(path).is_file() or digest(Path(path)) != value)
 
 
 def pre_review(slug: str, root: str | None, controller: str | None = None, *,
@@ -1351,7 +1385,11 @@ def git_lines(*args: str) -> list[str]:
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
-def scope(slug: str, root: str | None, *, base: str = "HEAD", dry_run: bool = False) -> int:
+OS_JUNK = {".DS_Store", "Thumbs.db", "desktop.ini"}
+
+
+def scope(slug: str, root: str | None, *, base: str = "HEAD", dry_run: bool = False,
+          exclude: list[str] | None = None) -> int:
     """Fill `## Review scope` from the executable diff: tracked changes since `base` plus untracked
     files, relative to the current directory, without Specadoc artifacts (4.9–4.11: every apply
     controller wrote the section by hand, and tidy refused the template paragraph left in it)."""
@@ -1377,12 +1415,20 @@ def scope(slug: str, root: str | None, *, base: str = "HEAD", dry_run: bool = Fa
 
     def artifact(path: str) -> bool:
         return (cwd / path).resolve().is_relative_to(artifact_root)
+    import fnmatch
+
+    def unwanted(path: str) -> bool:
+        # 5.1: an untracked .DS_Store entered Review scope and was removed with sed over plan.md.
+        return Path(path).name in OS_JUNK or any(fnmatch.fnmatch(path, pattern) for pattern in exclude or [])
     skipped = sorted(path for path in present | deleted if artifact(path))
-    present = {path for path in present if not artifact(path) and (cwd / path).is_file()}
-    deleted = {path for path in deleted if not artifact(path) and not (cwd / path).exists()}
+    dropped = sorted(path for path in present | deleted if not artifact(path) and unwanted(path))
+    present = {path for path in present if not artifact(path) and not unwanted(path) and (cwd / path).is_file()}
+    deleted = {path for path in deleted if not artifact(path) and not unwanted(path) and not (cwd / path).exists()}
     checked = [f"git diff vs {base} + untracked", f"{len(present)} present, {len(deleted)} deleted"]
     if skipped:
         checked.append(f"artifacts left out: {', '.join(skipped)}")
+    if dropped:
+        checked.append(f"excluded: {', '.join(dropped)}")
     if not present and not deleted:
         return emit(checked, "BLOCKED", [], f"no executable diff against {base}",
                     "pass --base <rev> when the step's changes are already committed")
@@ -1404,6 +1450,30 @@ FINAL_PROOFS = (
 )
 
 
+def unaccepted_tasks(plan: Document, change: Path) -> list[str]:
+    """Tasks whose recorded state does not prove them: not complete, not accepted, or stale."""
+    from validate_change import evidence_staleness
+    unproven = []
+    for task, t_start, t_end in plan.blocks("Tasks", "T"):
+        fields = task_fields(plan, t_start, t_end)
+        try:
+            state = json.loads((change / "runs" / f"{task}-baseline.json").read_text(encoding="utf-8")).get("state")
+        except (OSError, ValueError, AttributeError):
+            state = None
+        if state is None:
+            marks = [m["mark"] for line in plan.lines[t_start:t_end] if (m := TASK_CHECKBOX.match(line))]
+            if not marks or " " in marks:
+                unproven.append(f"{task} not complete")
+            continue
+        if state != "accepted":
+            unproven.append(f"{task} {state}")
+            continue
+        fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
+        if fresh is False:
+            unproven.append(f"{task} stale ({reason})")
+    return unproven
+
+
 def run_final(slug: str, change: Path, timeout: float) -> tuple[str | None, int | None]:
     """Run `.specadoc.json` `verification.final` once and record it in runs/final-verification.json with
     the Review scope snapshot it proves. Returns (observed text, None) or (None, emitted exit code)."""
@@ -1416,6 +1486,11 @@ def run_final(slug: str, change: Path, timeout: float) -> tuple[str | None, int 
     if not commands:
         return None, emit(["verification.final"], "BLOCKED", [], ".specadoc.json sets no verification.final",
                           "run the whole suite and gates yourself, then finalize --observed '<command, result>'")
+    plan_path = change / "plan.md"
+    if unproven := unaccepted_tasks(Document(plan_path, str(plan_path)), change):
+        # 5.1: the whole suite ran (3 min) while three tasks waited for re-acceptance after amend.
+        return None, emit(["task states"], "BLOCKED", [], "the whole suite runs once over accepted code; "
+                          + "; ".join(unproven), f"accept or refresh {slug} first, then finalize --run")
     snapshot = snapshot_hash(change, Path.cwd())
     if snapshot is None:
         return None, emit(["review scope"], "BLOCKED", [], "Review scope cannot produce a snapshot",
@@ -1450,7 +1525,7 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
     example, and name what the controller still owns (4.9–4.11: three apply controllers edited the
     checklist, the matrix and the template placeholders with python heredocs). `--run` executes
     `verification.final` itself, so the whole-suite proof is a record, not a claim."""
-    from validate_change import CHECKBOX, RECORDED_FINDING, evidence_staleness
+    from validate_change import CHECKBOX, RECORDED_FINDING
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
     plan = Document(plan_path, str(plan_path))
@@ -1482,25 +1557,7 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
     plan = Document(plan_path, str(plan_path), text="\n".join(lines))
     # 2. Proofs from the recorded state.
     why: dict[str, str] = {}
-    tasks = plan.blocks("Tasks", "T")
-    unproven = []
-    for task, t_start, t_end in tasks:
-        fields = task_fields(plan, t_start, t_end)
-        try:
-            state = json.loads((change / "runs" / f"{task}-baseline.json").read_text(encoding="utf-8")).get("state")
-        except (OSError, ValueError, AttributeError):
-            state = None
-        if state is None:
-            marks = [m["mark"] for line in plan.lines[t_start:t_end] if (m := TASK_CHECKBOX.match(line))]
-            if not marks or " " in marks:
-                unproven.append(f"{task} not complete")
-            continue
-        if state != "accepted":
-            unproven.append(f"{task} {state}")
-            continue
-        fresh, reason = evidence_staleness(change / "runs", task, fields.get("Files", ""))
-        if fresh is False:
-            unproven.append(f"{task} stale ({reason})")
+    unproven = unaccepted_tasks(plan, change)
     proofs = {"tasks": not unproven}
     if unproven:
         why["tasks"] = "; ".join(unproven)
@@ -1575,6 +1632,10 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
             insert -= 1
         lines[insert:insert] = ["", f"Observed ({timestamp()}): {text}"]
         checked.append("observed run recorded")
+    filled, pending = fill_completion(lines, plan_path, change, slug)
+    if filled:
+        checked.append("Completion evidence filled: " + ", ".join(filled))
+    left += [f"Completion evidence {label}" for label in pending]
     plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
     if ticked:
         checked.append("ticked: " + ", ".join(ticked))
@@ -1582,12 +1643,75 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
         checked.append("left to the controller: " + "; ".join(left))
     if left:
         return emit(checked, "CHECKED", ["plan.md"], "",
-                    f"tick the remaining boxes by evidence (or rerun finalize with --observed/--requirements), "
+                    f"resolve what is left (boxes by evidence, --observed/--requirements, collect_tokens --append), "
                     f"then validate_change.py {slug} --phase final")
     return emit(checked, "PASS", ["plan.md"], "", f"validate_change.py {slug} --phase final")
 
 
 PENDING_MATRIX = re.compile(r"^\s*(Pending|TBD)\b", re.I)
+COMPLETION_LABELS = ("Commands:", "Requirement mapping:", "Execution tokens:", "Review rounds:")
+PENDING_EVIDENCE = re.compile(r"^(?:Pending|TBD|R\d+\s*->\s*Pending|<[^>\n]+>)$", re.I)
+ROUND_FIELD = re.compile(r"^- \*\*(?P<key>[^*]+):\*\*\s*(?P<value>.*)$")
+
+
+def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str) -> tuple[list[str], list[str]]:
+    """Fill the still-Pending blocks of `## Completion evidence` from recorded state, in place: Commands from
+    the `finalize --run` record (else the Observed line), Requirement mapping from the matrix, Review
+    rounds from the G blocks. Execution tokens stay with `collect_tokens.py --append`; written content
+    stays (4.9–5.1: every apply controller filled this section with a python heredoc)."""
+    plan = Document(plan_path, str(plan_path), text="\n".join(lines))
+    if "Completion evidence" not in plan.sections:
+        return [], []
+    start, end = plan.sections["Completion evidence"]
+    content: dict[str, list[str]] = {}
+    try:
+        record = json.loads((change / "runs" / "final-verification.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = None
+    if isinstance(record, dict) and record.get("passed"):
+        content["Commands:"] = [f"{item['command']}: exit {item['exit']} ({item['seconds']} s), finalize --run "
+                                f"{record.get('at', '')}" for item in record.get("results", [])]
+    elif "Final verification" in plan.sections:
+        observed = [line.strip() for _, line in plan.body("Final verification") if line.startswith("Observed (")]
+        if observed:
+            content["Commands:"] = [observed[-1]]
+    rows = [cells for _, cells in plan.rows("Requirement-to-check matrix") if cells]
+    if rows and not any(PENDING_MATRIX.match(cells[-1]) for cells in rows):
+        content["Requirement mapping:"] = [f"{cells[0]} -> {' / '.join(cells[1:-1])}: {cells[-1]}" for cells in rows]
+    rounds = []
+    for identifier, r_start, r_end in plan.blocks("Review result", "G"):
+        fields = {m["key"].strip(): m["value"].strip() for line in plan.lines[r_start:r_end]
+                  if (m := ROUND_FIELD.match(line.strip()))}
+        found = sum(1 for line in plan.lines[r_start:r_end] if line.strip().startswith(("- BLOCKER (", "- IMPORTANT (",
+                                                                                        "- MINOR (")))
+        rounds.append(f"{identifier} {fields.get('Type', '?')}: {fields.get('Outcome', '?')}"
+                      + (f", {found} finding(s)" if found else ""))
+    if rounds:
+        content["Review rounds:"] = rounds
+    filled, pending = [], []
+    i = start + 1
+    while i < end:
+        label = lines[i].strip()
+        if label not in COMPLETION_LABELS:
+            i += 1
+            continue
+        j = i + 1
+        while j < end and lines[j].strip() and not lines[j].strip().startswith("```") \
+                and lines[j].strip() not in COMPLETION_LABELS:
+            j += 1
+        block = [line.strip() for line in lines[i + 1:j]]
+        if block and all(PENDING_EVIDENCE.match(line) for line in block):
+            if label in content:
+                lines[i + 1:j] = content[label]
+                end += len(content[label]) - (j - i - 1)
+                j = i + 1 + len(content[label])
+                filled.append(label.rstrip(":"))
+            elif label == "Execution tokens:":
+                pending.append(f"Execution tokens (collect_tokens.py {slug} --mode <mode> --harness <h> --append)")
+            else:
+                pending.append(label.rstrip(":") + " (no recorded source yet)")
+        i = j
+    return filled, pending
 
 
 def wait_report(slug: str, task: str, root: str | None, timeout: float, interval: float = 5.0) -> int:
@@ -1652,6 +1776,8 @@ def build_parser() -> argparse.ArgumentParser:
     scoped.add_argument("change_slug")
     scoped.add_argument("--base", default="HEAD", help="Revision the step's diff is measured against (default HEAD)")
     scoped.add_argument("--dry-run", action="store_true", help="Print the bullets without writing plan.md")
+    scoped.add_argument("--exclude", action="append", default=[], metavar="PATH",
+                        help="Leave out a path or glob that is not part of the change (OS files are always left out)")
     final = steps.add_parser("finalize", help="Tick the Final verification boxes the recorded state proves, drop the "
                                               "Round log template, and list what the controller still owns")
     final.add_argument("change_slug")
@@ -1821,7 +1947,7 @@ def main() -> int:
         if args.step == "wait":
             return wait_report(args.change_slug, args.task, args.root, args.timeout, args.interval)
         if args.step == "scope":
-            return scope(args.change_slug, args.root, base=args.base, dry_run=args.dry_run)
+            return scope(args.change_slug, args.root, base=args.base, dry_run=args.dry_run, exclude=args.exclude)
         if args.step == "finalize":
             return finalize(args.change_slug, args.root, observed=args.observed, requirements=args.requirements,
                             run=args.run, timeout=args.timeout)

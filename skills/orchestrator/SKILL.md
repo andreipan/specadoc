@@ -16,7 +16,9 @@ Foreman inside them. For one local change, prefer one ordinary controller.
    (`references/state.md`). Read its mandate and latest decisions; a step of
    the same roadmap continues that record and its standing mandate.
 2. Restate the user's outcome, quote explicit requirements, identify allowed
-   repositories/work areas, and define an end-to-end acceptance scenario.
+   repositories/work areas, and define an end-to-end acceptance scenario. When
+   the source text is out of reach (no tracker access, a title only), say so in
+   the first question and ask for the text or a direct choice (5.1 asked twice).
 3. Read `references/checkpoints.md`. State which decisions remain with the user
    and whether an explicit mandate, new or inherited, delegates ordinary local
    plan checkpoints. Invoking this skill alone does not delegate those approvals.

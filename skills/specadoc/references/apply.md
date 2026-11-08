@@ -53,7 +53,7 @@ Load only for `specadoc apply <slug>`.
 9. On PASS, update the capability specs spec.md declares (`status` names a
    missing one), the Archive summary (name post-review MINOR fixes) and residual
    risks, collect tokens after all rounds, then `finalize <slug>` (ticks the
-   proven boxes; `--run` again if code changed since; no own scripts) and
+   proven boxes, fills Completion evidence; `--run` again if code changed) and
    `validate_change.py <slug> --phase final`. Archive only when asked.
 
 ### Exceptions
