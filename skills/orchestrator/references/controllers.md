@@ -134,6 +134,7 @@ Ask controllers to end a turn at checkpoints rather than wait mid-run for a repl
     State: working | checkpoint | blocked | failed | locally-ready
     Result and artifact references:
     Diff/contract revision and verification/review evidence:
+    Undo (locally-ready): revert is enough | <manual step or data repair>
     Tidy (before the first review): fixed N / skipped (reason) / not required
     Context: <observed tokens, or unknown>
     Question, recommendation, and next action:

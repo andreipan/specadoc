@@ -59,6 +59,9 @@ Do not:
 - redesign the whole system unless the current design is invalid;
 - report style preferences as correctness problems;
 - trust checkboxes without checking implementation evidence;
+- invent a token, time or step budget or a remaining-context figure, or skip
+  part of the Review scope because of one; only limits the review brief states
+  apply;
 - duplicate the same root cause across multiple findings.
 
 Before reporting BLOCKER or IMPORTANT:

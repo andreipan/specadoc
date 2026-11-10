@@ -90,8 +90,11 @@ before replacing it, and transfer the accepted state without inventing progress.
 
 Require each local handoff to include repository/work area, change slug, current
 phase, exact diff/commit identifier when available, verification evidence,
-independent review result tied to that diff, unresolved limitations, and producer
-contract readiness. A commit is not required or authorized just by this handoff.
+independent review result tied to that diff, unresolved limitations, producer
+contract readiness, and what undoing it takes (`Undo:`). An undo that needs more
+than a revert, which the approved plan did not name, goes to the user as a
+material risk change (`references/checkpoints.md` → Decision boundaries). A
+commit is not required or authorized just by this handoff.
 When the change produces or consumes a shared contract, the handoff also maps
 every field to its source of truth, a test asserts the exact field set, and the
 reviewer checks that map. Review PASS on behavior does not prove field names.
@@ -115,7 +118,8 @@ component versions. If integration
 needs a fix, return it to the owning controller and preserve its Specadoc gates;
 changed executable diffs need renewed verification and independent review.
 
-Report accepted components, integration evidence, and anything blocked or untested.
+Report accepted components with their `Undo:` lines, integration evidence, and
+anything blocked or untested.
 Do not call the overall task complete until shared acceptance is proved. Do not
 archive local changes implicitly, create a second lifecycle tree, commit, push,
 deploy, or publish without the authorization those operations require.

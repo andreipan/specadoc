@@ -104,7 +104,8 @@ class PluginPackageTest(unittest.TestCase):
         self.assertEqual({'direct', 'grilling-skip', 'minor-re-review', 'project-role',
                           'embedded-role', 'reviewer-unavailable', 'managed-lifecycle',
                           'edited-binding-applies', 'binding-advice', 'browser-context', 'documentation-followup',
-                          'direct-uninterrupted', 'bounded-loading'}, {c['id'] for c in cases})
+                          'direct-uninterrupted', 'bounded-loading', 'ui-evidence-unavailable'},
+                         {c['id'] for c in cases})
         for case in cases:
             self.assertTrue(case['request'])
             self.assertTrue(case['expected_behavior'])

@@ -65,8 +65,13 @@ Do:
 - inspect the final diff before reporting completion;
 - for a change with user-visible frontend impact, exercise it with an
   available run/browser tool (including a mobile-width check when layout
-  changed) before reporting completion; if no such tool is available, say so
-  explicitly in the report instead of reporting completion silently.
+  changed) before reporting completion. Before you report browser evidence as
+  unavailable, try one isolated preview (an existing story or preview route,
+  started as the repository instructions say) and one browser capture, and
+  list each command with its outcome; a sign-in wall on the main application
+  is not a reason by itself. If no browser tool exists, say so explicitly
+  instead of reporting completion silently. Remove any story, preview route or
+  fixture you created only for the evidence before reporting.
 - Run the focused/neighboring checks assigned to this task; the controller owns
   the final integration set. Reuse one saved failure log for alternate views.
   Retry needs a change or a new hypothesis. Limit auto-fix to allowed files.
@@ -86,6 +91,9 @@ Do not:
 - claim a test was run when it was not;
 - repeatedly retry the same failed approach;
 - fix baseline or unrelated failures;
+- invent a token, time or step budget or a remaining-context figure, or stop
+  early or skip assigned work because of one; only limits the brief or the
+  task states apply;
 - edit outside the explicitly allowed task files.
 
 Keep the complete report at or below 600 words. Report each successful command

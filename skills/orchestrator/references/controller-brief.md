@@ -14,8 +14,10 @@ Rules:
   id; it does not restate them.
 - Write full sentences in the user's language with ordinary spacing. No
   abbreviations the controller must decode.
-- Context thresholds are not yours to set: the controller follows `status`
-  (Specadoc `model-routing.md` → Session boundaries).
+- Limits are not yours to invent: no context threshold and no token, time or
+  step budget the user did not set. The controller follows `status` for context
+  (Specadoc `model-routing.md` → Session boundaries) and does not stop early or
+  skip work for a limit nobody set.
 - Send it through a file or stdin (host notes), not as a shell argument.
 - A replacement controller gets the same shape: what is done, the checkpoint it
   starts from (`status` and `runs/handoff.md`), and what changed since.

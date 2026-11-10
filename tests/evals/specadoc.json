@@ -63,5 +63,10 @@
     "id": "bounded-loading",
     "request": "Continue the same approved apply task. The registered worker contract and selected mode reference are already loaded; memory needs saving while an independent source read is next.",
     "expected_behavior": "Do not reload known role contracts or references or print a descriptions catalog. Combine independent required memory and work calls without delaying saves; preserve approval and verification evidence in a task-boundary handoff when context is large."
+  },
+  {
+    "id": "ui-evidence-unavailable",
+    "request": "A worker changed a React form component. The main application needs a sign-in the worker does not have, and the repository has Storybook. The worker wants to report that browser evidence is unavailable.",
+    "expected_behavior": "Do not report evidence unavailable because of the sign-in alone. Try one isolated preview (an existing story or a temporary one) and one browser capture, list each command with its outcome, and remove a story created only for the evidence before reporting. Report unavailable only after both attempts failed, or say explicitly that no browser tool exists."
   }
 ]

@@ -104,6 +104,20 @@ class ManagementSkillsTest(unittest.TestCase):
         self.assertIn("A turn that failed on authentication", controllers)
         self.assertIn("never the whole\n  decision log", brief)
 
+    def test_orchestrator_guards_from_superplane_review(self) -> None:
+        root = SKILLS / "orchestrator"
+        controllers = (root / "references/controllers.md").read_text()
+        self.assertIn("Undo (locally-ready): revert is enough | <manual step or data repair>", controllers)
+        self.assertIn("what undoing it takes (`Undo:`)", (root / "SKILL.md").read_text())
+        brief = (root / "references/controller-brief.md").read_text()
+        self.assertIn("no context threshold and no token, time or\n  step budget the user did not set", brief)
+        for role in ("worker", "reviewer"):
+            text = (SKILLS / f"specadoc/references/roles/{role}.md").read_text()
+            self.assertIn("invent a token, time or step budget", text.split("Do not:", 1)[1])
+        worker = (SKILLS / "specadoc/references/roles/worker.md").read_text()
+        self.assertIn("try one isolated preview", worker)
+        self.assertIn("created only for the evidence", worker)
+
     def test_integration_verifier_reports_and_never_fixes(self) -> None:
         text = (SKILLS / "orchestrator/references/roles/integration-verifier.md").read_text()
         self.assertEqual(1, text.count("<!-- specadoc:tooling:begin -->"))
