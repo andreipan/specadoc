@@ -178,6 +178,21 @@ def reopen_attempt(change: Path, task: str, reason: str) -> list[dict]:
     return attempts
 
 
+def restore_attempt(change: Path, task: str, attempts: list[dict], manifest: dict | None) -> None:
+    """Undo a reopen that did not dispatch: the previous attempt's baseline and report come back, so a
+    refused reopen leaves no attempt behind (5.2: two refused reopens made T2's next try attempt 3)."""
+    last = attempts[-1]
+    previous = {key: value for key, value in last.items() if key not in ("reopened_at", "reopen_reason", "report")}
+    previous.update(attempts=attempts[:-1], manifest=manifest)
+    if not previous["attempts"]:
+        previous.pop("attempts")
+    save(change / "runs" / f"{task}-baseline.json", previous)
+    if last.get("report"):
+        archived = change / "runs" / last["report"]
+        if archived.is_file():
+            archived.replace(change / "runs" / f"{task}-report.md")
+
+
 def preflight_checks(slug: str, task: str, root: str | None, controller: str | None) -> tuple[list[str], list[str]]:
     """Read-only validation. Collect errors before freezing any task state."""
     plan_path = Path(resolve_root(root).path) / slug / "plan.md"
@@ -281,8 +296,7 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     if baseline.returncode != 0:
         if attempts:
             # Put the previous attempt back rather than lose its history.
-            previous = dict(attempts[-1], attempts=attempts[:-1], manifest=previous_manifest)
-            save(plan_path.parent / "runs" / f"{task}-baseline.json", previous)
+            restore_attempt(plan_path.parent, task, attempts, previous_manifest)
         return emit(checked[:1], "BLOCKED", [], tail(baseline.stderr + baseline.stdout), "fix the plan task, then rerun dispatch")
     if attempts:
         baseline_path = plan_path.parent / "runs" / f"{task}-baseline.json"
@@ -299,7 +313,16 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
         reason = f"Files items that are not paths: {', '.join(uncheckable)}"
         return emit(checked, "FAIL", [], reason, "make every Files item a path, then rerun dispatch")
     report = brief_path.with_name(f"{task}-report.md")
-    _, failure = check_scope(slug, task, root, checked)
+    _, violations, _, failure = scope_state(slug, task, root, checked)
+    if failure is None and violations:
+        if attempts:
+            restore_attempt(plan_path.parent, task, attempts, previous_manifest)
+            checked.append(f"reopen rolled back: attempt {len(attempts) + 1} not recorded")
+        failure = emit(checked, "FAIL", violations, "changes outside the task scope",
+                       "revert each path, list it in Derived files via amend, or amend --allow it with a reason")
+    elif failure is not None and attempts:
+        restore_attempt(plan_path.parent, task, attempts, previous_manifest)
+        print(f"reopen rolled back: attempt {len(attempts) + 1} not recorded")
     if failure is not None:
         return failure
     owner = task_block(plan, task)[2].get("Owner", "worker").lower()
@@ -857,7 +880,8 @@ def status(slug: str, root: str | None, controller: str | None = None,
         return done({"result": "archived", "record": str(record), "next": {"kind": "none", "text": "none"}},
                     [f"change: {slug}; result: ARCHIVED ({record})", "next: none for this change"])
     if not plan_path.is_file():
-        text = f"explore, then init_change.py {slug} --risk <low|medium|high> and write spec.md and plan.md"
+        text = (f"explore, then init_change.py {slug} --risk <low|medium|high> --scout <report|agent id> "
+                "and write spec.md and plan.md")
         return done({"result": "not-started", "next": {"kind": "explore", "text": text}},
                     [f"change: {slug}; result: NOT STARTED ({plan_path} does not exist)", f"next: {text}"])
     plan = Document(plan_path, str(plan_path))
@@ -1520,7 +1544,7 @@ def run_final(slug: str, change: Path, timeout: float) -> tuple[str | None, int 
 
 
 def finalize(slug: str, root: str | None, *, observed: str | None = None, requirements: str | None = None,
-             run: bool = False, timeout: float = 1800) -> int:
+             run: bool = False, timeout: float = 1800, residual: str | None = None) -> int:
     """Tick the `## Final verification` boxes the recorded state proves, drop the Round log template
     example, and name what the controller still owns (4.9–4.11: three apply controllers edited the
     checklist, the matrix and the template placeholders with python heredocs). `--run` executes
@@ -1632,7 +1656,7 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
             insert -= 1
         lines[insert:insert] = ["", f"Observed ({timestamp()}): {text}"]
         checked.append("observed run recorded")
-    filled, pending = fill_completion(lines, plan_path, change, slug)
+    filled, pending = fill_completion(lines, plan_path, change, slug, residual)
     if filled:
         checked.append("Completion evidence filled: " + ", ".join(filled))
     left += [f"Completion evidence {label}" for label in pending]
@@ -1649,16 +1673,20 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
 
 
 PENDING_MATRIX = re.compile(r"^\s*(Pending|TBD)\b", re.I)
-COMPLETION_LABELS = ("Commands:", "Requirement mapping:", "Execution tokens:", "Review rounds:")
+COMPLETION_LABELS = ("Commands:", "Requirement mapping:", "Execution tokens:", "Review rounds:",
+                     "Residual risks or waivers:")
 PENDING_EVIDENCE = re.compile(r"^(?:Pending|TBD|R\d+\s*->\s*Pending|<[^>\n]+>)$", re.I)
 ROUND_FIELD = re.compile(r"^- \*\*(?P<key>[^*]+):\*\*\s*(?P<value>.*)$")
 
 
-def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str) -> tuple[list[str], list[str]]:
-    """Fill the still-Pending blocks of `## Completion evidence` from recorded state, in place: Commands from
-    the `finalize --run` record (else the Observed line), Requirement mapping from the matrix, Review
-    rounds from the G blocks. Execution tokens stay with `collect_tokens.py --append`; written content
-    stays (4.9–5.1: every apply controller filled this section with a python heredoc)."""
+def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str,
+                    residual: str | None = None) -> tuple[list[str], list[str]]:
+    """Write the blocks of `## Completion evidence` that recorded state owns, in place: Commands from the
+    `finalize --run` record (else the Observed line), Requirement mapping from the matrix, Review rounds
+    from the G blocks, Residual risks from `--residual`. Each call rewrites them from that state, so a later
+    round or run replaces an earlier fill (5.2: G2 PASS never reached Review rounds and the run time stayed
+    the first one). Execution tokens stay with `collect_tokens.py --append` (4.9–5.2: apply controllers
+    filled this section with python heredocs)."""
     plan = Document(plan_path, str(plan_path), text="\n".join(lines))
     if "Completion evidence" not in plan.sections:
         return [], []
@@ -1688,6 +1716,8 @@ def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str) 
                       + (f", {found} finding(s)" if found else ""))
     if rounds:
         content["Review rounds:"] = rounds
+    if residual and residual.strip():
+        content["Residual risks or waivers:"] = [" ".join(residual.split())]
     filled, pending = [], []
     i = start + 1
     while i < end:
@@ -1700,14 +1730,17 @@ def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str) 
                 and lines[j].strip() not in COMPLETION_LABELS:
             j += 1
         block = [line.strip() for line in lines[i + 1:j]]
-        if block and all(PENDING_EVIDENCE.match(line) for line in block):
-            if label in content:
-                lines[i + 1:j] = content[label]
-                end += len(content[label]) - (j - i - 1)
-                j = i + 1 + len(content[label])
-                filled.append(label.rstrip(":"))
-            elif label == "Execution tokens:":
+        unfilled = not block or all(PENDING_EVIDENCE.match(line) for line in block)
+        if label in content and block != content[label]:
+            lines[i + 1:j] = content[label]
+            end += len(content[label]) - (j - i - 1)
+            j = i + 1 + len(content[label])
+            filled.append(label.rstrip(":") + ("" if unfilled else " (refreshed)"))
+        elif unfilled and label not in content:
+            if label == "Execution tokens:":
                 pending.append(f"Execution tokens (collect_tokens.py {slug} --mode <mode> --harness <h> --append)")
+            elif label == "Residual risks or waivers:":
+                pending.append(f"Residual risks or waivers (finalize {slug} --residual '<risks and waivers, or none>')")
             else:
                 pending.append(label.rstrip(":") + " (no recorded source yet)")
         i = j
@@ -1790,6 +1823,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Run .specadoc.json verification.final once, record it with the Review scope snapshot "
                             "(validate --phase final requires a fresh passing record when the key is set)")
     final.add_argument("--timeout", type=float, default=1800, help="Seconds per verification.final command")
+    final.add_argument("--residual", metavar="TEXT",
+                       help="Residual risks or waivers for Completion evidence, one line ('none' when there are none)")
     waited = steps.add_parser("wait", help="Wait for a new task report of any status (a resumed worker)")
     waited.add_argument("change_slug")
     waited.add_argument("task")
@@ -1950,7 +1985,7 @@ def main() -> int:
             return scope(args.change_slug, args.root, base=args.base, dry_run=args.dry_run, exclude=args.exclude)
         if args.step == "finalize":
             return finalize(args.change_slug, args.root, observed=args.observed, requirements=args.requirements,
-                            run=args.run, timeout=args.timeout)
+                            run=args.run, timeout=args.timeout, residual=args.residual)
         if args.step == "status":
             return status(args.change_slug, args.root, args.controller_runtime, args.context_tokens,
                           as_json=args.json)

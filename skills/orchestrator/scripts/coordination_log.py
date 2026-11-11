@@ -2,13 +2,17 @@
 """Append-only coordination log: numbered decisions and one current-state block.
 
     coordination_log.py decision <file> --by user|orchestrator --title '<title>' --file <path|->
+        [--quote '<the user's words>' [--confirms '<the one proposal a bare go/ok accepted>']]
     coordination_log.py state <file> --file <path|->
     coordination_log.py last <file>
     coordination_log.py get <file> D<n>
 
 `decision` appends `### D<n> — <title> [by <author>] (<UTC time>)` after the
-highest existing D<n>; earlier entries are never rewritten. `--by user` is for
-the user's own words; `--by orchestrator` for a decision under the mandate.
+highest existing D<n>; earlier entries are never rewritten. `--by user` needs
+`--quote` with the user's own words; a bare go/ok picks no option, so it needs
+`--confirms` naming the single proposal it accepted (5.2: "go" to two options
+was logged as a user decision for a third). `--by orchestrator` is a decision
+under the mandate.
 `last` prints the newest decision's header and `get` one entry, so a message to
 a controller cites the number the log assigned (4.1/4.2: D12 sent for D11). `state` replaces only the block
 between the current-state markers, created under the first heading when absent.
@@ -26,6 +30,21 @@ DECISION = re.compile(r"^### D(\d+)\b", re.M)
 BEGIN, END = "<!-- current-state:begin -->", "<!-- current-state:end -->"
 DECISION_LIMIT = 2048
 STATE_LIMIT = 1536
+BARE = re.compile(r"^(?:go|ok|okay|ок|окей|да|yes|y|ага|угу|давай|го|\+|continue|proceed|продолжай|дальше)$")
+
+
+def user_words(quote: str | None, confirms: str | None) -> str:
+    """The first bullet of a user decision: the user's words, and what a bare go/ok accepted."""
+    quote = " ".join((quote or "").split())
+    if not quote:
+        raise ValueError("--by user needs --quote with the user's own words")
+    if BARE.match(quote.lower().strip(" .!«»\"'")):
+        confirms = " ".join((confirms or "").split())
+        if not confirms:
+            raise ValueError(f"«{quote}» picks no option: ask again with the options, or pass --confirms naming "
+                             "the single proposal it accepted")
+        return f"User: «{quote}» to: {confirms}"
+    return f"User: «{quote}»"
 
 
 def read_text(source: str) -> str:
@@ -102,6 +121,8 @@ def main() -> int:
             action.add_argument("--title", required=True)
             action.add_argument("--by", required=True, choices=("user", "orchestrator"),
                                 help="user: the user's own decision; orchestrator: decided under the mandate")
+            action.add_argument("--quote", help="With --by user: the user's own words, verbatim")
+            action.add_argument("--confirms", help="With a bare go/ok quote: the single proposal it accepted")
         if name == "get":
             action.add_argument("id", help="Decision id such as D12")
     args = parser.parse_args()
@@ -121,6 +142,8 @@ def main() -> int:
             return 0
         body = read_text(args.file)
         if args.action == "decision":
+            if args.by == "user":
+                body = f"- {user_words(args.quote, args.confirms)}\n{body}"
             print(f"{decision(args.log, args.title, body, args.by)} appended to {args.log}")
         else:
             state(args.log, body)

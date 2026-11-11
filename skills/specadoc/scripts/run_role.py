@@ -30,6 +30,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -48,9 +49,14 @@ READ_SHELL = ("git diff", "git log", "git show", "git status")
 # Later rules win: these re-deny writes a read-only git command could still make.
 SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*")
 STILL_RUNNING = 3
+SANDBOXED = 4
 # A successful run keeps only this much of its log; usage moves into the run file.
 LOG_TAIL = 8192
 NO_PROGRESS_TIMEOUT = 900.0
+
+
+class SandboxedRun(RuntimeError):
+    """The runtime cannot start in this shell's sandbox; exit 4 tells the controller to start it outside."""
 
 
 class RunError(RuntimeError):
@@ -174,7 +180,14 @@ def opencode_config(role: str) -> str:
     return json.dumps(config)
 
 
-def _check_opencode_log() -> None:
+def _sandbox_action(role: str, runtime: str, routed: bool) -> str:
+    if routed:
+        return (f".specadoc.json routes the {role} to {runtime}; that routing is the user's authorization to start "
+                "it: rerun this same command outside the sandbox with the host's escalation, without asking")
+    return "start the run from a shell with write access to that path, with the approved escalation"
+
+
+def _check_opencode_log(role: str = "role", routed: bool = False) -> None:
     """OpenCode exits at once when its log file is not writable (for example inside a sandbox)."""
     base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
     log = base / "opencode" / "log" / "opencode.log"
@@ -182,10 +195,22 @@ def _check_opencode_log() -> None:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.open("ab").close()
     except OSError as exc:
-        raise RunError(
-            f"OpenCode cannot write its log {log} ({exc.strerror}); this shell is likely sandboxed. "
-            "Start the run from a shell with write access to that path, with the approved escalation"
-        ) from exc
+        raise SandboxedRun(f"OpenCode cannot write its log {log} ({exc.strerror}); this shell is likely sandboxed. "
+                           + _sandbox_action(role, "opencode", routed)) from exc
+
+
+def _check_codex_home(role: str = "role", routed: bool = False) -> None:
+    """Codex writes its home (state, PATH aliases) before the first turn. In a sandbox that denies it, the
+    run died after 3 s with "failed to initialize in-process app-server client: Operation not permitted" (5.2)."""
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+        handle, probe = tempfile.mkstemp(prefix=".specadoc-probe-", dir=home)
+        os.close(handle)
+        os.unlink(probe)
+    except OSError as exc:
+        raise SandboxedRun(f"Codex cannot write its home {home} ({exc.strerror}); this shell is likely sandboxed. "
+                           + _sandbox_action(role, "codex", routed)) from exc
 
 
 def _paths(out_dir: Path, name: str, role: str) -> dict[str, Path]:
@@ -247,7 +272,9 @@ def start(args: argparse.Namespace) -> int:
     if shutil.which(command[0]) is None:
         raise RunError(f"{command[0]} CLI is not on PATH for role {args.role}")
     if args.runtime == "opencode":
-        _check_opencode_log()
+        _check_opencode_log(args.role, route is not None)
+    elif args.runtime == "codex":
+        _check_codex_home(args.role, route is not None)
     if out_dir.name == "runs":
         from specadoc_root import ensure_runs
 
@@ -733,6 +760,9 @@ def main() -> int:
     handler = {"start": start, "wait": wait, "result": result, "stop": stop, "status": status}[args.action]
     try:
         return handler(args)
+    except SandboxedRun as exc:
+        print(f"sandboxed: {exc}", file=sys.stderr)
+        return SANDBOXED
     except (RunError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

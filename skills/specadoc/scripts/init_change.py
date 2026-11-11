@@ -33,10 +33,11 @@ def title_from_slug(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-"))
 
 
-def render(template: str, title: str, risk: str) -> str:
+def render(template: str, title: str, risk: str, scout: str = "") -> str:
     return (
         template.replace("__CHANGE_TITLE__", title)
         .replace("__RISK__", risk.capitalize())
+        .replace("__SCOUT__", scout)
         .replace("__DATE__", date.today().isoformat())
     )
 
@@ -64,6 +65,7 @@ def publish_templates(
     title: str,
     risk: str,
     force: bool,
+    scout: str = "",
 ) -> None:
     """Preflight the complete set, stage, then publish with handled-error rollback.
 
@@ -78,7 +80,7 @@ def publish_templates(
             raise OSError(f"refusing non-regular artifact: {destination}")
         if destination.exists() and not force:
             raise FileExistsError(f"refusing to overwrite existing file: {destination}")
-        contents.append(render(template.read_text(encoding="utf-8"), title, risk))
+        contents.append(render(template.read_text(encoding="utf-8"), title, risk, scout))
 
     target = files[0][1].parent
     created_dirs = []
@@ -144,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--with-design", action="store_true")
     parser.add_argument("--with-research", action="store_true")
     parser.add_argument("--force", action="store_true")
+    # 4.9-5.2: propose controllers mapped the code themselves (144-191k context) instead of a scout.
+    scouted = parser.add_mutually_exclusive_group(required=True)
+    scouted.add_argument("--scout", metavar="REF", help="The scout report or agent id that mapped the code")
+    scouted.add_argument("--no-scout", metavar="REASON",
+                         help="Why no scout ran, for example the explore evidence this change reuses")
     return parser
 
 
@@ -178,8 +185,12 @@ def main() -> int:
     if args.with_research:
         files.append((assets / "research-template.md", target / "research.md"))
 
+    scout = " ".join((args.scout or "").split()) or ("none: " + " ".join((args.no_scout or "").split()))
+    if scout in ("", "none: "):
+        print("error: --scout or --no-scout needs a value", file=sys.stderr)
+        return 2
     try:
-        publish_templates(files, title, args.risk, args.force)
+        publish_templates(files, title, args.risk, args.force, scout)
     except (FileExistsError, FileNotFoundError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

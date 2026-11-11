@@ -179,5 +179,7 @@ dependency update, a write outside its sandbox), bring that exact command to the
 user; do not run it yourself in your own, wider sandbox, and never call it
 approved without a recorded user approval (3.8: the orchestrator ran a
 dependency lock update with network after the controller's denial and told it
-"approved"). Keep briefs in accessible authorized locations; do not broaden
-global access.
+"approved"). A role start on its `.specadoc.json` runtime is not such a command:
+the routing authorizes it, also outside the sandbox (Specadoc `runners.md`); the
+controller runs it, and a host refusal is a blocker to report, not options.
+Keep briefs in accessible authorized locations; do not broaden global access.

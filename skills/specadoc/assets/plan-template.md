@@ -4,6 +4,7 @@
 **Mode:** Propose  
 **Specification:** `spec.md`  
 **Risk:** __RISK__  
+**Scout:** __SCOUT__  
 **Created:** __DATE__
 
 ## Handoff

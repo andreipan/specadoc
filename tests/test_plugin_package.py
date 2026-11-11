@@ -90,7 +90,7 @@ class PluginPackageTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
         project = self.base / 'project'
         project.mkdir()
-        result = subprocess.run([sys.executable, '-B', str(scripts / 'init_change.py'), 'smoke'], cwd=project, capture_output=True)
+        result = subprocess.run([sys.executable, '-B', str(scripts / 'init_change.py'), 'smoke', '--no-scout', 'smoke test'], cwd=project, capture_output=True)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((project / 'docs/specadoc/smoke/spec.md').is_file())
 

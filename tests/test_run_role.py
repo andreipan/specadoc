@@ -98,6 +98,7 @@ class RunRoleTest(unittest.TestCase):
         env["PATH"] = path if path is not None else f"{self.bin}{os.pathsep}{env['PATH']}"
         env["FAKE_RESULT"] = result if isinstance(result, str) else json.dumps(result)
         env.setdefault("XDG_DATA_HOME", str(self.repo / "xdg"))
+        env.setdefault("CODEX_HOME", str(self.repo / "codex-home"))
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args], cwd=self.repo, capture_output=True, text=True, env=env
         )
@@ -364,9 +365,36 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
         finally:
             os.environ.pop("XDG_DATA_HOME")
             (data / "opencode" / "log").chmod(0o700)
-        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.returncode, 4)
         self.assertIn("cannot write its log", result.stderr)
         self.assertFalse((self.runs / "T1.worker.run.json").exists())
+
+    def test_codex_start_stops_at_once_when_its_home_is_not_writable(self) -> None:
+        # 5.2: inside the host sandbox codex died after 3 s ("in-process app-server client: Operation not
+        # permitted"); the check names the cause before any run file exists.
+        home = self.repo / "readonly-codex"
+        home.mkdir()
+        home.chmod(0o500)
+        os.environ["CODEX_HOME"] = str(home)
+        try:
+            result = self.run_cli("start", "--role", "reviewer", "--runtime", "codex", "--model", "m1",
+                                  "--prompt-file", str(self.brief), "--name", "G1")
+        finally:
+            os.environ.pop("CODEX_HOME")
+            home.chmod(0o700)
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertIn("Codex cannot write its home", result.stderr)
+        self.assertFalse((self.runs / "G1.reviewer.run.json").exists())
+        self.assertEqual([], list(home.iterdir()))
+
+    def test_routed_runtime_names_the_routing_as_the_authorization(self) -> None:
+        spec = importlib.util.spec_from_file_location("run_role_sandbox", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        routed = module._sandbox_action("reviewer", "codex", True)
+        self.assertIn(".specadoc.json routes the reviewer to codex", routed)
+        self.assertIn("without asking", routed)
+        self.assertNotIn(".specadoc.json", module._sandbox_action("reviewer", "codex", False))
 
     def test_full_run_passes_prompt_and_validates_result(self) -> None:
         payload = {

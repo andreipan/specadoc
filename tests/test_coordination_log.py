@@ -23,13 +23,26 @@ class CoordinationLogTest(unittest.TestCase):
     def test_decisions_are_numbered_and_earlier_entries_stay(self):
         self.log.write_text('# Stage 3\n\n### D27 — T3 accepted\n- earlier text\n')
         result = self.run_log('decision', '--by', 'user', '--title', 'Integration before review',
-                              text='User said yes\n- verifier runs it')
+                              '--quote', 'да, интеграция до ревью', text='User said yes\n- verifier runs it')
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('D28', result.stdout)
         text = self.log.read_text()
         self.assertTrue(text.startswith('# Stage 3\n\n### D27 — T3 accepted\n- earlier text\n'))
         self.assertRegex(text, r'### D28 — Integration before review \[by user\] \(\d{4}-\d\d-\d\d \d\d:\d\d UTC\)\n'
-                               r'- User said yes\n- verifier runs it\n$')
+                               r'- User: «да, интеграция до ревью»\n- User said yes\n- verifier runs it\n$')
+
+    def test_user_decisions_need_the_users_words_and_a_bare_go_its_proposal(self):
+        missing = self.run_log('decision', '--by', 'user', '--title', 'Reviewer', text='x')
+        self.assertEqual(2, missing.returncode)
+        self.assertIn('--quote', missing.stderr)
+        bare = self.run_log('decision', '--by', 'user', '--title', 'Reviewer', '--quote', 'go', text='x')
+        self.assertEqual(2, bare.returncode)
+        self.assertIn('picks no option', bare.stderr)
+        self.assertFalse(self.log.exists())
+        confirmed = self.run_log('decision', '--by', 'user', '--title', 'Reviewer', '--quote', 'Go!',
+                                 '--confirms', 'option 1: user writes in the controller thread', text='x')
+        self.assertEqual(0, confirmed.returncode, confirmed.stderr)
+        self.assertIn('- User: «Go!» to: option 1: user writes in the controller thread\n- x', self.log.read_text())
 
     def test_state_block_is_replaced_in_place(self):
         self.log.write_text('# Stage 3\n\n### D1 — Start\n- go\n')

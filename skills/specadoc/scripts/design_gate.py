@@ -184,6 +184,10 @@ def write_brief(change: Path) -> Path:
              "to the other writers, and what does a deadlock or retry return? Which existing tests or fixtures "
              "write a table whose constraints change, and are they in a task's Files? Does any planned exception "
              "contradict a repository architecture rule (module boundaries, allowed bridges or consumers)?",
+             # 5.2: four value-shape rules of the spec had no test and came back from the final review as BLOCKERs.
+             "- For each spec rule on the shape of a value (format, anchors, ranges, explicit null versus absent, "
+             "empty object versus empty list, length or precision limits), name the matrix row or task "
+             "Verification that tests one accepted and one rejected value. A rule without such a test is IMPORTANT.",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "
@@ -192,6 +196,7 @@ def write_brief(change: Path) -> Path:
                                   ("Confirmed decisions", plan, "Confirmed decisions"),
                                   ("Technical approach", plan, "Technical approach"),
                                   ("Files and interfaces", plan, "Files and interfaces"),
+                                  ("Requirement-to-check matrix", plan, "Requirement-to-check matrix"),
                                   ("Class inventory", plan, INVENTORY)):
         lines += [f"## {title}", "", *section(document, name), ""]
     path = change / "runs" / "design-brief.md"

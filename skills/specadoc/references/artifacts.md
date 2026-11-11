@@ -149,19 +149,13 @@ capability file that drifts from code.
 Prefer:
 
 ```bash
-python3 <skill-root>/scripts/init_change.py <change-slug> --risk <low|medium|high>
+python3 <skill-root>/scripts/init_change.py <change-slug> --risk <low|medium|high> \
+  --scout <report|agent id>   # or --no-scout '<why>'
 ```
 
-Optional flags:
+Optional: `--root <directory>`, `--with-design`, `--with-research`, `--force`.
 
-```bash
---root <directory>
---with-design
---with-research
---force
-```
-
-The script copies templates from `assets/`. Read and fill the created files; do not load the raw templates again unless initialization failed.
+It copies the `assets/` templates; fill the created files, do not reread templates.
 
 ## Specification quality gate
 

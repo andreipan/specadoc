@@ -17,8 +17,10 @@ Foreman inside them. For one local change, prefer one ordinary controller.
    the same roadmap continues that record and its standing mandate.
 2. Restate the user's outcome, quote explicit requirements, identify allowed
    repositories/work areas, and define an end-to-end acceptance scenario. When
-   the source text is out of reach (no tracker access, a title only), say so in
-   the first question and ask for the text or a direct choice (5.1 asked twice).
+   a source is out of reach (no tracker or wiki access, a title only), name every
+   such source in the first question and ask for the pasted text, a connector or a
+   direct choice; never probe environment, config files or raw API calls for
+   another route (5.1 asked twice; 5.2 lost ~24 min on one wiki page).
 3. Read `references/checkpoints.md`. State which decisions remain with the user
    and whether an explicit mandate, new or inherited, delegates ordinary local
    plan checkpoints. Invoking this skill alone does not delegate those approvals.

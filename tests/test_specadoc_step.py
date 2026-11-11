@@ -155,7 +155,7 @@ class SpecadocStepTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.project = Path(self.tmp.name)
         subprocess.run(['git', 'init', '-q'], cwd=self.project, check=True)
-        self.script('init_change.py', 'demo', '--risk', 'low')
+        self.script('init_change.py', 'demo', '--risk', 'low', '--no-scout', 'fixture')
         change = self.project / 'docs/specadoc/demo'
         change.joinpath('spec.md').write_text(SPEC)
         change.joinpath('plan.md').write_text(PLAN)
@@ -210,7 +210,7 @@ class SpecadocStepTest(unittest.TestCase):
         self.assertIn('resolved worker codex/changed-model/high', fields['checked'])
 
     def test_template_optional_fields_never_fail_the_plan_gate(self):
-        fresh = self.script('init_change.py', 'fresh', '--risk', 'low')
+        fresh = self.script('init_change.py', 'fresh', '--risk', 'low', '--no-scout', 'fixture')
         self.assertEqual(0, fresh.returncode, fresh.stderr)
         result = self.script('validate_change.py', 'fresh', '--phase', 'plan')
         output = result.stdout + result.stderr

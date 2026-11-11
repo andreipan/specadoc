@@ -4,10 +4,10 @@ Load this reference only for `specadoc propose`.
 
 1. Reuse accepted explore evidence; do not repeat reconnaissance. A foreground
    scout maps the local code to change and any external contract; open only
-   the files a decision turns on (4.9–5.1: self-reading reached 144–188k).
+   the files a decision turns on (4.9–5.2: self-reading reached 144–191k).
 2. Initialize `docs/specadoc/<slug>/spec.md` and `plan.md` with
-   `scripts/init_change.py` from the repository root. Add design/research only
-   when the artifact rules require them.
+   `scripts/init_change.py --scout <report|agent id>` from the repository root.
+   Add design/research only when the artifact rules require them.
 3. Resolve behavior-changing questions; fill requirements, acceptance
    scenarios, non-goals, constraints, assumptions and capability operations
    in `spec.md`.

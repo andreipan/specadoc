@@ -14,16 +14,24 @@ steps of the same roadmap while the step stays inside its goal, repositories,
 contracts and risk boundary. Cite it (`inherited from <record> D<n>`) instead of
 asking again, and ask only when no record exists or the step falls outside it.
 Per-step permissions (a test database run, archive, commit, push) do not carry
-over to the next step. In 3.6 the orchestrator missed the standing mandate,
-recorded "no delegation" and brought ordinary approvals to the user.
+over to the next step unless the user granted them for named steps. In 3.6 the
+orchestrator missed the standing mandate, recorded "no delegation" and brought
+ordinary approvals to the user; in 5.1 and 5.2 each mandate named one step, so
+every run asked again.
 
 Suggested bounded question:
 
 > May I accept local plans within this goal and these contracts, returning to you
 > for changed requirements, risk, external effects, or scope? Otherwise I will
 > bring the required checkpoints to you, grouped when they share one decision.
+> Does this hold for this step only, or for every step of `<stage or roadmap
+> range>`, each within its own sweep answers? The same for archiving each
+> accepted step and recording it as a stack patch.
 > May controllers and the integration verifier use `<dedicated test database>`
 > for integration runs without asking each time?
+
+Offer the range of steps the user named or the current stage as the
+recommended scope; each later step still asks when it falls outside it.
 
 ### Plan approval under a mandate
 
@@ -97,7 +105,7 @@ rules. It does not waive specifications, testing, review, or completion evidence
 | Ordinary local plan checkpoint | User unless explicitly delegated and accepted by host/repository rules |
 | New product behavior, incompatible contract, added repository, or material risk/scope change | User unless that exact choice was already explicitly authorized |
 | Production, destructive migration, secrets, money, system changes, external publication, push/deployment | User's explicit authorization for the action; never inferred from a plan mandate |
-| Network access, dependency install or update, a sandbox bypass, or any command a runtime denied | User, for that exact command; the orchestrator never runs it for a controller, and nobody calls it approved without a recorded approval |
+| Network access, dependency install or update, a sandbox bypass, or any command a runtime denied | User, for that exact command; the orchestrator never runs it for a controller, and nobody calls it approved without a recorded approval. Exception: starting a role on the runtime `.specadoc.json` routes it to, also outside the sandbox (Specadoc `runners.md`); the routing is the user's authorization |
 | Runtime/model routing, role files, `.specadoc.json`, or a controller's runtime | User; show the mismatch and ask, never edit to make a launch fit |
 | Independent review result | Independent reviewer; neither controller nor orchestrator may invent PASS |
 | One extra review round past the limits, under a plan mandate | Orchestrator, recorded `--by orchestrator` and reported; a second one is the user's unless the mandate allows it for test-only changes |
@@ -114,7 +122,9 @@ has one) whose answers are those labels. Do not reword, re-letter, merge or
 reorder options, and do not add your own preference unless labelled as yours.
 An answer that picks no option ("go", "ok") is not a choice: ask again. In 3.5
 the orchestrator reframed a controller's A/B/C, the user answered "go", and the
-choice had to be made again inside the controller.
+choice had to be made again inside the controller. Never carry out an action
+that none of the offered options names (5.2: "go" to "you write in the
+controller thread / you run it" became the orchestrator running it).
 
 Pause affected work; independent authorized work may continue when the host
 supports it. Do not repeatedly ask equivalent approval questions.

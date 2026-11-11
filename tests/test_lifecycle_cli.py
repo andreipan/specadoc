@@ -33,7 +33,7 @@ class LifecycleCliTest(unittest.TestCase):
                 result = subprocess.run([sys.executable, '-B', str(scripts / script), *args], cwd=project, capture_output=True, text=True)
                 self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
                 return result.stdout
-            cli('init_change.py', 'demo', '--risk', 'low')
+            cli('init_change.py', 'demo', '--risk', 'low', '--no-scout', 'fixture')
             fresh = (project / 'docs/specadoc/demo/plan.md').read_text()
             self.assertIn('## Handoff', fresh)
             for removed in ('Model handoff', 'Owner level', 'Independence waiver', 'Model approval',

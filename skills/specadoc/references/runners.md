@@ -113,8 +113,13 @@ such wake-up, so they must keep waiting in the foreground.
 Wait for any other process by its PID or exit status, never by `pgrep -f
 <pattern>`: the pattern also matches the waiting shell (3.6: a 55×10 s spin).
 
-Routing a role to an external runtime in the committed `.specadoc.json` is the
-project's consent to send it code. Do not ask for each change or task. A
+Routing a role to an external runtime in `.specadoc.json` is the user's
+authorization to start it there and send it code. Do not ask for each change,
+task or round (5.2 asked four times for one reviewer). `start` exit 4
+(`sandboxed:`) means the runtime cannot start inside this shell's sandbox: rerun
+the same command outside it with the host's escalation, citing the routing; that
+is not a user decision. Only the host's own refusal of that rerun is a blocker:
+report it with the exact command, never as options to choose from. A
 confirmation prompt from the host itself (for example the Codex approval policy)
 is not controlled by Specadoc.
 
@@ -126,7 +131,8 @@ For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
 
 - `codex`: `codex exec` with `-s workspace-write` for the worker (loopback
   network enabled so tests can reach a local database) and `-s read-only` for
-  scout and reviewer; `--output-schema` enforces the result shape.
+  scout and reviewer; `--output-schema` enforces the result shape. `start` exits
+  4 at once when codex cannot write its home (`CODEX_HOME`, else `~/.codex`).
 - `claude`: `claude -p` with `--json-schema`; the worker gets edit tools with
   `acceptEdits`, read-only roles get `Read, Grep, Glob, Bash` with `dontAsk`.
 - `opencode`: V2 `opencode run --standalone --format json --auto`, with
@@ -138,9 +144,8 @@ For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
   These are tool permissions, not an OS sandbox. The schema is appended to the
   prompt and the final text JSON is validated locally, not by the provider. A reply
   wrapped in a code fence or surrounded by prose is accepted: the last JSON object
-  is used. `start` fails at once with a clear error when OpenCode cannot write its log
-  (`~/.local/share/opencode/log`), which happens inside a sandboxed shell; start it
-  from a shell with write access to that path.
+  is used. `start` exits 4 at once when OpenCode cannot write its log
+  (`~/.local/share/opencode/log`), which happens inside a sandboxed shell.
   An OpenCode session title may be junk (result-like JSON or reasoning text), because a
   title request runs on the same agent. Never read a status from a session title:
   the run result is only the validated JSON from `run_role.py result`.

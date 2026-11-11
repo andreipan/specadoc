@@ -512,14 +512,27 @@ def main() -> int:
 CONTROLLER_CHANGES = "controller-changes.json"
 
 
-def change_level_controller_changes(change: Path) -> Manifest:
-    """`{path: digest}` of controller edits recorded with `refresh --controller-path`."""
+def change_level_controller_changes(change: Path, since: str | None = None) -> Manifest:
+    """`{path: digest}` of controller edits recorded with `refresh --controller-path` (tidy included).
+
+    With `since` (a task baseline's start), a path whose last recording is older is left out: that
+    baseline already holds the edit, and the old digest would hide a later accepted change to the same
+    file (5.2: a reopened T2 blamed T1's accepted fix of a tidied test as outside its Files).
+    """
     try:
         payload = json.loads((runs_dir(change) / CONTROLLER_CHANGES).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     changes = payload.get("changes") if isinstance(payload, dict) else None
-    return {k: v for k, v in changes.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(changes, dict) else {}
+    if not isinstance(changes, dict):
+        return {}
+    recorded: dict[str, str] = {}
+    for entry in payload.get("history", []) if since else []:
+        if isinstance(entry, dict) and isinstance(entry.get("at"), str):
+            for path in entry.get("paths", []):
+                recorded[path] = max(recorded.get(path, ""), entry["at"])
+    return {k: v for k, v in changes.items() if isinstance(k, str) and isinstance(v, str)
+            and not (k in recorded and recorded[k] < since)}
 
 
 def _worker_scope(action: str, change: Path, artifact_root: str, task: str | None) -> int:
@@ -589,7 +602,7 @@ def _worker_scope(action: str, change: Path, artifact_root: str, task: str | Non
     # Task-level amendments, then change-level controller edits after review
     # (`refresh --controller-path`), which apply to every task's baseline.
     overlay = dict(record.get("controller_changes", {}))
-    overlay.update(change_level_controller_changes(change))
+    overlay.update(change_level_controller_changes(change, record.get("started")))
     for path, digest in overlay.items():
         if digest == DELETED_DIGEST:
             baseline.pop(path, None)
