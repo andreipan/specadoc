@@ -50,12 +50,20 @@ mapping once in the coordination record:
   dependent work. Do not end a parent turn while a required result is pending if
   delivery stops then. Use background work only when independent, supported, and
   observable.
+- **Report-push hosts:** the host wakes the parent on its own only when a child
+  is stuck or exits; a finished turn reaches the parent only if the child sends
+  a report. The brief names the report command from the host notes, and the
+  controller runs it with its envelope path in every state where it ends a turn.
+  A missing report is not proof the turn was lost: check the controller's status
+  and artifacts first.
 
 ## Waiting
 
 A question to the user blocks your turn; a host delivers child wakes only after
-it ends. Ask before launching a controller or when every child is idle, never
+it ends, and a report-push host may refuse a child's report while the question
+is open. Ask before launching a controller or when every child is idle, never
 while one runs (4.9: a blocked controller waited 24 minutes behind a question).
+After the answer, collect child news you missed before ending the turn.
 
 Every wake re-reads the orchestrator's whole context. In 3.6 about 25 of 38
 three-minute waits timed out, and the wakes, not the wait output, made the cost.

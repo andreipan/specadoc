@@ -59,5 +59,10 @@ under mandate D<n> is recorded with `specadoc_step.py approve --bindings`>
 ## Return
 The envelope from `.claude/skills/orchestrator/references/controllers.md` at:
 plan approval, locally-ready, review-ready with the external run pending, or a
-blocker.
+blocker. <On a report-push host: write it to `<coordination dir>/<slug>-envelope.md`
+and run `<report command> "<that path>"` before ending the turn.>
 ```
+
+On a report-push host (`controllers.md` → Map to the current host) the Return
+section is the only place the controller learns the report command and the
+parent's address; without it a finished turn wakes nobody.
