@@ -7,12 +7,12 @@ task to Codex. See `references/runners.md` for the contract.
 
     run_role.py start  --role worker --runtime codex --model M --effort E \\
                        --prompt-file runs/T1-brief.md --name T1
-    run_role.py wait   runs/T1.worker.run.json --timeout 110 --shell-budget 120
+    run_role.py wait   runs/T1.worker.run.json --timeout 540 --shell-budget 590
     run_role.py result runs/T1.worker.run.json
 
 `start` launches the CLI in the background and returns at once; `wait` blocks
 for at most `--timeout` seconds (exit 3 while still running), so a caller with
-a per-command time limit can wait in slices; `result` validates the final JSON
+a fixed per-command time limit can wait in shorter slices; `result` validates the final JSON
 against the role's schema. No model names live here: the caller passes them.
 """
 
@@ -499,6 +499,9 @@ def _progress(record: dict[str, Any], state: dict[str, Any]) -> str:
     return f"{line}, log {size // 1024} KiB"
 
 
+SHORT_SLICE = 300.0
+
+
 def wait(args: argparse.Namespace) -> int:
     record = _load(args.run_file)
     exit_file = Path(record["exit"])
@@ -536,7 +539,10 @@ def wait(args: argparse.Namespace) -> int:
         time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
     snapshot = _status(record, getattr(args, "no_progress_timeout", None))
     line = f"{snapshot['status']}: pid {record['pid']}" if not follow else _progress(record, state)
-    print(line + "; wait timed out (not a role result); call wait again")
+    # 6.5: a controller that could raise its shell limit waited for six design reviews in sixteen 110 s slices.
+    short = ("; a host that can raise its shell limit waits with --timeout 540 --shell-budget 590"
+             if budget < SHORT_SLICE else "")
+    print(line + "; wait timed out (not a role result); call wait again" + short)
     return STILL_RUNNING
 
 

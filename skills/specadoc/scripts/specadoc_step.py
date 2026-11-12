@@ -47,8 +47,8 @@ Steps:
   the proven Final verification boxes; `--run` executes `verification.final`.
 - `handoff <slug> --file <path|->` — overwrite `runs/handoff.md` (at most 4 KiB);
   session notes never accumulate in plan.md.
-- `wait <slug> T<n> [--timeout s]` — wait for a new task report of any status
-  (a resumed worker answers asynchronously); prints the next step.
+- `wait <slug> T<n>|tidy [--timeout s]` — wait for a new task report of any status
+  or for the tidy record (the worker answers asynchronously); prints the next step.
 - `tidy <slug> [--record --summary '<...>' | --skip '<reason>']` — one worker
   pass of the tidy companion over Review scope before the first initial review;
   required by pre-review when `.specadoc.json` sets `review.tidy: required`.
@@ -841,7 +841,7 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
     return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
 
 
-def design_brief(slug: str, root: str | None, controller: str | None) -> int:
+def design_brief(slug: str, root: str | None, controller: str | None, full: bool = False) -> int:
     import design_gate
     change = Path(resolve_root(root).path) / slug
     plan = Document(change / "plan.md", "plan.md")
@@ -851,12 +851,14 @@ def design_brief(slug: str, root: str | None, controller: str | None) -> int:
     if violations := design_gate.check_inventory(plan):
         return emit(["Class inventory"], "FAIL", [], "; ".join(v.message for v in violations), "fix the inventory rows")
     checked = ["Class inventory", *binding_check("reviewer", controller)]
-    path = design_gate.write_brief(change)
+    path, rereview = design_gate.write_brief(change, full)
     route = role_route("reviewer", controller)
     start = (f"python3 {SCRIPTS / 'run_role.py'} start --role reviewer --controller-runtime {controller} "
              f"--prompt-file {path} --name design" if route and route["dispatch"] == "external"
              else f"the native reviewer with {path}")
-    return emit(checked + [f"wrote {path}"], "PASS", [], "",
+    kind = ("re-review of the recorded findings and the changes since; --full for a whole review after a redesign"
+            if rereview else "whole review")
+    return emit(checked + [f"wrote {path} ({kind})"], "PASS", [], "",
                 f"run {start} (strongest reviewer binding, a fresh agent each round); then design-review {slug} "
                 "--from-agent <id> (native) or --result-file <reply> (external)")
 
@@ -884,7 +886,8 @@ def design_review(slug: str, root: str | None, source: str | None, controller: s
         return emit(checked, "PASS", [], "", "design gate passed; present the plan for approval (or apply the "
                     "orchestrator mandate), then dispatch")
     return emit(checked, "FAIL", [], "design review FAIL; read its findings in plan.md",
-                "revise the approach or Class inventory, then design-brief and review again")
+                "revise the approach or Class inventory, then design-brief (it writes a re-review of these "
+                "findings and your changes) and review again")
 
 
 HANDOFF_LIMIT = 4096
@@ -1813,9 +1816,18 @@ def wait_report(slug: str, task: str, root: str | None, timeout: float, interval
     For a worker answering asynchronously (a resumed agent). A sub-agent's reply reaches the
     controller only after the running command returns, so a long blocking loop that waits for
     DONE alone hid a NEEDS_CONTEXT for ten minutes in 4.5.
+
+    `tidy` waits for the tidy worker's record instead: 6.5 waited 540 s for a `tidy-report.md` nobody
+    writes while runs/tidy.json was there after two minutes.
     """
     import time
-    report = Path(resolve_root(root).path) / slug / "runs" / f"{task}-report.md"
+    runs = Path(resolve_root(root).path) / slug / "runs"
+    if task == "tidy":
+        return wait_tidy(slug, runs, timeout, interval)
+    if not re.fullmatch(r"T\d+", task):
+        return emit(["task id"], "BLOCKED", [], f"wait knows task reports (T<n>) and `tidy`, not `{task}`",
+                    "end the turn and take the host's completion notice for this agent")
+    report = runs / f"{task}-report.md"
 
     def snapshot() -> tuple[float, str]:
         try:
@@ -1838,6 +1850,33 @@ def wait_report(slug: str, task: str, root: str | None, timeout: float, interval
     # "BLOCKED" results for one live worker). Exit code stays 2 so a command chain stops here.
     return emit(["task report"], "WAITING", [], f"no new {task} report within {int(timeout)}s ({before})",
                 f"read any sub-agent reply that arrived, then wait again or inspect the worker")
+
+
+def wait_tidy(slug: str, runs: Path, timeout: float, interval: float) -> int:
+    """Wait until the tidy worker's `tidy --record` (or a `--skip`) writes runs/tidy.json."""
+    import time
+    record, brief = runs / TIDY_FILE, runs / TIDY_BRIEF
+
+    def mtime(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def done() -> int:
+        return emit(["tidy record"], "CHECKED", [], "", f"refresh {slug}, then finalize {slug} --run or pre-review {slug}",
+                    f"tidy: {tidy_status(runs.parent)}")
+
+    start = mtime(record)
+    if start and start >= mtime(brief):
+        return done()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
+        if mtime(record) != start:
+            return done()
+    return emit(["tidy record"], "WAITING", [], f"no tidy record within {int(timeout)}s",
+                "read any sub-agent reply that arrived, then wait again or inspect the worker")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1887,10 +1926,10 @@ def build_parser() -> argparse.ArgumentParser:
     final.add_argument("--timeout", type=float, default=1800, help="Seconds per verification.final command")
     final.add_argument("--residual", metavar="TEXT",
                        help="Residual risks or waivers for Completion evidence, one line ('none' when there are none)")
-    waited = steps.add_parser("wait", help="Wait for a new task report of any status (a resumed worker)")
+    waited = steps.add_parser("wait", help="Wait for a new task report of any status, or for the tidy record")
     waited.add_argument("change_slug")
-    waited.add_argument("task")
-    waited.add_argument("--timeout", type=float, default=300.0, help="Seconds (default 300)")
+    waited.add_argument("task", help="T<n> or tidy")
+    waited.add_argument("--timeout", type=float, default=540.0, help="Seconds (default 540)")
     waited.add_argument("--interval", type=float, default=5.0, help=argparse.SUPPRESS)
     waited.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     review = steps.add_parser("pre-review")
@@ -1912,6 +1951,8 @@ def build_parser() -> argparse.ArgumentParser:
     tidied.add_argument("--skip", metavar="REASON", help="Record that this diff needs no tidy pass, and why")
     brief = steps.add_parser("design-brief", help="Write the design reviewer prompt from the Class inventory")
     brief.add_argument("change_slug")
+    brief.add_argument("--full", action="store_true",
+                       help="A whole review again instead of a re-review of the recorded round (after a redesign)")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
     for step in (brief, reviewed):
@@ -2030,7 +2071,7 @@ def main() -> int:
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
         if args.step == "design-brief":
-            return design_brief(args.change_slug, args.root, args.controller_runtime)
+            return design_brief(args.change_slug, args.root, args.controller_runtime, args.full)
         if args.step == "design-review":
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
                                  args.from_agent, args.same_reviewer_reason)

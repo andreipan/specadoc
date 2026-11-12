@@ -165,17 +165,94 @@ def missing_inventory_warning(plan: Document) -> list[str]:
     return [f"tasks add new files ({shown}) but plan.md has no Class inventory; list them and run the design review"]
 
 
-def write_brief(change: Path) -> Path:
-    """Reviewer prompt from the plan sections that decide the design; no code yet."""
+BRIEF = "design-brief.md"
+# The reviewer reads the change's own files, not only the brief: the round's diff base is a copy of them.
+DESIGN_FILES = ("spec.md", "plan.md", "design.md")
+BRIEFED = "design-briefed"    # the files as the latest design-brief saw them
+REVIEWED = "design-reviewed"  # the files the recorded round reviewed
+
+
+def _design_lines(path: Path) -> list[str]:
+    """A design file's lines without `## Design review`, which every recorded round rewrites."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    kept, skipping = [], False
+    for line in lines:
+        if line.startswith("## "):
+            skipping = line.strip() == f"## {DESIGN_REVIEW}"
+        if not skipping:
+            kept.append(line)
+    return kept
+
+
+def _copy_design(source: Path, target: Path) -> None:
+    import shutil
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True)
+    for name in DESIGN_FILES:
+        if (source / name).is_file():
+            shutil.copyfile(source / name, target / name)
+
+
+def previous_round(change: Path, plan: Document) -> tuple[list[str], list[str]] | None:
+    """(findings, diff of the design files since) of the recorded design round, or None before the first."""
+    import difflib
+    reviewed = change / "runs" / REVIEWED
+    if DESIGN_REVIEW not in plan.sections or not reviewed.is_dir():
+        return None
+    if review_fields(plan).get("Result", "").upper() not in ("PASS", "FAIL"):
+        return None
+    lines = [line for _, line in plan.body(DESIGN_REVIEW)]
+    start = next((i for i, line in enumerate(lines) if line.strip() == "### Findings"), None)
+    findings = [line for line in lines[start + 1:] if line.startswith("- ")] if start is not None else []
+    changes: list[str] = []
+    for name in DESIGN_FILES:
+        changes += difflib.unified_diff(_design_lines(reviewed / name), _design_lines(change / name),
+                                        f"reviewed {name}", f"current {name}", n=2, lineterm="")
+    return [line for line in findings if line.strip() != "- None."], changes
+
+
+def write_brief(change: Path, full: bool = False) -> tuple[Path, bool]:
+    """Reviewer prompt from the plan sections that decide the design; no code yet. After a recorded
+    round it is a re-review of that round's findings and of what changed in spec.md, plan.md and
+    design.md since, unless `full`. Returns the path and whether the brief is a re-review.
+
+    6.5 took six whole design reviews (31 min) and 6.6 four: each round read the whole design again and
+    the last rounds returned one narrow finding each."""
     spec = Document(change / "spec.md", "spec.md")
     plan = Document(change / "plan.md", "plan.md")
 
     def section(document: Document, name: str) -> list[str]:
         return [line for _, line in document.body(name)] if name in document.sections else ["(absent)"]
 
-    lines = [f"# Design review: `{change.name}`", "", "## Contract", "",
+    body: list[str] = []
+    for title, document, name in (("Requirements", spec, "Requirements"), ("Constraints", spec, "Constraints"),
+                                  ("Confirmed decisions", plan, "Confirmed decisions"),
+                                  ("Technical approach", plan, "Technical approach"),
+                                  ("Files and interfaces", plan, "Files and interfaces"),
+                                  ("Requirement-to-check matrix", plan, "Requirement-to-check matrix"),
+                                  ("Class inventory", plan, INVENTORY)):
+        body += [f"## {title}", "", *section(document, name), ""]
+    previous = None if full else previous_round(change, plan)
+    scope: list[str] = []
+    prior: list[str] = []
+    if previous:
+        findings, changes = previous
+        scope = ["- This is a re-review. For each finding under `Previous findings` say whether the current "
+                 "design resolves it; one that is not resolved keeps its severity.",
+                 # 6.5 rounds 3 and 4 found three real IMPORTANT defects in text the round before had left
+                 # unchanged (timestamps outside the model's fillable list, `{}` read as an empty list).
+                 "- Then review the lines under `Changes since the reviewed design` by the questions below. "
+                 "Outside those changes report a new finding only when it is a BLOCKER or an IMPORTANT whose "
+                 "summary cites the file:line that proves it; report no MINOR there."]
+        prior = ["## Previous findings", "", *(findings or ["- None: the design changed after a PASS."]), "",
+                "## Changes since the reviewed design", "", "````diff", *(changes or ["(no change)"]), "````", ""]
+    lines = [f"# Design {'re-review' if previous else 'review'}: `{change.name}`", "", "## Contract", "",
              "- Read-only. Review the design before any code exists; do not edit files or run builds.",
              "- Inspect the existing code the plan names as exemplars only to judge the design.",
+             *scope,
              "- For each Class inventory row ask: is the file needed for a requirement? Does a port cross a real "
              "boundary or have a second implementation? Is the layer right? Does it mirror an existing feature "
              "without a reason? Is there a simpler shape with fewer files and the same behavior?",
@@ -199,25 +276,25 @@ def write_brief(change: Path) -> Path:
              "Verification that tests one accepted and one rejected value. A rule without such a test is IMPORTANT.",
              # 6.1: a planned path broke the closed use-case folder rule and stopped apply; 6.1/6.2: the spec
              # promised one Gate request (GETs retry) and a timestamp format the connector rejects.
+             # 6.5: half of the findings of rounds 2-5 were folder and naming rules, one rule a round.
              "- Check every inventory path against the repository's folder and naming rules (code standards, "
-             "lint structure rules); a path such a rule forbids is IMPORTANT. Check each spec or plan statement "
+             "lint structure rules), row by row and in this round: for each row find the rule that fixes its "
+             "folder and the rule that fixes its name and kind, and end `report` with one line per row, "
+             "`<path>: <rule file:line>` or `<path>: no rule`. A path such a rule forbids is IMPORTANT. Check "
+             "each spec or plan statement "
              "about an existing component's behavior (retries, accepted formats, error mapping) against that "
              "component's code and cite file:line; an unverified statement a requirement depends on is IMPORTANT.",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "
-             "`report` is a short prose summary; location is the inventory path or plan section.", ""]
-    for title, document, name in (("Requirements", spec, "Requirements"), ("Constraints", spec, "Constraints"),
-                                  ("Confirmed decisions", plan, "Confirmed decisions"),
-                                  ("Technical approach", plan, "Technical approach"),
-                                  ("Files and interfaces", plan, "Files and interfaces"),
-                                  ("Requirement-to-check matrix", plan, "Requirement-to-check matrix"),
-                                  ("Class inventory", plan, INVENTORY)):
-        lines += [f"## {title}", "", *section(document, name), ""]
-    path = change / "runs" / "design-brief.md"
+             "`report` is a short prose summary, then the row lines; location is the inventory path or plan "
+             "section.", ""]
+    lines += prior + body
+    path = change / "runs" / BRIEF
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    return path
+    _copy_design(change, change / "runs" / BRIEFED)
+    return path, bool(previous)
 
 
 def record(change: Path, source: str, reviewer: str, agent: str | None = None,
@@ -264,4 +341,9 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         anchor = plan.sections[INVENTORY][1]
         lines[anchor:anchor] = [f"## {DESIGN_REVIEW}", *body]
     plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    briefed = change / "runs" / BRIEFED
+    if briefed.is_dir():
+        # The next design-brief diffs against what this round saw: the files as its brief was written,
+        # not as they are now (6.6: the controller edited spec and plan while the reviewer ran).
+        _copy_design(briefed, change / "runs" / REVIEWED)
     return payload["verdict"]

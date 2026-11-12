@@ -77,5 +77,40 @@ class Run64WaitTest(Run411Base):
         self.assertNotIn("result: BLOCKED", result.stdout)
 
 
+class Run65WaitTest(Run411Base):
+    """6.5: `wait <slug> tidy --timeout 540` ran to its timeout seven minutes after the tidy record existed."""
+
+    def runs(self) -> Path:
+        runs = self.plan.parent / "runs"
+        runs.mkdir(exist_ok=True)
+        return runs
+
+    def test_wait_tidy_returns_on_the_tidy_record(self):
+        (self.runs() / "tidy.json").write_text('{"outcome": "PASS", "summary": "fixed 0"}')
+        result = self.run_step("wait", "demo", "tidy", "--timeout", "0.2", "--interval", "0.1")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("result: CHECKED", result.stdout)
+        self.assertIn("tidy: PASS: fixed 0", result.stdout)
+
+    def test_wait_tidy_without_a_record_is_waiting(self):
+        result = self.run_step("wait", "demo", "tidy", "--timeout", "0.2", "--interval", "0.1")
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("result: WAITING", result.stdout)
+        self.assertIn("no tidy record within", result.stdout)
+
+    def test_wait_refuses_an_agent_it_cannot_see(self):
+        result = self.run_step("wait", "demo", "archive", "--timeout", "0.2")
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("result: BLOCKED", result.stdout)
+        self.assertIn("not `archive`", result.stdout)
+
+    def test_wait_defaults_to_one_long_slice(self):
+        spec = importlib.util.spec_from_file_location("specadoc_step_defaults", SCRIPTS / "specadoc_step.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(SCRIPTS))
+        spec.loader.exec_module(module)
+        self.assertEqual(540.0, module.build_parser().parse_args(["wait", "demo", "T1"]).timeout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -489,6 +489,9 @@ class DesignGateTest(unittest.TestCase):
         for question in ('existing data states', 'platform requirements', 'input-format edge cases',
                          'error code or outcome'):
             self.assertIn(question, text)
+        # 6.5: folder and naming rules came back one a round for four rounds.
+        self.assertIn('row by row and in this round', text)
+        self.assertIn('`<path>: <rule file:line>` or `<path>: no rule`', text)
         self.assertEqual(2, self.review('PASS', ['IMPORTANT']).returncode)
         self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
         self.assertIn('design review FAIL', self.run_step('dispatch', 'demo', 'T1').stdout)
@@ -499,6 +502,59 @@ class DesignGateTest(unittest.TestCase):
         self.assertIn('design: PASS (current inventory)', self.run_step('status', 'demo').stdout)
         self.plan.write_text(self.plan.read_text().replace('label source port', 'label source port and cache'))
         self.assertIn('predates the current Class inventory', self.run_step('dispatch', 'demo', 'T1').stdout)
+
+    def test_a_round_after_a_recorded_one_is_a_re_review_of_its_findings_and_the_changes(self):
+        """6.5: six whole design reviews, 31 minutes; the last rounds returned one narrow finding each."""
+        self.plan.write_text(INVENTORY_PLAN)
+        first = self.run_step('design-brief', 'demo')
+        self.assertIn('(whole review)', first.stdout)
+        brief = self.change / 'runs/design-brief.md'
+        self.assertTrue(brief.read_text().startswith('# Design review: `demo`'))
+        self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
+        self.plan.write_text(self.plan.read_text().replace('label source port', 'label source port and cache'))
+        second = self.run_step('design-brief', 'demo')
+        self.assertEqual(0, second.returncode, second.stdout)
+        self.assertIn('re-review of the recorded findings', second.stdout)
+        text = brief.read_text()
+        self.assertTrue(text.startswith('# Design re-review: `demo`'))
+        self.assertIn('## Previous findings\n\n- IMPORTANT: src/port.py — x\n', text)
+        changes = text.split('## Changes since the reviewed design', 1)[1].split('## Requirements', 1)[0]
+        self.assertIn('+| `src/port.py` | application | R1 needs a label source port and cache | port |', changes)
+        self.assertIn('-| `src/port.py` | application | R1 needs a label source port | port |', changes)
+        # 6.5: a strict "BLOCKER only" rule would have dropped three real IMPORTANT findings of rounds 3 and 4.
+        self.assertIn('Outside those changes report a new finding only when it is a BLOCKER or an IMPORTANT '
+                      'whose summary cites the file:line that proves it; report no MINOR there.', text)
+        self.assertIn('second implementation', text, 'the first-review questions still apply to the changes')
+        self.assertIn('## Class inventory', text.split('## Changes since the reviewed design', 1)[1])
+        self.assertIn('--- reviewed plan.md', changes)
+        self.assertNotIn('**Result:** FAIL', changes, 'the recorded verdict is not a design change')
+        whole = self.run_step('design-brief', 'demo', '--full')
+        self.assertIn('(whole review)', whole.stdout)
+        self.assertTrue(brief.read_text().startswith('# Design review: `demo`'))
+        self.assertNotIn('## Previous findings', brief.read_text())
+
+    def test_a_re_review_shows_task_and_spec_changes_and_only_those_made_after_the_brief(self):
+        """The reviewer reads plan.md tasks and spec.md too; 6.6 edited both while the reviewer ran."""
+        self.plan.write_text(INVENTORY_PLAN)
+        spec = self.change / 'spec.md'
+        self.run_step('design-brief', 'demo')
+        spec.write_text(spec.read_text().replace('SHALL equal ready', 'SHALL equal ready or READY'))
+        self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
+        self.plan.write_text(self.plan.read_text().replace('### T1', '### T1 (reordered)', 1))
+        self.run_step('design-brief', 'demo')
+        text = (self.change / 'runs/design-brief.md').read_text()
+        self.assertIn('+The diagnostic label SHALL equal ready or READY.', text, 'edited during the review')
+        self.assertIn('(reordered)', text.split('## Changes since the reviewed design', 1)[1].split('````', 2)[1])
+
+    def test_a_design_change_after_a_pass_is_reviewed_as_a_change(self):
+        self.plan.write_text(INVENTORY_PLAN)
+        self.run_step('design-brief', 'demo')
+        self.assertEqual(0, self.review('PASS').returncode)
+        self.plan.write_text(self.plan.read_text().replace('label source port', 'label source port and cache'))
+        self.run_step('design-brief', 'demo')
+        text = (self.change / 'runs/design-brief.md').read_text()
+        self.assertIn('- None: the design changed after a PASS.', text)
+        self.assertIn('+| `src/port.py` | application | R1 needs a label source port and cache | port |', text)
 
     def test_new_file_outside_inventory_fails_accept_and_pre_review(self):
         self.plan.write_text(INVENTORY_PLAN)

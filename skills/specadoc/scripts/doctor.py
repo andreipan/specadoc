@@ -6,6 +6,7 @@ exact duplicate requirement text; resolving ownership remains a human decision.
 
 `--probe` checks the run environment instead: the shell a controller, orchestrator or
 verifier works in. It runs the project's `verification.probe` commands and changes nothing.
+`--probe --baseline` also runs `verification.final`, so a gate that already fails is known at the start.
 """
 
 from __future__ import annotations
@@ -219,6 +220,7 @@ def inspect(root: Path, ref_root: str | None = None, repo_root: Path | None = No
 
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 PROBE_TIMEOUT = 60.0
+BASELINE_TIMEOUT = 1800.0
 
 
 def _executable_problem(command: str, repo: Path, which) -> str | None:
@@ -253,10 +255,15 @@ def _executable_problem(command: str, repo: Path, which) -> str | None:
 
 
 def probe(repo: Path, *, expect_head: str | None = None, controller: str | None = None, which=None,
-          timeout: float = PROBE_TIMEOUT) -> tuple[list[str], list[Finding]]:
+          timeout: float = PROBE_TIMEOUT, baseline: bool = False,
+          baseline_timeout: float = BASELINE_TIMEOUT) -> tuple[list[str], list[Finding]]:
     """Check the environment this shell gives a run, before roadmap work starts on it. Every run so far
     lost its largest block of time to first contact with a changed environment: another checkout (4.9),
-    a runtime that cannot start in the sandbox (5.2), no interpreter on PATH (6.1), no test database (6.4)."""
+    a runtime that cannot start in the sandbox (5.2), no interpreter on PATH (6.1), no test database (6.4).
+
+    `baseline` also runs every `verification.final` command on the checkout as it is: in 6.5 a lint error
+    in a file no task touched stopped the first `accept`, 55 minutes into the run, and cost two user
+    decisions that the same run before the mandate question would have cost none."""
     from specadoc_config import load_config
     which = which or shutil.which
     passed: list[str] = [f"python {sys.version.split()[0]} ({sys.executable})"]
@@ -281,6 +288,8 @@ def probe(repo: Path, *, expect_head: str | None = None, controller: str | None 
             findings.append(Finding("ERROR", "probe/final", f"`{command}`: {problem}"))
         else:
             passed.append(f"final command can start: {command}")
+            if baseline:
+                _baseline(command, repo, current, baseline_timeout, passed, findings)
     for command in verification.get("probe", []):
         try:
             done = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True, timeout=timeout)
@@ -311,6 +320,25 @@ def probe(repo: Path, *, expect_head: str | None = None, controller: str | None 
     return passed, findings
 
 
+def _baseline(command: str, repo: Path, head: str, timeout: float, passed: list[str],
+              findings: list[Finding]) -> None:
+    """Run one final command before any change and report a failure as the checkout's own."""
+    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo,
+                           capture_output=True, text=True).stdout.strip()
+    where = f"{head[:12] or 'this checkout'}{' with uncommitted changes' if dirty else ''}"
+    try:
+        done = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        findings.append(Finding("ERROR", "probe/baseline", f"`{command}`: no result within {timeout:g} s"))
+        return
+    if done.returncode != 0:
+        tail = " | ".join((done.stdout + done.stderr).strip().splitlines()[-6:])
+        findings.append(Finding("ERROR", "probe/baseline", f"`{command}` fails on {where} before any change: "
+                                f"exit {done.returncode}: {tail}"))
+    else:
+        passed.append(f"final command passes on {where}: {command}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="artifact root (default: resolved, see specadoc_root.py)")
@@ -321,16 +349,19 @@ def build_parser() -> argparse.ArgumentParser:
                              "checkout) instead of the specs; exit 1 on any error")
     parser.add_argument("--expect-head", metavar="SHA",
                         help="with --probe: the revision the parent session works on")
+    parser.add_argument("--baseline", action="store_true",
+                        help="with --probe: also run every verification.final command on the checkout as it is")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.expect_head and not args.probe:
-        print("error: --expect-head needs --probe", file=sys.stderr)
+    if (args.expect_head or args.baseline) and not args.probe:
+        print("error: --expect-head and --baseline need --probe", file=sys.stderr)
         return 2
     if args.probe:
-        passed, findings = probe(Path.cwd(), expect_head=args.expect_head, controller=args.controller_runtime)
+        passed, findings = probe(Path.cwd(), expect_head=args.expect_head, controller=args.controller_runtime,
+                                 baseline=args.baseline)
         for line in passed:
             print(f"ok: {line}")
         for finding in findings:

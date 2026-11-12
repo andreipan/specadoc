@@ -243,6 +243,28 @@ class SpecadocProbeTest(unittest.TestCase):
         self.assertEqual(1, len(findings), findings)
         self.assertIn("exit 3: cannot reach the test database", findings[0])
 
+    def test_baseline_runs_the_final_commands_and_reports_a_gate_that_already_fails(self) -> None:
+        self.script("bin/lint", "#!/bin/sh\necho 'GateTransport.php:56 already narrowed'\nexit 1")
+        self.script("bin/suite", "#!/bin/sh\nexit 0")
+        for name in ("bin/lint", "bin/suite"):
+            (self.project / name).chmod(0o755)
+        self.config(final=["bin/suite", "bin/lint"])
+        passed, findings = self.probe()
+        self.assertEqual([], findings, "without --baseline the final commands are not run")
+        passed, findings = self.probe(baseline=True)
+        self.assertIn(f"final command passes on {self.head[:12]}: bin/suite", passed)
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("ERROR: probe/baseline: `bin/lint` fails on", findings[0])
+        self.assertIn("before any change: exit 1: GateTransport.php:56 already narrowed", findings[0])
+
+    def test_baseline_says_when_the_checkout_has_uncommitted_changes(self) -> None:
+        self.script("bin/suite", "#!/bin/sh\nexit 0")
+        (self.project / "bin/suite").chmod(0o755)
+        subprocess.run(["git", "add", "bin/suite"], cwd=self.project, check=True)
+        self.config(final=["bin/suite"])
+        passed, _ = self.probe(baseline=True)
+        self.assertIn(f"final command passes on {self.head[:12]} with uncommitted changes: bin/suite", passed)
+
     def test_another_revision_than_the_parent_expects_is_an_error(self) -> None:
         self.config(final=[])
         _, findings = self.probe(expect_head="0" * 40)

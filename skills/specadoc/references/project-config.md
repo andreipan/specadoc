@@ -68,7 +68,9 @@ run the controller made:
 before roadmap work starts: the executables of `verification.final` (and the
 interpreter their `#!` line names), each routed runtime's CLI and writable
 home, the checkout, and every quick command in `verification.probe` (exit 0
-within 60 s), for example one query against the test database:
+within 60 s), for example one query against the test database. `--baseline`
+also runs each `verification.final` command on the checkout as it is, so a
+gate that fails before any change stops the run at the start:
 
 ```json
 {"version": 1, "verification": {"probe": ["<command that reaches the test database>"]}}

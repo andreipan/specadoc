@@ -259,11 +259,11 @@ with `run_in_background: true` (pass `run_in_background: false`), and do no
 parallel work of your own meanwhile: reading the code yourself and polling
 followed from it (4.10, 5.1). A host that starts the agent asynchronously
 whatever you pass (Claude Code answers "Async agent launched") and a resumed
-task worker both report later: run `specadoc_step.py wait <slug> T<n> --timeout 540` with the shell
+task worker both report later: run `specadoc_step.py wait <slug> T<n>` (540 s) with the shell
 tool's limit raised (Claude Code: Bash `timeout` 600000). It returns on a new
 report of any status; `WAITING` after the timeout means the worker is still
-running. It knows task reports only, not scouts, reviewers, tidy or archive
-workers. For those, end the turn and take the host's completion notice. Never poll an agent's output file or run a
+running. `wait <slug> tidy` waits for the tidy record. Scouts, reviewers and archive
+workers it does not know: end the turn and take the host's completion notice. Never poll an agent's output file or run a
 sleep loop: a reply reaches the controller only when the running command
 returns (4.3: a scout report waited 9 minutes, 4.5: a NEEDS_CONTEXT waited 10
 minutes behind a loop that exited only on DONE, 4.10: an archive worker was
