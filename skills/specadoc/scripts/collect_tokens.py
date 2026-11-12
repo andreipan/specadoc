@@ -41,6 +41,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from specadoc_root import legacy_warning, resolve_root  # noqa: E402
 from validate_change import PLACEHOLDER  # noqa: E402
 
+# A block still waiting for its totals: the template's `Pending`, or a `<…>` hint (6.3/6.4: the
+# `Pending` line survived --append and `validate --phase final` refused the plan).
+UNFILLED = re.compile(r"(?:pending|tbd)\.?", re.I)
+
 @dataclass
 class Execution:
     """One run. A resumed session writes a second transcript whose counter
@@ -446,6 +450,7 @@ def append_to_plan(plan: Path, rows: list[str], mode: str,
         for line in lines[label + 1 : end]
         if not replaces(line)
         and not PLACEHOLDER.fullmatch(line.strip())
+        and not UNFILLED.fullmatch(line.strip())
     ]
     plan.write_text(
         "\n".join(lines[: label + 1] + existing + totals + lines[end:]) + "\n",

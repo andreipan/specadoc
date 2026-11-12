@@ -1834,7 +1834,9 @@ def wait_report(slug: str, task: str, root: str | None, timeout: float, interval
             return emit(["task report"], "CHECKED", [], "", WAIT_NEXT[status].format(slug=slug, task=task),
                         f"report: {status} ({report})")
     before = f"still {start_status or 'no report'}"
-    return emit(["task report"], "BLOCKED", [], f"no new {task} report within {int(timeout)}s ({before})",
+    # A timeout is a check-in, not a blocker: the worker may simply still be running (6.4: five
+    # "BLOCKED" results for one live worker). Exit code stays 2 so a command chain stops here.
+    return emit(["task report"], "WAITING", [], f"no new {task} report within {int(timeout)}s ({before})",
                 f"read any sub-agent reply that arrived, then wait again or inspect the worker")
 
 

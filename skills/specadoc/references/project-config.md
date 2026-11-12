@@ -64,6 +64,16 @@ run the controller made:
 {"version": 1, "verification": {"final": ["<suite command>", "<gates command>"]}}
 ```
 
+`doctor.py --probe [--expect-head <sha>]` checks the shell a session runs in
+before roadmap work starts: the executables of `verification.final` (and the
+interpreter their `#!` line names), each routed runtime's CLI and writable
+home, the checkout, and every quick command in `verification.probe` (exit 0
+within 60 s), for example one query against the test database:
+
+```json
+{"version": 1, "verification": {"probe": ["<command that reaches the test database>"]}}
+```
+
 A project that wants every change tidied before its independent review sets:
 
 ```json

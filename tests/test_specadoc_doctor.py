@@ -194,5 +194,82 @@ class SpecadocDoctorTest(unittest.TestCase):
         self.assertIn("reviewer shares worker runtime codex", warnings[0])
 
 
+class SpecadocProbeTest(unittest.TestCase):
+    """`doctor.py --probe`: the run environment, checked before roadmap work starts on it."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.project = Path(self.temp.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base"],
+                       cwd=self.project, check=True)
+        self.head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.project, capture_output=True,
+                                   text=True).stdout.strip()
+        self.doctor = load_module()
+
+    def config(self, **verification) -> None:
+        self.project.joinpath(".specadoc.json").write_text(json.dumps({"version": 1, "verification": verification}))
+
+    def script(self, name: str, first_line: str) -> None:
+        path = self.project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(first_line + "\n", encoding="utf-8")
+
+    def probe(self, **options):
+        passed, findings = self.doctor.probe(self.project, **options)
+        return passed, [finding.render() for finding in findings]
+
+    def test_a_clean_environment_passes_and_names_what_it_checked(self) -> None:
+        self.script("bin/suite", "#!/bin/sh")
+        self.config(final=["bin/suite --all"], probe=["true"])
+        passed, findings = self.probe(expect_head=self.head[:12])
+        self.assertEqual([], findings)
+        self.assertIn("final command can start: bin/suite --all", passed)
+        self.assertIn("probe command: true", passed)
+
+    def test_a_final_command_without_its_file_or_interpreter_is_an_error(self) -> None:
+        self.script("bin/suite", "#!/usr/bin/env no-such-interpreter-xyz")
+        self.config(final=["bin/suite", "bin/missing", "NAME=1 no-such-program-xyz --flag"])
+        _, findings = self.probe()
+        self.assertEqual(3, len(findings), findings)
+        self.assertIn("`bin/suite` needs `no-such-interpreter-xyz`, which is not on PATH", findings[0])
+        self.assertIn("`bin/missing` does not exist", findings[1])
+        self.assertIn("`no-such-program-xyz` is not on PATH", findings[2])
+
+    def test_a_failing_probe_command_reports_its_exit_code_and_output_tail(self) -> None:
+        self.config(probe=["echo cannot reach the test database >&2; exit 3"])
+        _, findings = self.probe()
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("exit 3: cannot reach the test database", findings[0])
+
+    def test_another_revision_than_the_parent_expects_is_an_error(self) -> None:
+        self.config(final=[])
+        _, findings = self.probe(expect_head="0" * 40)
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("ERROR: probe/checkout: HEAD is", findings[0])
+
+    def test_a_routed_runtime_without_its_cli_is_an_error_unless_it_is_the_controller(self) -> None:
+        self.project.joinpath(".specadoc.json").write_text(json.dumps(
+            {"version": 1, "roles": {"worker": {"runtime": "claude"}, "reviewer": {"runtime": "codex"}}}))
+        _, findings = self.probe(controller="claude", which=lambda name: None)
+        self.assertEqual(["ERROR: probe/reviewer: codex CLI is not on PATH"], findings)
+
+    def test_the_command_exits_1_on_an_error_and_0_when_clean(self) -> None:
+        def run(*args: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([sys.executable, str(MODULE_PATH), "--probe", *args], cwd=self.project,
+                                  capture_output=True, text=True)
+
+        self.config(probe=["true"])
+        clean = run("--expect-head", self.head)
+        self.assertEqual(0, clean.returncode, clean.stdout + clean.stderr)
+        self.assertIn("probe: PASS", clean.stdout)
+        self.config(probe=["false"])
+        failed = run()
+        self.assertEqual(1, failed.returncode, failed.stdout + failed.stderr)
+        self.assertIn("probe: FAIL", failed.stdout)
+        self.assertIn("PATH=", failed.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

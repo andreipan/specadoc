@@ -35,6 +35,11 @@
           "description": "Commands the controller runs once before the first review instead of the whole suite and gates; `finalize --observed` names them",
           "type": "array",
           "items": {"type": "string", "pattern": "\\S"}
+        },
+        "probe": {
+          "description": "Quick commands `doctor.py --probe` runs before roadmap work to prove this shell reaches what verification needs (test database, services); each must exit 0 within 60 s",
+          "type": "array",
+          "items": {"type": "string", "pattern": "\\S"}
         }
       }
     },

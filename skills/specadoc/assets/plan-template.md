@@ -220,7 +220,7 @@ Requirement mapping:
 R1 -> Pending
 
 Execution tokens:
-<per-execution totals collected by collect_tokens.py>
+Pending
 
 Review rounds:
 Pending

@@ -3,12 +3,19 @@
 
 This command is read-only. It deliberately reports only structural conflicts and
 exact duplicate requirement text; resolving ownership remains a human decision.
+
+`--probe` checks the run environment instead: the shell a controller, orchestrator or
+verifier works in. It runs the project's `verification.probe` commands and changes nothing.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shlex
+import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -210,16 +217,129 @@ def inspect(root: Path, ref_root: str | None = None, repo_root: Path | None = No
     return DoctorReport(tuple(sorted(findings, key=lambda finding: (finding.level, finding.subject, finding.message))))
 
 
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+PROBE_TIMEOUT = 60.0
+
+
+def _executable_problem(command: str, repo: Path, which) -> str | None:
+    """Why the first program of `command` cannot start here, or None. A script's `#!/usr/bin/env <x>`
+    interpreter counts: 6.1/6.2 controllers had the suite's launcher script but not its interpreter on PATH."""
+    try:
+        words = shlex.split(command)
+    except ValueError as exc:
+        return f"cannot parse ({exc})"
+    while words and (ASSIGNMENT.match(words[0]) or words[0] == "env"):
+        words.pop(0)
+    if not words:
+        return "names no program"
+    program = words[0]
+    if "/" not in program:
+        return None if which(program) else f"`{program}` is not on PATH"
+    path = Path(program) if Path(program).is_absolute() else repo / program
+    if not path.is_file():
+        return f"`{program}` does not exist"
+    try:
+        with path.open("rb") as handle:
+            first = handle.readline(200).decode("utf-8", "replace").strip()
+    except OSError as exc:
+        return f"`{program}` cannot be read ({exc.strerror})"
+    if first.startswith("#!"):
+        parts = first[2:].split()
+        if parts and Path(parts[0]).name == "env":
+            parts = [word for word in parts[1:] if not word.startswith("-") and not ASSIGNMENT.match(word)]
+        if parts and not which(parts[0]):
+            return f"`{program}` needs `{parts[0]}`, which is not on PATH"
+    return None
+
+
+def probe(repo: Path, *, expect_head: str | None = None, controller: str | None = None, which=None,
+          timeout: float = PROBE_TIMEOUT) -> tuple[list[str], list[Finding]]:
+    """Check the environment this shell gives a run, before roadmap work starts on it. Every run so far
+    lost its largest block of time to first contact with a changed environment: another checkout (4.9),
+    a runtime that cannot start in the sandbox (5.2), no interpreter on PATH (6.1), no test database (6.4)."""
+    from specadoc_config import load_config
+    which = which or shutil.which
+    passed: list[str] = [f"python {sys.version.split()[0]} ({sys.executable})"]
+    findings: list[Finding] = []
+    try:
+        config = load_config(repo)
+    except ValueError as exc:
+        return passed, [Finding("ERROR", "probe/config", str(exc))]
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True)
+    current = head.stdout.strip()
+    if head.returncode != 0:
+        findings.append(Finding("WARN" if not expect_head else "ERROR", "probe/checkout",
+                                f"{repo} is not a git checkout"))
+    elif expect_head and not (current.startswith(expect_head) or expect_head.startswith(current)):
+        findings.append(Finding("ERROR", "probe/checkout", f"HEAD is {current[:12]}, expected {expect_head[:12]}: "
+                                "this session runs in another checkout or revision"))
+    else:
+        passed.append(f"checkout {repo} at {current[:12]}")
+    verification = config.get("verification") or {}
+    for command in verification.get("final", []):
+        if problem := _executable_problem(command, repo, which):
+            findings.append(Finding("ERROR", "probe/final", f"`{command}`: {problem}"))
+        else:
+            passed.append(f"final command can start: {command}")
+    for command in verification.get("probe", []):
+        try:
+            done = subprocess.run(command, shell=True, cwd=repo, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            findings.append(Finding("ERROR", "probe/command", f"`{command}`: no result within {timeout:g} s"))
+            continue
+        if done.returncode != 0:
+            tail = " | ".join((done.stderr + done.stdout).strip().splitlines()[-3:])
+            findings.append(Finding("ERROR", "probe/command", f"`{command}`: exit {done.returncode}: {tail}"))
+        else:
+            passed.append(f"probe command: {command}")
+    import run_role
+    checks = {"codex": run_role._check_codex_home, "opencode": run_role._check_opencode_log}
+    for role, binding in sorted((config.get("roles") or {}).items()):
+        runtime = binding["runtime"]
+        if runtime == controller:
+            continue
+        if not which(runtime):
+            findings.append(Finding("ERROR", f"probe/{role}", f"{runtime} CLI is not on PATH"))
+            continue
+        try:
+            if runtime in checks and role != "controller":
+                checks[runtime](role, True)
+        except run_role.SandboxedRun as exc:
+            findings.append(Finding("ERROR", f"probe/{role}", str(exc)))
+        else:
+            passed.append(f"{role} runtime {runtime} can start")
+    return passed, findings
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="artifact root (default: resolved, see specadoc_root.py)")
     parser.add_argument("--strict", action="store_true", help="return non-zero for warnings too")
     parser.add_argument("--controller-runtime", choices=("claude", "codex", "opencode"), type=normalize_runtime, help="also inspect role routing, CLI presence and independence")
+    parser.add_argument("--probe", action="store_true",
+                        help="check this shell's run environment (final commands, verification.probe, runtimes, "
+                             "checkout) instead of the specs; exit 1 on any error")
+    parser.add_argument("--expect-head", metavar="SHA",
+                        help="with --probe: the revision the parent session works on")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.expect_head and not args.probe:
+        print("error: --expect-head needs --probe", file=sys.stderr)
+        return 2
+    if args.probe:
+        passed, findings = probe(Path.cwd(), expect_head=args.expect_head, controller=args.controller_runtime)
+        for line in passed:
+            print(f"ok: {line}")
+        for finding in findings:
+            print(finding.render())
+        errors = sum(1 for finding in findings if finding.level == "ERROR")
+        print(f"probe: {'FAIL' if errors else 'PASS'} ({len(passed)} ok, {errors} error(s), "
+              f"{len(findings) - errors} warning(s)); PATH={os.environ.get('PATH', '')}" if errors
+              else f"probe: PASS ({len(passed)} ok, {len(findings)} warning(s))")
+        return int(bool(errors))
     try:
         choice = resolve_root(args.root)
     except ValueError as exc:

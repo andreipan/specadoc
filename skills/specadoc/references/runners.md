@@ -60,7 +60,7 @@ writes its full report to `runs/T<n>-report.md`.
 python3 <skill-root>/scripts/run_role.py start --role worker --runtime <runtime> \
   --model <model> --effort <effort> --prompt-file <root>/<slug>/runs/T<n>-brief.md --name T<n>
 python3 <skill-root>/scripts/run_role.py status <run-file>
-python3 <skill-root>/scripts/run_role.py wait <run-file> --timeout 110 --shell-budget 120 --follow
+python3 <skill-root>/scripts/run_role.py wait <run-file> --timeout 540 --shell-budget 590 --follow
 python3 <skill-root>/scripts/run_role.py result <run-file>
 ```
 
@@ -68,7 +68,9 @@ In a project with routing in `.specadoc.json`, replace `--runtime/--model/--effo
 with `--controller-runtime <codex|claude|opencode>`; `start` refuses to guess it.
 
 `start` returns immediately with the run file; `wait` blocks for at most the
-timeout, so a shell tool with a per-command limit waits in slices. `result`
+timeout. Raise the shell tool's own limit for that call (Claude Code: Bash
+`timeout` 600000); where it cannot be raised, wait in slices under it
+(`--timeout 110 --shell-budget 120`). `result`
 exits 1 when the CLI failed or the JSON breaks the schema; read the log named
 in the run file before retrying, and never resend an unchanged prompt. Use
 `stop <run-file>` to abandon a run.

@@ -732,6 +732,15 @@ def files_field_digests(files_field: str, *, repository_only: bool = False) -> d
 # a shared database, a manual check); review may open, `final` may not.
 SETTLED_STATES = ("accepted", "external-pending")
 NO_VALUE = re.compile(r"(?:none|n/a|-)(?:\b|;|$)", re.I)
+# `Open decisions:` is closed when it says none, optionally with a note in brackets or after `;`
+# ("None (Q1 settled by D25)"). Plan validation and dispatch share it (6.4: the plan passed, then
+# dispatch refused that exact line and the controller edited the approved plan).
+CLOSED_DECISIONS = re.compile(r"(?:none|n/a|нет|-)\s*(?:[(;].*)?", re.I | re.S)
+
+
+def open_decisions_error(identifier: str, value: str | None) -> str | None:
+    text = " ".join((value or "None").split()) or "None"
+    return None if CLOSED_DECISIONS.fullmatch(text) else f"{identifier}: unresolved decisions: {text}"
 
 
 def external_verification(fields: dict[str, str]) -> str | None:
@@ -838,7 +847,7 @@ def controller_routing_warnings(plan: Document) -> list[str]:
         if (fields.get("Owner", "").strip().lower() != "controller" or (marks and " " not in marks)
                 or (justification and not NO_VALUE.match(justification))
                 or fields.get("Decision risk", "").strip().lower() != "low"
-                or not NO_VALUE.match(fields.get("Open decisions", "None").strip() or "None")):
+                or open_decisions_error(identifier, fields.get("Open decisions"))):
             continue
         if not VERIFICATION_COMMANDS.fullmatch(fields.get("Verification", "")):
             continue
@@ -955,6 +964,9 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
             )
         if owner == "worker" and not complete and decision_risk != "low":
             violations.append(Violation(plan.display, start + 1, f"{identifier}: {WORKER_DECISION_RISK}"))
+        if owner == "worker" and not complete and (
+                error := open_decisions_error(identifier, fields.get("Open decisions"))):
+            violations.append(Violation(plan.display, start + 1, error))
         if owner == "worker" and not complete and "Files" in fields:
             _, uncheckable = files_patterns(fields["Files"])
             if uncheckable:

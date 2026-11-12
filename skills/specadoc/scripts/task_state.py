@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from validate_change import (Document, PENDING, SETTLED_STATES, TASK_CHECKBOX, WORKER_DECISION_RISK,
-                             evidence_staleness, files_field_hash, ids_in, task_fields)
+                             evidence_staleness, files_field_hash, ids_in, open_decisions_error,
+                             task_fields)
 
 SCHEMA = "specadoc.task/v2"
 
@@ -53,9 +54,8 @@ def readiness(plan: Document, task: str) -> list[str]:
         errors.append(f"{task}: dispatch requires Owner: worker or controller")
     if owner == "worker" and fields.get("Decision risk", "").lower() != "low":
         errors.append(f"{task}: resolve material decisions before worker dispatch: {WORKER_DECISION_RISK}")
-    open_decisions = fields.get("Open decisions", "None").strip()
-    if open_decisions.lower() not in ("none", "n/a", "нет", "-"):
-        errors.append(f"{task}: unresolved decisions: {open_decisions}")
+    if error := open_decisions_error(task, fields.get("Open decisions")):
+        errors.append(error)
     blocks = {identifier: (start, end) for identifier, start, end in plan.blocks("Tasks", "T")}
 
     def visit(current: str, trail: tuple[str, ...]) -> None:

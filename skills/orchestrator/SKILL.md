@@ -30,6 +30,11 @@ Foreman inside them. For one local change, prefer one ordinary controller.
    skill. Use installed project/host routing; never silently change bindings.
    Show each repository's routed roles beside the runtime/model you will launch;
    on a mismatch ask the user. Never edit routing or role files yourself.
+   Before the mandate question run Specadoc `doctor.py --probe` in each
+   repository, in your own shell and, where the host gives a child another
+   environment, through the host's launch (host notes) with `--expect-head`.
+   An error stops the run here, while the user is present: report it, do not
+   work around it.
 5. Reuse the record found in step 1, or create one where `references/state.md`
    says. It tracks relationships and shared decisions, not duplicate local
    specifications, task lists, or verification logs.
