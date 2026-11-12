@@ -372,6 +372,15 @@ def write_report(slug: str, task: str, root: str | None, status: str, summary: s
                 *([f"- {item}" for item in concerns] or ["None"]), ""]
     if body.strip():
         sections += ["## Notes", "", body.strip(), ""]
+    # A completion report with a scope violation is not written: `wait` would release the controller
+    # to accept while the worker still fixes it (6.1: accept raced the worker's edits). NEEDS_CONTEXT
+    # and BLOCKED are written as-is so the controller learns about them.
+    absent = planned_missing(slug, task, root) if status in ("DONE", "DONE_WITH_CONCERNS") else []
+    if status in ("DONE", "DONE_WITH_CONCERNS") and (violations or absent):
+        reasons = [*(["changes outside the task scope"] if violations else []), *([MISSING_REASON] if absent else [])]
+        return emit(checked, "FAIL", [*violations, *absent], "; ".join(reasons),
+                    "report not written: revert out-of-scope paths and create the planned files, then report again; "
+                    "or rerun report with --status NEEDS_CONTEXT naming the required path")
     text = "\n".join(sections) + "\n```json\n" + json.dumps(payload, indent=1, ensure_ascii=False) + "\n```\n"
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(text, encoding="utf-8")
@@ -429,6 +438,39 @@ def scope_state(slug: str, task: str, root: str | None, checked: list[str]) -> t
     violations += [f"{path} (new file outside Class inventory)"
                    for path in outside(Document(plan_path, str(plan_path)), added)]
     return changed, violations, payload.get("derived", []), None
+
+
+MISSING_REASON = "Class inventory files not created"
+MISSING_NEXT = ("create each planned file, or amend the Class inventory and run a new design review; "
+                "a file another unaccepted task creates is not counted")
+
+
+def planned_missing(slug: str, task: str, root: str | None) -> list[str]:
+    """Exact Class-inventory paths inside this task's Files that do not exist, unless another task that
+    is not yet accepted also covers them (6.2: T2 left out both endpoint Mappers its Files glob covered)."""
+    from design_gate import missing
+    from review_snapshot import in_scope, task_scope
+    change = Path(resolve_root(root).path) / slug
+    plan = Document(change / "plan.md", "plan.md")
+    absent = missing(plan)
+    if not absent:
+        return []
+    own = task_scope(plan, task)[0]
+    others: list[str] = []
+    for identifier, _, _ in plan.blocks("Tasks", "T"):
+        if identifier == task:
+            continue
+        try:
+            state = json.loads((change / "runs" / f"{identifier}-baseline.json").read_text(encoding="utf-8")).get("state")
+        except (OSError, ValueError, AttributeError):
+            state = None
+        if state not in SETTLED_STATES:
+            try:
+                others += task_scope(plan, identifier)[0]
+            except RuntimeError:  # ScopeError: a task without Files covers nothing
+                pass
+    return [f"{path} (Class inventory file not created)" for path in absent
+            if in_scope(path, own) and not in_scope(path, others)]
 
 
 def check_scope(slug: str, task: str, root: str | None, checked: list[str]) -> tuple[list[str], int | None]:
@@ -497,6 +539,10 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
         checked.append("amendments: " + " | ".join(amendments))
     scope_next = ("revert each path, list it in Derived files via amend, or amend --allow it with a reason; "
                   "a new file outside Class inventory needs an inventory row and a new design review")
+    # Before verification: a missing planned file fails without a suite run.
+    if absent := planned_missing(slug, task, root):
+        return emit(checked, "FAIL", [*violations, *absent],
+                    MISSING_REASON + ("; also changes outside the task scope" if violations else ""), MISSING_NEXT)
     if scope_only:
         if violations:
             return emit(checked, "FAIL", violations, "changes outside the task scope", scope_next)
@@ -1227,6 +1273,8 @@ def task_manifest(slug: str, task: str, root: str | None) -> int:
     if violations:
         return emit(["task manifest"], "FAIL", violations, "changes outside the task scope",
                     "resolve the scope violation; no paths adopted automatically")
+    if absent := planned_missing(slug, task, root):
+        return emit(["task manifest"], "FAIL", absent, MISSING_REASON, MISSING_NEXT)
     artifact_root = resolve_root(root).path
     from review_snapshot import _under
     paths = [path for path in changed if not _under(path, artifact_root)]
@@ -1385,6 +1433,18 @@ def pre_review(slug: str, root: str | None, controller: str | None = None, *,
     payload = json.loads(snapshot.stdout)
     changed = sorted(path for path in payload["manifest"] if path != CONTRACT_KEY)
     plan = Document(Path(resolve_root(root).path) / slug / "plan.md", "plan.md")
+    # 6.1: G2 opened without two files a reopened task added; `scope` then changed Review scope
+    # under the open round and the round came back stale.
+    from design_gate import added_since_start
+    try:
+        relative_root = Path(resolve_root(root).path).resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:  # artifact root outside the checkout: nothing of it is in the tree
+        relative_root = resolve_root(root).path
+    unscoped = [path for path in added_since_start(change, relative_root) or []
+                if path not in payload["manifest"] and Path(path).name not in OS_JUNK]
+    if unscoped:
+        return emit(checked, "BLOCKED", unscoped, "files added during apply are missing from Review scope",
+                    f"scope {slug} (or list them in Review scope), then pre-review; never change scope under an open round")
     if record_round:
         from review_state import insert_round
         identifier = insert_round(Path(resolve_root(root).path) / slug, payload, review_type,

@@ -25,10 +25,11 @@ Load only for `specadoc apply <slug>`.
    Note a fix later tasks may repeat in `runs/lessons.md`; briefs include it.
 5. The implementer ends with `report <slug> T<n> --status … --summary … --red …
    --green …`. Read the report, then `accept <slug> T<n>`: it validates the
-   result JSON, runs Verification (reused only for unchanged inputs, commands
-   and environment), checks scope and on **ACCEPTED** records Evidence. Concerns give **NEEDS_DECISION**: rerun with `--note '<decision>'`. A
+   result JSON, runs Verification (reused for unchanged inputs), checks scope
+   and on **ACCEPTED** records Evidence. Concerns give **NEEDS_DECISION**: rerun with `--note '<decision>'`;
+   a concern disclosing a forbidden step (6.1: RED with the migration moved aside) is a reopen. A
    BLOCKED report whose blocker was removed takes `--resolved '<who and
-   how>'`; never rewrite a worker report. A task with
+   how>'`. A task with
    `External verification:` gives **EXTERNAL-PENDING**: dependents and review may
    start; record the run with `external-result <slug> T<n> --outcome PASS|FAIL
    --evidence '<run>'` (FAIL returns it to work; correct a recorded result with

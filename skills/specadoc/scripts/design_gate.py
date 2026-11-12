@@ -111,6 +111,13 @@ def outside(plan: Document, paths: list[str]) -> list[str]:
     return [path for path in paths if not exempt(path) and not in_scope(path, allowed)]
 
 
+def missing(plan: Document) -> list[str]:
+    """Exact non-test inventory paths absent from the tree (6.2: a task left out two planned Mappers
+    and accept, tidy and the whole suite passed; only the final review saw it)."""
+    return sorted(path for path in patterns(plan) or []
+                  if not any(c in path for c in "*?[") and not exempt(path) and not Path(path).exists())
+
+
 def record_apply_start(runs: Path, manifest: dict[str, str]) -> None:
     """The tree before the first task: later additions are this change's new files."""
     path = runs / APPLY_START
@@ -139,6 +146,8 @@ def gate_violations(plan: Document) -> list[Violation]:
     root = change.parent.resolve().relative_to(Path.cwd().resolve()).as_posix()
     for path in outside(plan, added_since_start(change, root) or []):
         violations.append(Violation(plan.display, 1, f"new file outside Class inventory: {path}"))
+    for path in missing(plan):
+        violations.append(Violation(plan.display, 1, f"Class inventory file not created: {path}"))
     return violations
 
 
@@ -188,6 +197,12 @@ def write_brief(change: Path) -> Path:
              "- For each spec rule on the shape of a value (format, anchors, ranges, explicit null versus absent, "
              "empty object versus empty list, length or precision limits), name the matrix row or task "
              "Verification that tests one accepted and one rejected value. A rule without such a test is IMPORTANT.",
+             # 6.1: a planned path broke the closed use-case folder rule and stopped apply; 6.1/6.2: the spec
+             # promised one Gate request (GETs retry) and a timestamp format the connector rejects.
+             "- Check every inventory path against the repository's folder and naming rules (code standards, "
+             "lint structure rules); a path such a rule forbids is IMPORTANT. Check each spec or plan statement "
+             "about an existing component's behavior (retries, accepted formats, error mapping) against that "
+             "component's code and cite file:line; an unverified statement a requirement depends on is IMPORTANT.",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "

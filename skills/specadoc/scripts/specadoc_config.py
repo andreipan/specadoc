@@ -2,7 +2,17 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+# Every script imports this module first. 6.1: `python3` was macOS's 3.9 in an hc terminal and
+# design-brief failed deep inside with "unsupported operand type(s) for |", next: "retry".
+MIN_PYTHON = (3, 10)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(f"error: Specadoc scripts need Python {'.'.join(map(str, MIN_PYTHON))}+; this is "
+                     f"{sys.version.split()[0]} at {sys.executable}. Put a newer python3 first on PATH "
+                     "(a terminal started without your login PATH) or call it explicitly.\n")
+    raise SystemExit(2)
 
 CONFIG_FILE = ".specadoc.json"
 RUNTIMES = ("claude", "codex", "opencode")
