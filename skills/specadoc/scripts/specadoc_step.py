@@ -38,6 +38,8 @@ Steps:
 - `design-brief <slug>` / `design-review <slug> --from-agent <id>|--result-file
   <reply>` — the design gate: a fresh independent reviewer checks `## Class
   inventory` before apply; dispatch needs a PASS bound to the current inventory.
+- `design-resolve <slug> --file <path|->` — answer each item of a FAIL design round
+  (`F1.2: resolved: <where>` or `rejected: <why>`); `design-brief` needs them all.
 - `review-result <slug> --from-agent <id>|--result-file <reply>` — settle the
   pending round; a native reviewer's reply is saved verbatim under `runs/`, and
   a stale snapshot is reported with its cause.
@@ -270,7 +272,12 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
     plan_path = Path(resolve_root(root).path) / slug / "plan.md"
     plan = Document(plan_path, str(plan_path))
     checked, errors = preflight_checks(slug, task, root, controller)
-    if errors and reopen is not None and all("accepted evidence is stale" in error for error in errors):
+    stale_only = bool(errors) and all("accepted evidence is stale" in error for error in errors)
+    # 6.10: two plain dispatches were blocked because a later task had added a file under an accepted
+    # task's folder. Only file drift is refreshed here; an environment or Verification change stays a stop.
+    file_drift = stale_only and all(re.search(r"owned files changed|verification inputs changed", error)
+                                    for error in errors)
+    if stale_only and (reopen is not None or file_drift):
         # 4.11: a reopen after a failed task found its dependencies stale (shared files); refresh is what
         # the message asked for, so run it here instead of a second controller turn.
         import contextlib
@@ -279,7 +286,7 @@ def dispatch(slug: str, task: str, root: str | None, controller: str | None = No
             refreshed = refresh(slug, root)
         checked, errors = preflight_checks(slug, task, root, controller)
         checked.append("stale dependency evidence refreshed" if refreshed == 0 and not errors
-                       else "refresh before reopen: " + tail(output.getvalue()).replace("\n", " | "))
+                       else "refresh before dispatch: " + tail(output.getvalue()).replace("\n", " | "))
     if errors:
         return emit(checked, "FAIL" if any("paths" in error for error in errors) else "BLOCKED", [],
                     "; ".join(errors), "resolve all preflight errors before dispatch; no baseline written")
@@ -346,8 +353,18 @@ def role_route(role: str, controller: str | None) -> dict | None:
     return resolve_role(Path.cwd(), role, controller)
 
 
+# Words a worker uses when it admits the test came after the code (3.6, 5.2, 6.7, 6.8, 6.10).
+RED_AFTER_CODE = re.compile(
+    r"tests? (?:were |was |is |are )?(?:written|added|created|first run) (?:only )?(?:after|later)"
+    r"|(?:written|added) after (?:the )?(?:code|implementation)"
+    r"|\bred\b.{0,40}\bafter (?:the )?(?:code|implementation)"
+    r"|\bred (?:step )?(?:was |is )?(?:skipped|not observed|not run)"
+    r"|\b(?:no|without|skipped|not an?) (?:the )?(?:observed |real )?red\b"
+    r"|post[- ]hoc red|retro(?:active|spective) red", re.I)
+
+
 def write_report(slug: str, task: str, root: str | None, status: str, summary: str, red: str, green: str,
-                 concerns: list[str], body_file: str | None = None) -> int:
+                 concerns: list[str], body_file: str | None = None, mutation: str | None = None) -> int:
     """Write the task report and its schema-valid result JSON; never hand-written JSON."""
     from run_role import schema_errors, schema_path
     from review_snapshot import _under
@@ -362,12 +379,25 @@ def write_report(slug: str, task: str, root: str | None, status: str, summary: s
                "files_changed": [path for path in changed if not _under(path, artifact_root)],
                "tests": {"red": " ".join(red.split()), "green": " ".join(green.split())},
                "concerns": concerns, "report": report.as_posix()}
+    mutation = " ".join((mutation or "").split())
+    if mutation:
+        payload["tests"]["mutation"] = mutation
+    admitted = next((found.group(0) for text in (payload["tests"]["red"], *concerns)
+                     if (found := RED_AFTER_CODE.search(text))), None)
+    if status in ("DONE", "DONE_WITH_CONCERNS") and admitted and not mutation:
+        _, _, fields = task_block(Document(Path(artifact_root) / slug / "plan.md", "plan.md"), task)
+        from task_brief import optional
+        if not optional(fields.get("TDD exception")):
+            return emit(checked, "FAIL", [], f"the report says the test did not fail first ({admitted!r})",
+                        "report not written: break each behaviour once, note the test that fails, restore the file, "
+                        "then report again with --mutation '<break -> failing test; ...>'")
     if placeholder(payload["summary"]):
         raise ValueError("--summary must describe the delivered result")
     if errors := schema_errors(payload, json.loads(schema_path("worker").read_text())):
         raise ValueError("invalid worker result: " + "; ".join(errors))
     body = safe_path(body_file, allow_missing=False, allow_absolute=True).read_text(encoding="utf-8") if body_file else ""
     sections = [f"# {task} report", "", "## Summary", "", payload["summary"], "", "## RED", "", payload["tests"]["red"],
+                *(["", "## Mutation evidence", "", mutation] if mutation else []),
                 "", "## GREEN", "", payload["tests"]["green"], "", "## Concerns", "",
                 *([f"- {item}" for item in concerns] or ["None"]), ""]
     if body.strip():
@@ -850,6 +880,11 @@ def design_brief(slug: str, root: str | None, controller: str | None, full: bool
                     "list every new non-test file (File | Layer | Why it exists | Kind) first")
     if violations := design_gate.check_inventory(plan):
         return emit(["Class inventory"], "FAIL", [], "; ".join(v.message for v in violations), "fix the inventory rows")
+    if not full and (open_items := design_gate.unresolved(plan)):
+        return emit(["Class inventory", "previous findings"], "BLOCKED", [],
+                    f"{len(open_items)} item(s) of the recorded round have no resolution: {', '.join(open_items)}",
+                    f"fix each in spec.md, plan.md or design.md, then design-resolve {slug} --file - with one line "
+                    "per item: `F1.2: resolved: <section, task or file:line>` or `F1.2: rejected: <why>`")
     checked = ["Class inventory", *binding_check("reviewer", controller)]
     path, rereview = design_gate.write_brief(change, full)
     route = role_route("reviewer", controller)
@@ -883,11 +918,30 @@ def design_review(slug: str, root: str | None, source: str | None, controller: s
     verdict = design_gate.record(change, source, reviewer, agent, same_reviewer_reason)
     checked += ["reviewer schema", "inventory hash", "recorded Design review"] + ([f"reply saved to {source}"] if agent else [])
     if verdict == "PASS":
+        if shown := fill_bindings(change / "plan.md", controller):
+            checked.append(f"Bindings shown: {shown}")
         return emit(checked, "PASS", [], "", "design gate passed; present the plan for approval (or apply the "
                     "orchestrator mandate), then dispatch")
+    plan = Document(change / "plan.md", "plan.md")
     return emit(checked, "FAIL", [], "design review FAIL; read its findings in plan.md",
-                "revise the approach or Class inventory, then design-brief (it writes a re-review of these "
-                "findings and your changes) and review again")
+                f"close every item ({', '.join(design_gate.unresolved(plan)) or 'none listed'}) in this pass, "
+                f"record each with design-resolve {slug} --file -, then design-brief (it writes a re-review of "
+                "these items and your changes) and review again")
+
+
+def design_resolve(slug: str, root: str | None, source: str) -> int:
+    """Record where each item of the FAIL design round is resolved, or why it is rejected."""
+    import design_gate
+    if source != "-" and not Path(source).is_file():
+        raise ValueError(f"file does not exist: {source}")
+    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    change = Path(resolve_root(root).path) / slug
+    recorded, missing = design_gate.resolve(change, text)
+    checked = [f"recorded {', '.join(recorded)}"]
+    if missing:
+        return emit(checked, "CHECKED", [], "",
+                    f"still without a resolution: {', '.join(missing)}; answer them, then design-brief")
+    return emit(checked, "PASS", [], "", "every item answered; design-brief writes the re-review")
 
 
 HANDOFF_LIMIT = 4096
@@ -1094,6 +1148,22 @@ def plan_bindings(plan_path: Path, controller: str | None) -> str:
     except (OSError, ValueError):
         return ""
     return ", ".join(f"{r['role']} {r['runtime']}/{r['model']}/{r['effort']}" for r in routes)
+
+
+def fill_bindings(plan_path: Path, controller: str | None) -> str:
+    """Write the resolved role bindings over a pending `Bindings shown` line; "" when nothing was written.
+    Four runs in a row the controller replaced `Pending` with a heredoc before the plan checkpoint."""
+    from validate_change import PENDING
+    lines = plan_path.read_text(encoding="utf-8").splitlines()
+    index = next((i for i, line in enumerate(lines) if line.startswith("**Bindings shown:**")), None)
+    if index is None:
+        return ""
+    current = lines[index].removeprefix("**Bindings shown:**").strip()
+    if not (placeholder(current) or PENDING.search(current)) or not (shown := plan_bindings(plan_path, controller)):
+        return ""
+    lines[index] = f"**Bindings shown:** {shown}  "
+    plan_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return shown
 
 
 def approve(slug: str, root: str | None, by: str, source: str, bindings: str | None = None,
@@ -1452,10 +1522,42 @@ def pre_review(slug: str, root: str | None, controller: str | None = None, *,
         from review_state import insert_round
         identifier = insert_round(Path(resolve_root(root).path) / slug, payload, review_type,
                                   reason or ("corrections" if review_type == "re-review" else "implementation"), decision)
-        return emit(checked, "PASS", changed, "", f"dispatch independent reviewer for recorded {identifier}",
+        files = review_files(change, identifier, changed)
+        return emit(checked, "PASS", changed, "",
+                    f"dispatch independent reviewer for recorded {identifier}"
+                    + (f"; name {' and '.join(files)} in its brief (the diff against HEAD and git status; "
+                       "the reviewer needs no shell)" if files else ""),
                     f"snapshot: {payload['hash']}\npolicy snapshot: {review_policy_hash(plan)}\nmanifest: recorded in plan.md")
     detail = f"snapshot: {payload['hash']}\npolicy snapshot: {review_policy_hash(plan)}\n```json\n{json.dumps(payload['manifest'])}\n```"
     return emit(checked, "PASS", changed, "", "record this snapshot in a new G<n> round and dispatch the reviewer", detail)
+
+
+def review_files(change: Path, identifier: str, paths: list[str]) -> list[str]:
+    """Write the round's diff against HEAD and its git status under runs/; [] outside a git checkout.
+    6.7-6.10: the external reviewer's shell refused every git call, so one round could not see the diff
+    and the controller prepared these files by hand in the next three steps."""
+    literal = sorted({path.lstrip("!") for path in paths})
+    if not literal:
+        return []
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], capture_output=True, text=True, cwd=Path.cwd())
+    try:
+        status = git("status", "--short", "--", *literal)
+        diff = git("diff", "HEAD", "--", *literal)
+        untracked = git("ls-files", "--others", "--exclude-standard", "--", *literal)
+    except OSError:
+        return []
+    if status.returncode or diff.returncode or untracked.returncode:
+        return []
+    text = diff.stdout
+    for path in untracked.stdout.splitlines():
+        text += git("diff", "--no-index", "--", "/dev/null", path).stdout
+    runs = change / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    written = {runs / f"{identifier}-head.diff": text, runs / f"{identifier}-status.txt": status.stdout}
+    for path, content in written.items():
+        path.write_text(content, encoding="utf-8")
+    return [path.as_posix() for path in written]
 
 
 REPORT_STATUS = re.compile(r'"status":\s*"(?P<status>DONE_WITH_CONCERNS|DONE|NEEDS_CONTEXT|BLOCKED)"')
@@ -1955,6 +2057,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="A whole review again instead of a re-review of the recorded round (after a redesign)")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
+    resolved = steps.add_parser("design-resolve", help="Answer each item of the recorded FAIL design round")
+    resolved.add_argument("change_slug")
+    resolved.add_argument("--file", required=True,
+                          help="Lines `F1.2: resolved: <where>` or `F1.2: rejected: <why>`, or - for stdin")
     for step in (brief, reviewed):
         step.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     approved = steps.add_parser("approve", help="Record plan approval, its provenance and the approved spec/design hashes")
@@ -1979,6 +2085,8 @@ def build_parser() -> argparse.ArgumentParser:
     reported.add_argument("--summary", required=True, help="Delivered result: behavior and interfaces, one or two sentences")
     reported.add_argument("--red", required=True, help="Observed failing test, or the approved TDD exception")
     reported.add_argument("--green", required=True, help="Observed passing checks")
+    reported.add_argument("--mutation", help="When a test did not fail before the code: each break made and the "
+                                             "test that then failed")
     reported.add_argument("--concern", action="append", default=[], help="One concern; repeat as needed")
     reported.add_argument("--body-file", help="Optional longer notes appended to the report")
     external = steps.add_parser("external-result", help="Record a task's External verification result")
@@ -2015,7 +2123,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-PROPOSE_STEPS = ("approve", "design-brief", "design-review")
+PROPOSE_STEPS = ("approve", "design-brief", "design-review", "design-resolve")
 # Read-only steps also run by an orchestrator; they must not record its session.
 UNRECORDED_STEPS = ("status", "preflight", "manifest")
 
@@ -2075,6 +2183,8 @@ def main() -> int:
         if args.step == "design-review":
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
                                  args.from_agent, args.same_reviewer_reason)
+        if args.step == "design-resolve":
+            return design_resolve(args.change_slug, args.root, args.file)
         if args.step == "approve":
             return approve(args.change_slug, args.root, args.by, args.source, args.bindings, args.controller_runtime)
         if args.step == "handoff":
@@ -2094,7 +2204,7 @@ def main() -> int:
                           as_json=args.json)
         if args.step == "report":
             return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
-                                args.green, args.concern, args.body_file)
+                                args.green, args.concern, args.body_file, args.mutation)
         if args.step == "external-result":
             return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log,
                                    args.supersede)

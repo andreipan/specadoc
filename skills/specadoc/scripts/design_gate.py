@@ -71,7 +71,8 @@ def check_inventory(plan: Document) -> list[Violation]:
             violations.append(Violation(plan.display, number, f"Class inventory: {file} has no layer"))
         if len(why.split()) < 3 or PENDING.search(why) or "<" in why:
             violations.append(Violation(plan.display, number,
-                                        f"Class inventory: {file} needs the requirement or boundary it serves"))
+                                        f"Class inventory: {file} needs the requirement or boundary it serves, "
+                                        "in at least three words"))
         if kind.strip().lower() not in KINDS:
             violations.append(Violation(plan.display, number, f"Class inventory: {file} kind must be one of {', '.join(KINDS)}"))
     return violations
@@ -165,6 +166,89 @@ def missing_inventory_warning(plan: Document) -> list[str]:
     return [f"tasks add new files ({shown}) but plan.md has no Class inventory; list them and run the design review"]
 
 
+BLOCKING = ("BLOCKER", "IMPORTANT")
+FINDING = re.compile(r"- (?P<severity>BLOCKER|IMPORTANT|MINOR): ")
+ITEM = re.compile(r"  - (?P<id>F\d+\.\d+): (?P<text>.*)")
+RESOLUTION = re.compile(r"    - (?P<kind>resolved|rejected): (?P<text>.*)")
+ENTRY = re.compile(r"\s*(?:[-*]\s*)?(?P<id>F\d+\.\d+)\s*[:=]\s*(?P<kind>resolved|rejected)\s*:\s*(?P<text>.+?)\s*$", re.I)
+# A resolution points at the place a reviewer can check, not at an intention.
+POINTER = re.compile(r"(?:spec|plan|design)\.md|\b[TRA]\d+\b|\S+:\d+")
+
+
+def finding_lines(findings: list[dict]) -> list[str]:
+    """`### Findings` lines: one per finding and, for a BLOCKER or IMPORTANT, one per separately checkable
+    item. 6.8: the round-1 coverage finding named nine gaps and the fixes closed part of them each round,
+    so four more rounds answered "partially resolved"."""
+    flat = lambda value: " ".join(str(value).split())  # noqa: E731
+    lines, number = [], 0
+    for finding in findings:
+        lines.append(f"- {finding['severity']}: {flat(finding['location'])} — {flat(finding['summary'])}")
+        if finding["severity"] in BLOCKING:
+            number += 1
+            items = [flat(item) for item in finding.get("items") or [] if flat(item)] or ["the whole finding"]
+            lines += [f"  - F{number}.{index}: {item}" for index, item in enumerate(items, 1)]
+    return lines
+
+
+def recorded_findings(plan: Document) -> list[str]:
+    """The recorded round's finding, item and resolution lines."""
+    if DESIGN_REVIEW not in plan.sections:
+        return []
+    lines = [line.rstrip() for _, line in plan.body(DESIGN_REVIEW)]
+    start = next((i for i, line in enumerate(lines) if line.strip() == "### Findings"), None)
+    if start is None:
+        return []
+    return [line for line in lines[start + 1:]
+            if FINDING.match(line) or ITEM.fullmatch(line) or RESOLUTION.fullmatch(line) or line.startswith("- ")]
+
+
+def unresolved(plan: Document) -> list[str]:
+    """Item ids of the recorded FAIL round that have no resolution yet."""
+    if review_fields(plan).get("Result", "").upper() != "FAIL":
+        return []
+    lines = recorded_findings(plan)
+    return [match["id"] for index, line in enumerate(lines) if (match := ITEM.fullmatch(line))
+            and not (index + 1 < len(lines) and RESOLUTION.fullmatch(lines[index + 1]))]
+
+
+def resolve(change: Path, text: str) -> tuple[list[str], list[str]]:
+    """Write `F<n>.<m>: resolved: <where>` / `rejected: <why>` entries under their items.
+    Returns (recorded ids, ids still without a resolution)."""
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    if DESIGN_REVIEW not in plan.sections:
+        raise ValueError("plan.md has no recorded design review")
+    start, end = plan.sections[DESIGN_REVIEW]
+    lines = list(plan.lines)
+    known = {match["id"]: index for index in range(start, end) if (match := ITEM.fullmatch(lines[index].rstrip()))}
+    entries: dict[str, str] = {}
+    for raw in text.splitlines():
+        if not raw.strip():
+            continue
+        match = ENTRY.fullmatch(raw)
+        if not match:
+            raise ValueError(f"expected `F<n>.<m>: resolved: <where>` or `F<n>.<m>: rejected: <why>`, not: {raw.strip()}")
+        kind, value = match["kind"].lower(), " ".join(match["text"].split())
+        if match["id"] not in known:
+            raise ValueError(f"{match['id']} is not an item of the recorded round; items: {', '.join(known) or 'none'}")
+        if kind == "resolved" and not POINTER.search(value):
+            raise ValueError(f"{match['id']}: name where it is resolved (spec.md, plan.md or design.md section, "
+                             "a task or requirement id, or file:line)")
+        if kind == "rejected" and len(value.split()) < 3:
+            raise ValueError(f"{match['id']}: a rejection needs its reason")
+        entries[match["id"]] = f"    - {kind}: {value}"
+    if not entries:
+        raise ValueError("no resolution entries given")
+    for identifier in sorted(entries, key=lambda item: known[item], reverse=True):
+        index = known[identifier]
+        if index + 1 < len(lines) and RESOLUTION.fullmatch(lines[index + 1].rstrip()):
+            lines[index + 1] = entries[identifier]
+        else:
+            lines.insert(index + 1, entries[identifier])
+    plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    return list(entries), unresolved(Document(plan_path, str(plan_path)))
+
+
 BRIEF = "design-brief.md"
 # The reviewer reads the change's own files, not only the brief: the round's diff base is a copy of them.
 DESIGN_FILES = ("spec.md", "plan.md", "design.md")
@@ -204,9 +288,7 @@ def previous_round(change: Path, plan: Document) -> tuple[list[str], list[str]] 
         return None
     if review_fields(plan).get("Result", "").upper() not in ("PASS", "FAIL"):
         return None
-    lines = [line for _, line in plan.body(DESIGN_REVIEW)]
-    start = next((i for i, line in enumerate(lines) if line.strip() == "### Findings"), None)
-    findings = [line for line in lines[start + 1:] if line.startswith("- ")] if start is not None else []
+    findings = recorded_findings(plan)
     changes: list[str] = []
     for name in DESIGN_FILES:
         changes += difflib.unified_diff(_design_lines(reviewed / name), _design_lines(change / name),
@@ -240,8 +322,11 @@ def write_brief(change: Path, full: bool = False) -> tuple[Path, bool]:
     prior: list[str] = []
     if previous:
         findings, changes = previous
-        scope = ["- This is a re-review. For each finding under `Previous findings` say whether the current "
-                 "design resolves it; one that is not resolved keeps its severity.",
+        scope = ["- This is a re-review. Each finding under `Previous findings` lists its items (`F1.2`) and, "
+                 "under each, where the author says it is resolved or why it is rejected. Check that place for "
+                 "every item and name the items still open by id; a finding stays open, with its severity, "
+                 "while one item is open. Add no item to a previous finding: a gap none of its items names is a "
+                 "new finding.",
                  # 6.5 rounds 3 and 4 found three real IMPORTANT defects in text the round before had left
                  # unchanged (timestamps outside the model's fillable list, `{}` read as an empty list).
                  "- Then review the lines under `Changes since the reviewed design` by the questions below. "
@@ -284,6 +369,9 @@ def write_brief(change: Path, full: bool = False) -> tuple[Path, bool]:
              "each spec or plan statement "
              "about an existing component's behavior (retries, accepted formats, error mapping) against that "
              "component's code and cite file:line; an unverified statement a requirement depends on is IMPORTANT.",
+             "- Put every separately checkable gap of a BLOCKER or IMPORTANT finding into its `items`, one "
+             "entry each (a missing accepted/rejected test pair, an unlocked row, an unanswered case), and list "
+             "them all in this round: the author answers item by item and a re-review adds none.",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "
@@ -313,6 +401,13 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         if previous_agent("\n".join(plan.lines[start:end])) == agent:
             raise ValueError(f"agent {agent} reviewed the previous design round; dispatch a fresh reviewer "
                              "or pass --same-reviewer-reason")
+    if source.endswith(".run.json"):
+        # 6.7: the run record was passed and the answer was "reviewer process did not exit successfully".
+        result = source.removesuffix(".run.json") + ".result.json"
+        if not Path(result).is_file():
+            raise ValueError(f"{source} is the run record, not the reviewer's result: run "
+                             f"`run_role.py result {source}` and pass the {Path(result).name} it writes")
+        source = result
     result_path = safe_path(source, allow_missing=False, allow_absolute=True,
                             hint=f"save it under {change}/runs/")
     payload = _parse_json_text(result_path.read_text(encoding="utf-8"))
@@ -331,8 +426,7 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
             *([f"**Same reviewer reason:** {flat(same_reviewer_reason)}"] if agent and same_reviewer_reason else []),
             f"**Result source:** `{source}`",
             f"**Result digest:** {digest(result_path)}", "", "### Findings", "",
-            *([f"- {f['severity']}: {flat(f['location'])} — {flat(f['summary'])}" for f in payload["findings"]]
-              or ["- None."]), ""]
+            *(finding_lines(payload["findings"]) or ["- None."]), ""]
     lines = list(plan.lines)
     if DESIGN_REVIEW in plan.sections:
         start, end = plan.sections[DESIGN_REVIEW]

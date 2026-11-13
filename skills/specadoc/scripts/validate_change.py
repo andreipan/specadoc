@@ -103,6 +103,8 @@ WORKER_DECISION_RISK = ("Owner: worker needs Decision risk: low; close the decis
 # field; a task whose Evidence still contains this was never actually
 # recorded, whether or not the field is otherwise non-empty.
 PLACEHOLDER_EVIDENCE = "keep final evidence to one or two lines"
+# A prose placeholder inside a backticked command: `quality <changed php files>` (6.7 broke the shell on it).
+VERIFICATION_PLACEHOLDER = re.compile(r"<[A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z0-9_./-]+)+>")
 
 # Cap on new-diff review rounds enforced by check_review_round_cap. A
 # targeted re-review (Type: re-review) never counts against this.
@@ -790,7 +792,10 @@ def evidence_staleness(runs: Path, task: str, files_field: str) -> tuple[bool | 
         return False, (f"environment changed: {names}; list only verifier-relevant variables in "
                        ".specadoc.json verification.environment")
     if set(current) != set(recorded):
-        return False, "the set of owned files changed"
+        # Name the path: 6.10 was blocked twice by this without learning which file a later task had added.
+        changed = [f"+{path}" for path in sorted(set(current) - set(recorded))[:2]]
+        changed += [f"-{path}" for path in sorted(set(recorded) - set(current))[:2]]
+        return False, "the set of owned files changed" + (f": {', '.join(changed)}" if changed else "")
     owned: dict[str, set[str]] = {}
     for other in runs.glob("T*-baseline.json"):
         if other.name == f"{task}-baseline.json":
@@ -906,6 +911,17 @@ def verification_env_warnings(plan: Document) -> list[str]:
             if ENV_PREFIX.search(task_fields(plan, start, end).get("Verification", ""))]
 
 
+def change_folder_paths(plan: Document, files_field: str) -> list[str]:
+    """Files patterns that lie in the change's own folder. 4.1 listed plan.md in Review scope and 6.7 gave it
+    to a verification task as Files: every round or accept rewrites it, so the evidence never stays current."""
+    try:
+        folder = plan.path.parent.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return []
+    return [pattern for pattern in files_patterns(files_field)[0]
+            if pattern == folder or pattern.startswith(folder + "/")]
+
+
 def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
     violations = check_sections(plan, PLAN_SECTIONS)
 
@@ -979,7 +995,26 @@ def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
                         + "; ".join(uncheckable),
                     )
                 )
+        if not complete and (inside := change_folder_paths(plan, fields.get("Files", ""))):
+            violations.append(
+                Violation(
+                    plan.display,
+                    start + 1,
+                    f"{identifier}: Files names a path inside the change folder ({', '.join(inside)}); accept and "
+                    "refresh rewrite that folder, so the task's evidence is always stale. A step that only verifies is "
+                    "not a task: its commands run in Final verification (`finalize --run`)",
+                )
+            )
         verification = fields.get("Verification", "")
+        if not complete and (found := VERIFICATION_PLACEHOLDER.search(verification)):
+            violations.append(
+                Violation(
+                    plan.display,
+                    start + 1,
+                    f"{identifier}: Verification contains the placeholder {found.group(0)}; accept runs the "
+                    "command as written, so name the real paths",
+                )
+            )
         if (not complete and verification.strip() and not PENDING.search(verification)
                 and not re.search(r"<[^>]+>", verification) and not VERIFICATION_COMMANDS.fullmatch(verification)):
             violations.append(

@@ -45,6 +45,8 @@ WRITERS = {"worker"}
 READ_TOOLS = "Read,Grep,Glob,Bash"
 WRITE_TOOLS = "Read,Edit,Write,Grep,Glob,Bash"
 # OpenCode checks every command of a shell line separately against its full text.
+# 2026-11-13: OpenCode 2.2.7 and 2.3.0 reject these all the same (`git status` alone answers
+# "Permission denied: shell"), so no brief may depend on them; `pre-review` writes the diff as files.
 READ_SHELL = ("git diff", "git log", "git show", "git status")
 # Later rules win: these re-deny writes a read-only git command could still make.
 SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*")

@@ -448,7 +448,12 @@ def round_manifest(plan: Document, identifier: str) -> Manifest:
 
 def _load_manifest(value: str) -> Manifest:
     path = Path(value)
-    payload: Any = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else json.loads(value)
+    try:
+        payload: Any = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else json.loads(value)
+    except ValueError:
+        # Three runs passed the round's hash here and got a JSONDecodeError traceback.
+        raise ValueError(f"expected a manifest file or inline JSON, not {value[:48]!r}; a round's manifest is "
+                         "the file `manifest` wrote under runs/ (G<n>-manifest.json)") from None
     return payload.get("manifest", payload)
 
 
@@ -489,7 +494,11 @@ def main() -> int:
         if not args.stored:
             print("error: --stored is required for verify", file=sys.stderr)
             return 2
-        result = diff(_load_manifest(args.stored), current)
+        try:
+            result = diff(_load_manifest(args.stored), current)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         if any(result.values()):
             print(json.dumps(result, indent=2))
             return 1

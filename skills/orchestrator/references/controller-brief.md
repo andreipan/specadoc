@@ -10,8 +10,12 @@ Rules:
 - Standing constraints live once in the coordination `brief.md`: forbidden
   operations (commit, stash or stack edits, push, archive, the next step),
   integration runs by the integration verifier only, no DDL or migrations on shared databases,
-  the test database, preserved files. The brief cites them by path and decision
-  id; it does not restate them.
+  the test database, preserved files, and memory use: a controller saves to
+  persistent memory only knowledge (a defect with its cause, a rule) and one
+  record when its phase ends; progress is in the envelope and the coordination
+  record (6.7–6.10: 33 of 38 saves were progress notes, 39 turns that did
+  nothing else). The brief cites them by path and decision id; it does not
+  restate them.
 - Write full sentences in the user's language with ordinary spacing. No
   abbreviations the controller must decode.
 - Limits are not yours to invent: no context threshold and no token, time or
@@ -59,7 +63,9 @@ under mandate D<n> is recorded with `specadoc_step.py approve --bindings`>
 ## Return
 The envelope from `.claude/skills/orchestrator/references/controllers.md` at:
 plan approval, locally-ready, review-ready with the external run pending, or a
-blocker. <On a report-push host: write it to `<coordination dir>/<slug>-envelope.md`
+blocker. At plan approval it lists under `Facts for later steps` each design
+finding that states a fact about existing data, the platform or the framework
+(one line, file:line), and each decided non-issue. <On a report-push host: write it to `<coordination dir>/<slug>-envelope.md`
 and run `<report command> "<that path>"` before ending the turn.>
 ```
 

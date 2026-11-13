@@ -79,7 +79,11 @@ rationale stays in the coordination record, since every message stays in the
 controller's context for the rest of its session. Relay options
 meant for the user verbatim (`references/checkpoints.md` → Relaying options).
 Route changed requirements through affected local plans and approvals before
-implementation resumes.
+implementation resumes. At a plan checkpoint copy the envelope's `Facts for later
+steps` into the coordination brief under `Known states and platform facts`, one
+line each with file:line; the next controller reads the brief first. Save to
+persistent memory only what the coordination record does not hold, and one
+record when the run closes.
 
 Use supported status/events and compact reports, not full-log polling. Prefer
 the host's completion/failure event over waiting; a bounded wait is the fallback

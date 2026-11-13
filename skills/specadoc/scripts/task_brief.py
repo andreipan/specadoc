@@ -105,7 +105,11 @@ def build_brief(change: Path, task_id: str) -> str:
         "- Do not commit, push, stash, reset, or switch branches. Do not start other agents.",
         "- Follow the repository agent instructions (for example AGENTS.md or CLAUDE.md) that apply to the files you touch.",
         (f"- Approved TDD exception: {fields['TDD exception']}" if optional(fields.get("TDD exception"))
-         else "- Test first: write the failing test, show it fail (RED), implement, show it pass (GREEN)."),
+         else "- Test first: write the failing test and run it before any production file exists or changes; that "
+              "failing output is RED and goes into `--red`. Then implement and show GREEN. A test first run after "
+              "the code is not RED: before you report, break each behaviour once, note the test that fails, "
+              "restore the file, and pass `--mutation '<break -> failing test; ...>'`; `report` refuses a report "
+              "that admits a late test without it."),
         f"- Finish with `python3 {Path(__file__).with_name('specadoc_step.py').resolve()} report {change.name} {task_id} --status DONE --summary '<delivered behavior and interfaces>' --red '<observed failing test>' --green '<observed passing checks>'` (pass `--root <root>` before `report` for a custom artifact root). Status is DONE, DONE_WITH_CONCERNS (add `--concern '<text>'` per concern), NEEDS_CONTEXT, or BLOCKED; `--body-file <path>` appends longer notes. It records your actual changed paths, writes `{runs / f'{task_id}-report.md'}` with the validated JSON, and prints that JSON: return it unchanged as your result. Never write the result JSON by hand.",
         f"- Only without a shell: write the report yourself and return JSON matching `{SCHEMA.resolve()}`, embedded as the report's last fenced block.",
         "- Run focused task checks; the controller owns the final integration suite. Save a failure once, then inspect that log instead of rerunning it for a different output view.",

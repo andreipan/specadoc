@@ -39,6 +39,12 @@
           },
           "summary": {
             "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

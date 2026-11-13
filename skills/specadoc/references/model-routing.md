@@ -70,9 +70,8 @@ reviewer, each with runtime/model/effort and its source file. Read them with
 `role_routing.py --controller-runtime <runtime> --change <slug> --dry-run --compact
 --check-cli`: only roles the plan uses (reviewer; worker when a task names one)
 fail it; a broken unused role file is a warning. When nothing is routed, name
-the registered or embedded role. Record the line in `## Plan approval` →
-`Bindings shown`. It is evidence of what would run, not
-an approval of a profile. Light shows the controller and reviewer in chat.
+the registered or embedded role. A design PASS writes it to `Bindings shown`. It is evidence of what would
+run, not an approval of a profile. Light shows the controller and reviewer in chat.
 
 ## Binding advice
 

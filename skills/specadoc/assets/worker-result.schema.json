@@ -42,6 +42,9 @@
         },
         "green": {
           "type": "string"
+        },
+        "mutation": {
+          "type": "string"
         }
       }
     },

@@ -465,6 +465,12 @@ class DesignGateTest(unittest.TestCase):
                                     'findings': [dict(severity=s, location='src/port.py', summary='x') for s in findings]}))
         return self.run_step('design-review', 'demo', '--result-file', 'design.json')
 
+    def resolve(self, text='F1.1: resolved: plan.md Class inventory\n'):
+        """6.7-6.10: the next brief needs an answer for every item of a FAIL round."""
+        self.repo.joinpath('resolutions.txt').write_text(text)
+        result = self.run_step('design-resolve', 'demo', '--file', 'resolutions.txt')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_inventory_rows_are_validated_at_plan_time(self):
         self.plan.write_text(INVENTORY_PLAN.replace('| R1 needs a label source port | port |', '| tbd | adapter |'))
         output = self.validate('plan')
@@ -511,6 +517,7 @@ class DesignGateTest(unittest.TestCase):
         brief = self.change / 'runs/design-brief.md'
         self.assertTrue(brief.read_text().startswith('# Design review: `demo`'))
         self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
+        self.resolve()
         self.plan.write_text(self.plan.read_text().replace('label source port', 'label source port and cache'))
         second = self.run_step('design-brief', 'demo')
         self.assertEqual(0, second.returncode, second.stdout)
@@ -540,6 +547,7 @@ class DesignGateTest(unittest.TestCase):
         self.run_step('design-brief', 'demo')
         spec.write_text(spec.read_text().replace('SHALL equal ready', 'SHALL equal ready or READY'))
         self.assertEqual(1, self.review('FAIL', ['IMPORTANT']).returncode)
+        self.resolve()
         self.plan.write_text(self.plan.read_text().replace('### T1', '### T1 (reordered)', 1))
         self.run_step('design-brief', 'demo')
         text = (self.change / 'runs/design-brief.md').read_text()

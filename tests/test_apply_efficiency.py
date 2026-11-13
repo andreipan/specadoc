@@ -194,9 +194,10 @@ class ApplyEfficiencyTest(unittest.TestCase):
         self.repo.joinpath('derived.py').write_text('changed')
         self.plan.write_text(self.plan.read_text().replace('### T2 — String result\n',
             '### T2 — String result\n- **Depends on:** T1\n'))
+        # 6.10: file drift under an accepted dependency is re-verified by dispatch itself, not by a second call.
         result = self.run_step('dispatch', 'demo', 'T2')
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn('stale', result.stdout)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('stale dependency evidence refreshed', result.stdout)
 
     def test_controller_task_needs_no_justification_or_low_decision_risk(self):
         self.plan.write_text(PLAN.replace('- **Owner:** worker', '- **Owner:** controller', 1)
@@ -280,9 +281,7 @@ class ApplyEfficiencyTest(unittest.TestCase):
         self.plan.write_text(self.plan.read_text().replace('### T2 — String result\n',
             '### T2 — String result\n- **Depends on:** T1\n'))
         self.repo.joinpath('check.conf').write_text('new')
-        result = self.run_step('dispatch', 'demo', 'T2')
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn('stale', result.stdout)
+        self.assertIn('T1: Evidence predates a later change', self.run_step('pre-review', 'demo', '--dry-run').stdout)
         self.repo.joinpath('check.conf').write_text('old')
         with patch.dict(os.environ, SPECADOC_TEST_CONTEXT='changed'):
             result = self.run_step('dispatch', 'demo', 'T2')

@@ -4,9 +4,9 @@ Load only for `specadoc apply <slug>`.
 
 1. Require validated spec/plan and recorded approval before edits. A fresh
    session orients from `specadoc_step.py status <slug>`, `runs/handoff.md` and
-   the task brief, not whole spec/plan/design. `status` prints observed context
-   and advice; `dispatch` blocks near 200k: `handoff <slug> --file -`,
-   then resume in a new session. Other hosts pass `--context-tokens <n>`.
+   the task brief, not whole spec/plan/design. `status` prints observed context;
+   `dispatch` blocks near 200k: `handoff <slug> --file -`, then a
+   new session. Other hosts pass `--context-tokens <n>`.
 2. Close material decisions before RED. A ready task goes to a worker; the
    controller keeps tasks with open decisions or a Controller justification
    (`subagent-routing.md`). A worker task names bounded `Decisions`,
@@ -27,7 +27,8 @@ Load only for `specadoc apply <slug>`.
    --green …`. Read the report, then `accept <slug> T<n>`: it validates the
    result JSON, runs Verification (reused for unchanged inputs), checks scope
    and on **ACCEPTED** records Evidence. Concerns give **NEEDS_DECISION**: rerun with `--note '<decision>'`;
-   a concern disclosing a forbidden step (6.1: RED with the migration moved aside) is a reopen. A
+   a concern disclosing a forbidden step is a reopen; a late test with `mutation`
+   evidence is not. A
    BLOCKED report whose blocker was removed takes `--resolved '<who and
    how>'`. A task with
    `External verification:` gives **EXTERNAL-PENDING**: dependents and review may
@@ -36,11 +37,12 @@ Load only for `specadoc apply <slug>`.
    `--supersede '<why>'`, never edit `runs/*.json`).
 6. `scope <slug>` fills Review scope from the diff since `--base` (HEAD); one
    worker runs `tidy <slug>`'s brief, then `refresh`. Then the whole suite and
-   gates run once, never a path subset (4.10): `finalize <slug> --run` runs
+   gates run once, never a path subset: `finalize <slug> --run` runs
    `verification.final` of `.specadoc.json`; without it run them yourself and
    pass `--observed '<run>'` (and Browser state for UI).
-7. On a stable diff, `pre-review <slug>` records the round; then run one
-   independent read-only `reviewer`, a fresh agent. On return, first run
+7. On a stable diff, `pre-review <slug>` records the round and writes
+   `runs/G<n>-head.diff` and `-status.txt` for the brief of one
+   independent read-only `reviewer`, a fresh agent. Then run
    `review-result <slug> --from-agent <id>` (native) or `--result-file <reply>`
    (external); never transcribe the reply.
 8. Fix confirmed findings in scope, then one targeted `pre-review <slug>

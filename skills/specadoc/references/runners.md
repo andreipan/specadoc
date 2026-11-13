@@ -142,7 +142,9 @@ For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
   wrapper). Scout/reviewer permit only read/search/web/skill tools and the shell
   commands `git diff|log|show|status`, without redirection, `--output` or
   `--ext-diff`; edits, other commands, MCP tools and nested agents are denied.
-  Worker additionally permits edit and any shell command.
+  Worker additionally permits edit and any shell command. OpenCode 2.2.7 and
+  2.3.0 reject every scout/reviewer shell call all the same (2026-11-13), so a
+  reviewer brief names the files `pre-review` writes instead of asking for git.
   These are tool permissions, not an OS sandbox. The schema is appended to the
   prompt and the final text JSON is validated locally, not by the provider. A reply
   wrapped in a code fence or surrounded by prose is accepted: the last JSON object

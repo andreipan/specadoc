@@ -32,7 +32,7 @@ Load this reference only for `specadoc propose`.
       its new code needs (container bindings, providers of contextual
       bindings, mappers, exports), asking the scout to list them;
     - copy each `External verification` command from the project notes or a
-      recorded run, never from memory (4.10: an invented flag failed a run);
+      recorded run, never from memory;
     - put the repository's static and style gates for the task's files in
       its `Verification`, so step 6 does not find them late.
    Use an architecture-design companion only for unresolved interface choices,

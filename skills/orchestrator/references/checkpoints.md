@@ -118,7 +118,9 @@ context, viable options including deferral, costs/risks, and a recommendation.
 When a controller returns options for the user, pass them on verbatim: its
 option table with the controller's labels, its recommendation, and what each
 choice changes. Ask one structured question (the host's question tool when it
-has one) whose answers are those labels. Do not reword, re-letter, merge or
+has one) whose answers are those labels. Open it with one sentence in the user's
+language on the situation and what is being decided (6.8: a bare option stem was
+answered "I do not understand the question" after 112 minutes). Do not reword, re-letter, merge or
 reorder options, and do not add your own preference unless labelled as yours.
 An answer that picks no option ("go", "ok") is not a choice: ask again. In 3.5
 the orchestrator reframed a controller's A/B/C, the user answered "go", and the
