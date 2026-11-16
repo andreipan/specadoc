@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: autonomous-decision
+expected_outcome: |
+  Decides the in-mandate question itself, records it and puts the divergence in
+  the BA register; stops only the step whose question changes a response code,
+  states that question in plain text without opening the question tool while
+  another controller runs, and continues the independent step.

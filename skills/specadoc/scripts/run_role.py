@@ -37,6 +37,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from specadoc_config import normalize_runtime  # noqa: E402
+from host_clock import HostClock  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 ROLES = ("scout", "worker", "reviewer")
@@ -421,14 +422,17 @@ def _transport_diagnostics(record: dict[str, Any]) -> tuple[str | None, list[str
     return terminal, warnings
 
 
-def _status(record: dict[str, Any], no_progress_timeout: float | None = None) -> dict[str, Any]:
+def _status(record: dict[str, Any], no_progress_timeout: float | None = None,
+            clock: "HostClock | None" = None) -> dict[str, Any]:
     now = time.time()
     finished = _completion(record)
     alive = not finished and _alive(record["pid"])
     log = Path(record["log"])
     stat = log.stat() if log.is_file() else None
     observable = record["runtime"] != "claude"
-    silence = max(0.0, now - max(record["started"], stat.st_mtime if stat else record["started"]))
+    # Wall time the host spent asleep is no silence of the role (6.14).
+    last = max(record["started"], stat.st_mtime if stat else record["started"])
+    silence = max(0.0, now - last - (clock.slept_since(last) if clock else 0.0))
     threshold = no_progress_timeout if no_progress_timeout is not None else record.get("no_progress_timeout", NO_PROGRESS_TIMEOUT)
     error, warnings = _transport_diagnostics(record)
     exit_code = int(Path(record["exit"]).read_text().strip()) if finished else None
@@ -516,36 +520,81 @@ def wait(args: argparse.Namespace) -> int:
     interval = getattr(args, "interval", 45.0)
     next_report = time.monotonic() + interval
     state: dict[str, Any] = {}
+    clock = HostClock(time)
     while True:
         if _completion(record):
+            clock.tick()
             _persist_completion(args.run_file)
-            print(f"finished: exit {exit_file.read_text().strip()}")
+            code = exit_file.read_text().strip()
+            settled = _settle_after_wait(args.run_file) if code == "0" else ""
+            print(f"finished: exit {code}{settled}{clock.note()}")
             return 0
         if not _alive(record["pid"]):
-            print("finished: supervisor exited without an exit code")
+            clock.tick()
+            print("finished: supervisor exited without an exit code" + clock.note())
             return 0
-        snapshot = _status(record, getattr(args, "no_progress_timeout", None))
+        clock.tick()
+        snapshot = _status(record, getattr(args, "no_progress_timeout", None), clock)
         if snapshot["status"] == "failed":
             print(f"failed: pid {record['pid']} reported a terminal transport error; role not stopped; "
                   "inspect status/log and any existing diff before an explicit stop or retry")
             return 1
         if snapshot["status"] == "no-progress":
             print(f"no-progress: pid {record['pid']}; role not stopped; "
-                  "inspect status/log before deciding whether to keep waiting or stop explicitly")
+                  "inspect status/log before deciding whether to keep waiting or stop explicitly" + clock.note())
             return STILL_RUNNING
         if time.monotonic() >= deadline:
             break
         if follow and time.monotonic() >= next_report:
-            print(_progress(record, state), flush=True)
+            print(_progress(record, state) + clock.note(), flush=True)
             next_report = time.monotonic() + interval
         time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
-    snapshot = _status(record, getattr(args, "no_progress_timeout", None))
+    clock.tick()
+    snapshot = _status(record, getattr(args, "no_progress_timeout", None), clock)
     line = f"{snapshot['status']}: pid {record['pid']}" if not follow else _progress(record, state)
     # 6.5: a controller that could raise its shell limit waited for six design reviews in sixteen 110 s slices.
     short = ("; a host that can raise its shell limit waits with --timeout 540 --shell-budget 590"
              if budget < SHORT_SLICE else "")
-    print(line + "; wait timed out (not a role result); call wait again" + short)
+    print(line + "; wait timed out (not a role result); call wait again" + short + clock.note())
     return STILL_RUNNING
+
+
+def result_source(source: str) -> str:
+    """Take a run record where a reviewer result is expected (6.7 design-review, 6.14 review-result):
+    settle a finished good run and return its result file."""
+    if not source.endswith(".run.json"):
+        return source
+    result = source.removesuffix(".run.json") + ".result.json"
+    try:
+        record = json.loads(Path(source).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        record = {}
+    if isinstance(record.get("result"), str) and isinstance(record.get("exit"), str):
+        result = record["result"]
+        if not Path(result).is_file() and _completion(record) and Path(record["exit"]).read_text().strip() == "0":
+            _settle_after_wait(source)
+    if not Path(result).is_file():
+        raise ValueError(f"{source} is the run record, not the reviewer's result, and the run has no valid result "
+                         f"yet: run `run_role.py result {source}` for the reason, then pass {Path(result).name}")
+    return result
+
+
+def _settle_after_wait(run_file: str) -> str:
+    """Write the result file as soon as a run ends well (6.12, 6.15: `wait` said finished, then
+    reading `<name>.reviewer.result.json` failed until someone ran `result`)."""
+    with _record_lock(run_file):
+        record = _load(run_file)
+        if "settled" in record:
+            return f"; result: {record['result']}"
+        try:
+            payload = _final_json(record)
+        except (RunError, ValueError, OSError) as exc:
+            return f"; no result file yet ({exc}); run result"
+        schema = json.loads(schema_path(record["role"]).read_text(encoding="utf-8"))
+        if schema_errors(payload, schema):
+            return "; the final message fails the role schema; run result for the errors"
+        _settle(run_file, record, payload)
+        return f"; result: {record['result']}"
 
 
 def stop(args: argparse.Namespace) -> int:

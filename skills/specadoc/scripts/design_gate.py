@@ -20,6 +20,13 @@ from validate_change import PENDING, Document, Violation, files_patterns
 
 INVENTORY = "Class inventory"
 DESIGN_REVIEW = "Design review"
+# 6.12 took six design rounds, 6.14 seven: after ROUND_CAP recorded rounds the next one needs a decision,
+# `continue: <source>` (one more round) or `accept: <source>` (open IMPORTANT items become apply obligations).
+ROUND_CAP = 4
+ROUND_FILE = "design-round.json"
+ACCEPTED = "ACCEPTED"
+DECISION = re.compile(r"\s*(?P<kind>continue|accept)\s*:\s*(?P<source>\S.*?)\s*$", re.I)
+RESOLVE_EXAMPLE = "e.g. `F1.1: resolved: plan.md T2` or `F1.2: rejected: <why, three words or more>`"
 KINDS = ("port", "concrete", "file")
 APPLY_START = "apply-start.json"
 # Tests and prose need no design decision; everything else new does.
@@ -90,11 +97,11 @@ def review_error(plan: Document) -> str | None:
         return None
     fields = review_fields(plan)
     result = fields.get("Result", "").upper()
-    if result not in ("PASS", "FAIL"):
+    if result not in ("PASS", "FAIL", ACCEPTED):
         return "design review missing: run specadoc_step.py design-brief, an independent reviewer, then design-review"
     if fields.get("Inventory hash") != current:
         return "design review predates the current Class inventory; review the changed inventory again"
-    if result != "PASS":
+    if result == "FAIL":
         return "design review FAIL: revise the approach or inventory, then review again"
     return None
 
@@ -211,6 +218,119 @@ def unresolved(plan: Document) -> list[str]:
             and not (index + 1 < len(lines) and RESOLUTION.fullmatch(lines[index + 1]))]
 
 
+def short(ids: list[str], limit: int = 5) -> str:
+    """At most `limit` ids and the count (6.14: a refusal listed 37 ids)."""
+    if not ids:
+        return "none"
+    return ", ".join(ids[:limit]) + (f" and {len(ids) - limit} more ({len(ids)} in all)" if len(ids) > limit else "")
+
+
+def round_state(change: Path) -> dict:
+    """Recorded design rounds of this change and the decisions that allowed rounds past the cap."""
+    try:
+        state = json.loads((change / "runs" / ROUND_FILE).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    return {"recorded": int(state.get("recorded", 0)), "decisions": list(state.get("decisions", []))}
+
+
+def save_round_state(change: Path, state: dict) -> None:
+    path = change / "runs" / ROUND_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=1) + "\n", encoding="utf-8")
+
+
+def parse_decision(text: str) -> tuple[str, str]:
+    match = DECISION.fullmatch(text or "")
+    if not match:
+        raise ValueError("--attempt-decision takes `continue: <source>` (one more round) or `accept: <source>` "
+                         "(open IMPORTANT items become apply obligations); <source> names the decision, e.g. "
+                         "`orchestrator D12 under mandate D80`")
+    return match["kind"].lower(), " ".join(match["source"].split())
+
+
+def needs_decision(change: Path, plan: Document) -> int | None:
+    """The number of the next round when it is past the cap after a FAIL, else None."""
+    recorded = round_state(change)["recorded"]
+    if recorded >= ROUND_CAP and review_fields(plan).get("Result", "").upper() == "FAIL":
+        return recorded + 1
+    return None
+
+
+def record_continue(change: Path, authorization: str) -> None:
+    """Keep a `continue` decision in plan.md, where the archive keeps it, once per round."""
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    line = f"- Design round authorization: {authorization}"
+    if line in plan.lines:
+        return
+    lines = list(plan.lines)
+    if "Confirmed decisions" in plan.sections:
+        anchor = plan.sections["Confirmed decisions"][1]
+        while anchor > 0 and not lines[anchor - 1].strip():
+            anchor -= 1
+        lines[anchor:anchor] = [line]
+    else:
+        lines += ["", "## Confirmed decisions", "", line]
+    plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    state = round_state(change)
+    state["decisions"].append({"round": state["recorded"] + 1, "kind": "continue", "source": authorization})
+    save_round_state(change, state)
+
+
+def passed_label(plan: Document) -> str:
+    fields = review_fields(plan)
+    if fields.get("Result", "").upper() == ACCEPTED:
+        return f"ACCEPTED ({fields.get('Accepted by', 'no source')}; open items are apply obligations)"
+    return "PASS (current inventory)"
+
+
+def accept(change: Path, source: str) -> list[str]:
+    """Close the gate after the cap: every item of the recorded FAIL round becomes an apply obligation in
+    `## Global constraints`. A BLOCKER is never accepted. Returns the obligation lines."""
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    if review_fields(plan).get("Result", "").upper() != "FAIL":
+        raise ValueError("accept closes a recorded FAIL round; the design review is not FAIL")
+    if review_fields(plan).get("Inventory hash") != inventory_hash(plan):
+        raise ValueError("the Class inventory changed after the recorded round, so that round no longer judges it; "
+                         "decide `continue: <source>` and review the changed design")
+    findings = recorded_findings(plan)
+    if any(FINDING.match(line) and FINDING.match(line)["severity"] == "BLOCKER" for line in findings):
+        raise ValueError("a BLOCKER of the recorded round stays open: accept takes IMPORTANT findings only; "
+                         "fix it and review again (`continue: <source>`) or ask the user")
+    state = round_state(change)
+    obligations, severity = [], None
+    for index, line in enumerate(findings):
+        if match := FINDING.match(line):
+            severity = match["severity"]
+        elif (item := ITEM.fullmatch(line)) and severity == "IMPORTANT":
+            note = RESOLUTION.fullmatch(findings[index + 1]) if index + 1 < len(findings) else None
+            answer = f" (author: {note['kind']}: {note['text']})" if note else ""
+            obligations.append(f"- Design obligation {item['id']} (accepted after round {state['recorded']}; "
+                               f"{source}): {item['text']}{answer}")
+    lines = list(plan.lines)
+    start, end = plan.sections[DESIGN_REVIEW]
+    for index in range(start + 1, end):
+        if lines[index].startswith("**Result:**"):
+            lines[index] = f"**Result:** {ACCEPTED}"
+            lines.insert(index + 1, f"**Accepted by:** {source}")
+            break
+    if "Global constraints" in plan.sections:
+        anchor = Document(plan_path, str(plan_path)).sections["Global constraints"][1]
+        # The insert above moved later sections down by one line when Global constraints follows it.
+        anchor += 1 if anchor > start else 0
+        while anchor > 0 and not lines[anchor - 1].strip():
+            anchor -= 1
+        lines[anchor:anchor] = obligations
+    else:
+        lines += ["", "## Global constraints", "", *obligations]
+    plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    state["decisions"].append({"round": state["recorded"] + 1, "kind": "accept", "source": source})
+    save_round_state(change, state)
+    return obligations
+
+
 def resolve(change: Path, text: str) -> tuple[list[str], list[str]]:
     """Write `F<n>.<m>: resolved: <where>` / `rejected: <why>` entries under their items.
     Returns (recorded ids, ids still without a resolution)."""
@@ -227,15 +347,16 @@ def resolve(change: Path, text: str) -> tuple[list[str], list[str]]:
             continue
         match = ENTRY.fullmatch(raw)
         if not match:
-            raise ValueError(f"expected `F<n>.<m>: resolved: <where>` or `F<n>.<m>: rejected: <why>`, not: {raw.strip()}")
+            raise ValueError(f"expected `F<n>.<m>: resolved: <where>` or `F<n>.<m>: rejected: <why>`, one line per "
+                             f"item, {RESOLVE_EXAMPLE}; not: {raw.strip()}")
         kind, value = match["kind"].lower(), " ".join(match["text"].split())
         if match["id"] not in known:
-            raise ValueError(f"{match['id']} is not an item of the recorded round; items: {', '.join(known) or 'none'}")
+            raise ValueError(f"{match['id']} is not an item of the recorded round; items: {short(list(known))}")
         if kind == "resolved" and not POINTER.search(value):
             raise ValueError(f"{match['id']}: name where it is resolved (spec.md, plan.md or design.md section, "
-                             "a task or requirement id, or file:line)")
+                             f"a task or requirement id, or file:line), {RESOLVE_EXAMPLE}")
         if kind == "rejected" and len(value.split()) < 3:
-            raise ValueError(f"{match['id']}: a rejection needs its reason")
+            raise ValueError(f"{match['id']}: a rejection needs its reason, {RESOLVE_EXAMPLE}")
         entries[match["id"]] = f"    - {kind}: {value}"
     if not entries:
         raise ValueError("no resolution entries given")
@@ -296,7 +417,7 @@ def previous_round(change: Path, plan: Document) -> tuple[list[str], list[str]] 
     return [line for line in findings if line.strip() != "- None."], changes
 
 
-def write_brief(change: Path, full: bool = False) -> tuple[Path, bool]:
+def write_brief(change: Path, full: bool = False, authorization: str | None = None) -> tuple[Path, bool]:
     """Reviewer prompt from the plan sections that decide the design; no code yet. After a recorded
     round it is a re-review of that round's findings and of what changed in spec.md, plan.md and
     design.md since, unless `full`. Returns the path and whether the brief is a re-review.
@@ -334,7 +455,8 @@ def write_brief(change: Path, full: bool = False) -> tuple[Path, bool]:
                  "summary cites the file:line that proves it; report no MINOR there."]
         prior = ["## Previous findings", "", *(findings or ["- None: the design changed after a PASS."]), "",
                 "## Changes since the reviewed design", "", "````diff", *(changes or ["(no change)"]), "````", ""]
-    lines = [f"# Design {'re-review' if previous else 'review'}: `{change.name}`", "", "## Contract", "",
+    lines = [f"# Design {'re-review' if previous else 'review'}: `{change.name}`", "",
+             *([f"Round authorization: {authorization}", ""] if authorization else []), "## Contract", "",
              "- Read-only. Review the design before any code exists; do not edit files or run builds.",
              "- Inspect the existing code the plan names as exemplars only to judge the design.",
              *scope,
@@ -389,7 +511,7 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
            same_reviewer_reason: str | None = None) -> str:
     """Write `## Design review` from a reviewer-schema result, bound to the inventory hash."""
     from reviewer_reply import previous_agent
-    from run_role import _parse_json_text, schema_errors, schema_path
+    from run_role import _parse_json_text, result_source, schema_errors, schema_path
     from task_state import digest, safe_path
     plan_path = change / "plan.md"
     plan = Document(plan_path, str(plan_path))
@@ -401,13 +523,9 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         if previous_agent("\n".join(plan.lines[start:end])) == agent:
             raise ValueError(f"agent {agent} reviewed the previous design round; dispatch a fresh reviewer "
                              "or pass --same-reviewer-reason")
-    if source.endswith(".run.json"):
-        # 6.7: the run record was passed and the answer was "reviewer process did not exit successfully".
-        result = source.removesuffix(".run.json") + ".result.json"
-        if not Path(result).is_file():
-            raise ValueError(f"{source} is the run record, not the reviewer's result: run "
-                             f"`run_role.py result {source}` and pass the {Path(result).name} it writes")
-        source = result
+    stale_brief(source)
+    # 6.7: the run record was passed and the answer was "reviewer process did not exit successfully".
+    source = result_source(source)
     result_path = safe_path(source, allow_missing=False, allow_absolute=True,
                             hint=f"save it under {change}/runs/")
     payload = _parse_json_text(result_path.read_text(encoding="utf-8"))
@@ -440,4 +558,28 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         # The next design-brief diffs against what this round saw: the files as its brief was written,
         # not as they are now (6.6: the controller edited spec and plan while the reviewer ran).
         _copy_design(briefed, change / "runs" / REVIEWED)
+    state = round_state(change)
+    state["recorded"] += 1
+    save_round_state(change, state)
     return payload["verdict"]
+
+
+def stale_brief(source: str) -> None:
+    """Refuse a reviewer run whose prompt file changed after `run_role.py start` (6.12, 6.13: a reviewer
+    started on the previous round's brief)."""
+    for suffix in (".run.json", ".result.json"):
+        if source.endswith(suffix):
+            run_file = Path(source.removesuffix(suffix) + ".run.json")
+            break
+    else:
+        return
+    try:
+        record = json.loads(run_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    seen, prompt = record.get("prompt_sha256"), record.get("prompt_file")
+    if not seen or not prompt or not Path(prompt).is_file():
+        return
+    if hashlib.sha256(Path(prompt).read_bytes()).hexdigest() != seen:
+        raise ValueError(f"the reviewer ran on a stale brief: {prompt} changed after this run started; start a "
+                         "new round with a new --name on the current brief")

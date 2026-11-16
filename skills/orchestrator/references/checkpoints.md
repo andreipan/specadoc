@@ -39,7 +39,8 @@ With that mandate, approve an ordinary local plan without asking the user when
 all of these hold, and record the provenance line below:
 
 - the plan's design gate is a current PASS (`## Design review` bound to the
-  current Class inventory), or the plan adds no new non-test file;
+  current Class inventory; `ACCEPTED` after the round cap counts), or the plan
+  adds no new non-test file;
 - `validate_change.py --phase plan` passes;
 - no escalation trigger: no row of Decision boundaries that belongs to the user
   (new behavior, incompatible contract, added repository, material risk or
@@ -51,7 +52,8 @@ all of these hold, and record the provenance line below:
   after G1, which cost a design re-review and three more code rounds.
 
 Otherwise bring the checkpoint to the user. A design FAIL is never approved by
-the orchestrator; return it to the controller.
+the orchestrator; return it to the controller. Past Specadoc's design round cap
+the orchestrator decides the round itself (Extra review rounds).
 
 ### Standing test-database permission
 
@@ -79,15 +81,17 @@ they never record an orchestrator decision as an explicit user instruction.
 
 Specadoc allows three initial (new-diff) rounds and one targeted re-review
 after each; a stale round (code or approval changed while it ran) uses neither.
-Under a plan mandate the orchestrator may grant one extra round per change:
-record it with `coordination_log.py decision --by orchestrator`, give the controller
-`--review-decision 'orchestrator D<n> under mandate D<m>: one extra round for
-<scope>'`, and name it in the final report. A second extra round, or one without
-a mandate, is the user's decision, unless the mandate itself allows a further
-round when everything changed since the last round is test or prose files
-(Specadoc's non-executable rule); then record it `--by orchestrator` citing that
-mandate entry and name it in the final report. Never write "user-approved"
-without the user's words.
+Under a plan mandate the orchestrator grants extra rounds itself and records
+each with `coordination_log.py decision --by orchestrator`: a code review round
+with `--review-decision 'orchestrator D<n> under mandate D<m>: one extra round
+for <scope>'`; a design round past Specadoc's cap (four recorded rounds) with
+`design-brief <slug> --attempt-decision 'continue: orchestrator D<n> under
+mandate D<m>'`, or `'accept: …'` to carry the open IMPORTANT items into apply as
+obligations. Accept when the open items are test cases or spec wording, continue
+when one changes behaviour; a BLOCKER is never accepted. Name every such round
+in the final report. Without a mandate the round is the user's. Never write
+"user-approved" without the user's words (6.12-6.15 asked the user for rounds
+the mandate covered and waited up to 14 hours).
 
 A decision that changes the approved design (a port, an adapter, an exception)
 says whether it also authorizes re-approving that change; the controller then
@@ -108,7 +112,8 @@ rules. It does not waive specifications, testing, review, or completion evidence
 | Network access, dependency install or update, a sandbox bypass, or any command a runtime denied | User, for that exact command; the orchestrator never runs it for a controller, and nobody calls it approved without a recorded approval. Exception: starting a role on the runtime `.specadoc.json` routes it to, also outside the sandbox (Specadoc `runners.md`); the routing is the user's authorization |
 | Runtime/model routing, role files, `.specadoc.json`, or a controller's runtime | User; show the mismatch and ask, never edit to make a launch fit |
 | Independent review result | Independent reviewer; neither controller nor orchestrator may invent PASS |
-| One extra review round past the limits, under a plan mandate | Orchestrator, recorded `--by orchestrator` and reported; a second one is the user's unless the mandate allows it for test-only changes |
+| Review rounds past the limits, under a plan mandate | Orchestrator, recorded `--by orchestrator` and reported |
+| A choice that leaves contract, response codes, data, security and money as the sources state them | Orchestrator under a plan mandate (Deciding without the user) |
 
 Use the simplest reversible option within the mandate. For an escalation, give
 context, viable options including deferral, costs/risks, and a recommendation.
@@ -130,6 +135,26 @@ controller thread / you run it" became the orchestrator running it).
 
 Pause affected work; independent authorized work may continue when the host
 supports it. Do not repeatedly ask equivalent approval questions.
+
+### Deciding without the user
+
+Under a plan mandate decide yourself, with the controller's recommendation as
+the default, every question that keeps the external contract, response codes,
+irreversible data, security, money and production as the sources state them:
+spec wording, test cases, internal rules, the order of local steps, a choice
+among the controller's options. Record it as `D<n>`. When the answer departs
+from Confluence, the ERD or a producer's code, or settles an ambiguity in them,
+also add it to the BA register (`references/research.md` → BA register) with
+the register's default-applied status and the `D<n>`; nothing that differs
+from a source may live only in the decision log.
+
+A question that changes the external contract, response codes, data, security
+or money stops only its step. While any child runs, do not open the host's
+question tool (it blocks child reports): write the question to the block's
+`questions.md`, state it to the user in plain text at the end of the turn with
+the options and your recommendation, and continue the independent steps. The
+user answers in an ordinary message; record the answer as `D<n>` and resume
+the step. Use the question tool only while every child is idle.
 
 ## Acceptance is not authorization
 

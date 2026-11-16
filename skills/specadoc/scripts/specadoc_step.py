@@ -67,6 +67,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -74,6 +75,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from specadoc_root import ensure_runs, resolve_root  # noqa: E402
 from specadoc_config import normalize_runtime  # noqa: E402
+from host_clock import HostClock  # noqa: E402
 from validate_change import SETTLED_STATES, TASK_CHECKBOX, Document, external_verification, task_fields, review_policy_hash, latest_review_round, round_is_stale  # noqa: E402
 from review_snapshot import CONTRACT_KEY, diff, tree_manifest  # noqa: E402
 from task_state import approval_error, digest, readiness, safe_path, save, task_block, timestamp, update_task  # noqa: E402
@@ -871,10 +873,30 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
     return emit(checked, "PASS", [], "", "stale evidence re-verified; continue with pre-review or the next task")
 
 
-def design_brief(slug: str, root: str | None, controller: str | None, full: bool = False) -> int:
+def design_brief(slug: str, root: str | None, controller: str | None, full: bool = False,
+                 decision: str | None = None) -> int:
     import design_gate
     change = Path(resolve_root(root).path) / slug
     plan = Document(change / "plan.md", "plan.md")
+    authorization = None
+    if design_gate.rows(plan) and (number := design_gate.needs_decision(change, plan)):
+        if decision is None:
+            return emit(["Class inventory", "design round cap"], "BLOCKED", [],
+                        f"round {number} is past the cap of {design_gate.ROUND_CAP} recorded design rounds",
+                        f"design-brief {slug} --attempt-decision 'continue: <source>' for one more round, or "
+                        f"--attempt-decision 'accept: <source>' to carry the open IMPORTANT items into apply as "
+                        "obligations (never a BLOCKER); <source> is the deciding record, e.g. `orchestrator D12 "
+                        "under mandate D80`")
+        kind, source = design_gate.parse_decision(decision)
+        if kind == "accept":
+            obligations = design_gate.accept(change, source)
+            return emit(["design round cap", f"accepted by {source}"], "PASS", ["plan.md"], "",
+                        "design gate accepted; the open items are apply obligations in Global constraints; present "
+                        "the plan for approval (or apply the orchestrator mandate), then dispatch",
+                        f"obligations: {len(obligations)}")
+        authorization = f"round {number}, continue — {source}"
+    elif decision is not None:
+        design_gate.parse_decision(decision)
     if not design_gate.rows(plan):
         return emit(["Class inventory"], "BLOCKED", [], "plan.md has no Class inventory rows",
                     "list every new non-test file (File | Layer | Why it exists | Kind) first")
@@ -882,14 +904,20 @@ def design_brief(slug: str, root: str | None, controller: str | None, full: bool
         return emit(["Class inventory"], "FAIL", [], "; ".join(v.message for v in violations), "fix the inventory rows")
     if not full and (open_items := design_gate.unresolved(plan)):
         return emit(["Class inventory", "previous findings"], "BLOCKED", [],
-                    f"{len(open_items)} item(s) of the recorded round have no resolution: {', '.join(open_items)}",
+                    f"{len(open_items)} item(s) of the recorded round have no resolution: "
+                    f"{design_gate.short(open_items)}",
                     f"fix each in spec.md, plan.md or design.md, then design-resolve {slug} --file - with one line "
-                    "per item: `F1.2: resolved: <section, task or file:line>` or `F1.2: rejected: <why>`")
+                    f"per item, {design_gate.RESOLVE_EXAMPLE}; the item list is under `## Design review` in plan.md")
     checked = ["Class inventory", *binding_check("reviewer", controller)]
-    path, rereview = design_gate.write_brief(change, full)
+    path, rereview = design_gate.write_brief(change, full, authorization)
+    if authorization:
+        design_gate.record_continue(change, authorization)
+        checked.append(f"recorded Design round authorization: {authorization}")
     route = role_route("reviewer", controller)
+    # A new name each round: the run record of the previous round refuses a changed prompt.
+    name = f"design-r{design_gate.round_state(change)['recorded'] + 1}"
     start = (f"python3 {SCRIPTS / 'run_role.py'} start --role reviewer --controller-runtime {controller} "
-             f"--prompt-file {path} --name design" if route and route["dispatch"] == "external"
+             f"--prompt-file {path} --name {name}" if route and route["dispatch"] == "external"
              else f"the native reviewer with {path}")
     kind = ("re-review of the recorded findings and the changes since; --full for a whole review after a redesign"
             if rereview else "whole review")
@@ -991,7 +1019,7 @@ def status(slug: str, root: str | None, controller: str | None = None,
     approval = approval_error(plan)
     import design_gate
     design = ("n/a (no Class inventory)" if not design_gate.rows(plan)
-              else design_gate.review_error(plan) or "PASS (current inventory)")
+              else design_gate.review_error(plan) or design_gate.passed_label(plan))
     handoff = change / "runs" / "handoff.md"
     drift = approval_drift(change) if not approval else []
     approved = "approved" + (f"; changed since approval: {', '.join(drift)} (re-approve)" if drift else "")
@@ -1217,7 +1245,18 @@ def approve(slug: str, root: str | None, by: str, source: str, bindings: str | N
             body.insert(last + 1, line)
         else:
             body[index] = line
-    text = "\n".join(plan.lines[:start] + body + plan.lines[end:]).rstrip("\n") + "\n"
+    lines = plan.lines[:start] + body + plan.lines[end:]
+    # 6.15: the controller set these two by `sed` after approving.
+    first_section = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
+    for i in range(first_section):
+        if lines[i].startswith("**Status:**"):
+            lines[i] = "**Status:** Approved, apply not started  "
+            break
+    for i, line in enumerate(lines):
+        if line.startswith("**Plan checkpoint:**"):
+            lines[i] = f"**Plan checkpoint:** Approved ({' '.join(source.split())})"
+            break
+    text = "\n".join(lines).rstrip("\n") + "\n"
     plan_path.write_text(text, encoding="utf-8")
     record = {"by": by, "source": " ".join(source.split()), "at": at,
               "artifacts": {name: digest(change / name) for name in APPROVAL_ARTIFACTS if (change / name).is_file()}}
@@ -1666,7 +1705,6 @@ def unaccepted_tasks(plan: Document, change: Path) -> list[str]:
 def run_final(slug: str, change: Path, timeout: float) -> tuple[str | None, int | None]:
     """Run `.specadoc.json` `verification.final` once and record it in runs/final-verification.json with
     the Review scope snapshot it proves. Returns (observed text, None) or (None, emitted exit code)."""
-    import time
     from validate_change import FINAL_RUN, final_commands, snapshot_hash
     try:
         commands = final_commands(Path.cwd())
@@ -1708,6 +1746,39 @@ def run_final(slug: str, change: Path, timeout: float) -> tuple[str | None, int 
     return f"{summary} (finalize --run, runs/final-verification.log)", None
 
 
+def collect_execution_tokens(slug: str, root: str | None, change: Path) -> list[str]:
+    """Append this Claude controller's and the settled external runs' tokens before the evidence is read
+    (6.13: collected by hand; passing an external run alone dropped the controller transcript)."""
+    import os
+    if not os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return []
+    from collect_tokens import current_claude_transcript, ledger_sessions
+    plan = (change / "plan.md").read_text(encoding="utf-8")
+    block = plan.split("Execution tokens:", 1)[1].split("\n\n", 1)[0] if "Execution tokens:" in plan else ""
+    if "Execution tokens:" in plan and not PENDING_TOKENS.search(block):
+        return []
+    def settled(path: Path) -> bool:
+        try:
+            return "usage" in json.loads(path.read_text(encoding="utf-8") or "{}")
+        except (OSError, ValueError):
+            return False  # a half-written record is not evidence; collect_tokens names it when passed alone
+    runs = sorted(path for path in (change / "runs").glob("*.run.json") if settled(path))
+    sources = [str(path) for path in ledger_sessions(change, "apply")]
+    if (current := current_claude_transcript()) and str(current) not in sources:
+        sources.append(str(current))
+    if not sources and not runs:
+        return []
+    args = [slug, *sources, "--mode", "apply", "--harness", "claude", "--append", *root_args(root),
+            *[item for path in runs for item in ("--external-run", str(path))]]
+    collected = run_script("collect_tokens.py", *args)
+    if collected.returncode:
+        return [f"execution tokens not collected: {tail(collected.stderr + collected.stdout)}"]
+    return [f"execution tokens collected ({len(sources)} session(s), {len(runs)} external run(s))"]
+
+
+PENDING_TOKENS = re.compile(r"Pending|<per-execution", re.I)
+
+
 def finalize(slug: str, root: str | None, *, observed: str | None = None, requirements: str | None = None,
              run: bool = False, timeout: float = 1800, residual: str | None = None) -> int:
     """Tick the `## Final verification` boxes the recorded state proves, drop the Round log template
@@ -1717,8 +1788,8 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
     from validate_change import CHECKBOX, RECORDED_FINDING
     change = Path(resolve_root(root).path) / slug
     plan_path = change / "plan.md"
+    checked: list[str] = collect_execution_tokens(slug, root, change)
     plan = Document(plan_path, str(plan_path))
-    checked: list[str] = []
     if run:
         ran, failure = run_final(slug, change, timeout)
         if failure is not None:
@@ -1791,7 +1862,8 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
     pending_rows = [cells[0] for _, cells in rows if cells and PENDING_MATRIX.match(cells[-1])]
     proofs["matrix"] = bool(rows) and not pending_rows
     if not proofs["matrix"]:
-        why["matrix"] = ("rows still Pending: " + ", ".join(pending_rows)) if pending_rows else "no matrix rows"
+        why["matrix"] = (f"rows still Pending: {', '.join(pending_rows)}; finalize {slug} --requirements "
+                         "'<the evidence that proves them>'") if pending_rows else "no matrix rows"
     proofs["observed"] = bool(observed)
     if not observed:
         why["observed"] = "pass --observed '<full suite and gates: command, result>'"
@@ -1831,9 +1903,11 @@ def finalize(slug: str, root: str | None, *, observed: str | None = None, requir
     if left:
         checked.append("left to the controller: " + "; ".join(left))
     if left:
+        # 6.13, 6.15: a generic hint ended in plan.md edited by heredoc; name each command instead.
+        commands = [command for item in left for command in re.findall(r"(?:finalize|collect_tokens\.py) [^;)]*", item)]
+        steps = "; ".join(dict.fromkeys(commands)) or "tick the remaining boxes by evidence"
         return emit(checked, "CHECKED", ["plan.md"], "",
-                    f"resolve what is left (boxes by evidence, --observed/--requirements, collect_tokens --append), "
-                    f"then validate_change.py {slug} --phase final")
+                    f"run {steps} (no hand edits of plan.md), then validate_change.py {slug} --phase final")
     return emit(checked, "PASS", ["plan.md"], "", f"validate_change.py {slug} --phase final")
 
 
@@ -1903,7 +1977,14 @@ def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str,
             filled.append(label.rstrip(":") + ("" if unfilled else " (refreshed)"))
         elif unfilled and label not in content:
             if label == "Execution tokens:":
-                pending.append(f"Execution tokens (collect_tokens.py {slug} --mode <mode> --harness <h> --append)")
+                import os
+                command = (f"collect_tokens.py {slug} --mode apply --harness claude --append"
+                           if os.environ.get("CLAUDE_CODE_SESSION_ID")
+                           else f"collect_tokens.py {slug} --mode <mode> --harness <h> --append")
+                pending.append(f"Execution tokens ({command})")
+            elif label == "Requirement mapping:":
+                pending.append(f"Requirement mapping (finalize {slug} --requirements '<the evidence that proves the "
+                               "matrix rows>')")
             elif label == "Residual risks or waivers:":
                 pending.append(f"Residual risks or waivers (finalize {slug} --residual '<risks and waivers, or none>')")
             else:
@@ -1912,7 +1993,17 @@ def fill_completion(lines: list[str], plan_path: Path, change: Path, slug: str,
     return filled, pending
 
 
-def wait_report(slug: str, task: str, root: str | None, timeout: float, interval: float = 5.0) -> int:
+def wait_slice(timeout: float, shell_budget: float | None) -> float:
+    """The wait time, leaving headroom below a host's per-command limit (as run_role.py wait)."""
+    if shell_budget is None:
+        return timeout
+    if shell_budget <= 0:
+        raise ValueError("--shell-budget must be positive")
+    return min(timeout, max(0.0, shell_budget - min(5.0, shell_budget * 0.1)))
+
+
+def wait_report(slug: str, task: str, root: str | None, timeout: float, interval: float = 5.0,
+                shell_budget: float | None = None) -> int:
     """Wait until a worker writes a new task report, whatever its status.
 
     For a worker answering asynchronously (a resumed agent). A sub-agent's reply reaches the
@@ -1922,8 +2013,8 @@ def wait_report(slug: str, task: str, root: str | None, timeout: float, interval
     `tidy` waits for the tidy worker's record instead: 6.5 waited 540 s for a `tidy-report.md` nobody
     writes while runs/tidy.json was there after two minutes.
     """
-    import time
     runs = Path(resolve_root(root).path) / slug / "runs"
+    timeout = wait_slice(timeout, shell_budget)
     if task == "tidy":
         return wait_tidy(slug, runs, timeout, interval)
     if not re.fullmatch(r"T\d+", task):
@@ -1940,23 +2031,25 @@ def wait_report(slug: str, task: str, root: str | None, timeout: float, interval
         return report.stat().st_mtime, (found[-1] if found else "")
 
     start_mtime, start_status = snapshot()
+    clock = HostClock(time)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
+        clock.tick()
         mtime, status = snapshot()
         if status and mtime != start_mtime:
             return emit(["task report"], "CHECKED", [], "", WAIT_NEXT[status].format(slug=slug, task=task),
-                        f"report: {status} ({report})")
+                        f"report: {status} ({report}){clock.note()}")
     before = f"still {start_status or 'no report'}"
     # A timeout is a check-in, not a blocker: the worker may simply still be running (6.4: five
     # "BLOCKED" results for one live worker). Exit code stays 2 so a command chain stops here.
-    return emit(["task report"], "WAITING", [], f"no new {task} report within {int(timeout)}s ({before})",
+    return emit(["task report"], "WAITING", [],
+                f"no new {task} report within {int(timeout)}s ({before}){clock.note()}",
                 f"read any sub-agent reply that arrived, then wait again or inspect the worker")
 
 
 def wait_tidy(slug: str, runs: Path, timeout: float, interval: float) -> int:
     """Wait until the tidy worker's `tidy --record` (or a `--skip`) writes runs/tidy.json."""
-    import time
     record, brief = runs / TIDY_FILE, runs / TIDY_BRIEF
 
     def mtime(path: Path) -> float:
@@ -1972,12 +2065,14 @@ def wait_tidy(slug: str, runs: Path, timeout: float, interval: float) -> int:
     start = mtime(record)
     if start and start >= mtime(brief):
         return done()
+    clock = HostClock(time)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
+        clock.tick()
         if mtime(record) != start:
             return done()
-    return emit(["tidy record"], "WAITING", [], f"no tidy record within {int(timeout)}s",
+    return emit(["tidy record"], "WAITING", [], f"no tidy record within {int(timeout)}s{clock.note()}",
                 "read any sub-agent reply that arrived, then wait again or inspect the worker")
 
 
@@ -2033,6 +2128,8 @@ def build_parser() -> argparse.ArgumentParser:
     waited.add_argument("task", help="T<n> or tidy")
     waited.add_argument("--timeout", type=float, default=540.0, help="Seconds (default 540)")
     waited.add_argument("--interval", type=float, default=5.0, help=argparse.SUPPRESS)
+    waited.add_argument("--shell-budget", type=float,
+                        help="Host per-command limit in seconds; the wait ends a few seconds before it")
     waited.add_argument("--controller-runtime", choices=("codex", "claude", "opencode"), type=normalize_runtime)
     review = steps.add_parser("pre-review")
     review.add_argument("change_slug")
@@ -2055,6 +2152,8 @@ def build_parser() -> argparse.ArgumentParser:
     brief.add_argument("change_slug")
     brief.add_argument("--full", action="store_true",
                        help="A whole review again instead of a re-review of the recorded round (after a redesign)")
+    brief.add_argument("--attempt-decision", metavar="KIND: SOURCE",
+                       help="Past the design round cap: `continue: <source>` or `accept: <source>`")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
     resolved = steps.add_parser("design-resolve", help="Answer each item of the recorded FAIL design round")
@@ -2179,7 +2278,8 @@ def main() -> int:
         if args.step == "amend":
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
         if args.step == "design-brief":
-            return design_brief(args.change_slug, args.root, args.controller_runtime, args.full)
+            return design_brief(args.change_slug, args.root, args.controller_runtime, args.full,
+                                args.attempt_decision)
         if args.step == "design-review":
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
                                  args.from_agent, args.same_reviewer_reason)
@@ -2193,7 +2293,8 @@ def main() -> int:
             return tidy(args.change_slug, args.root, record=args.record, summary=args.summary,
                         agent=args.from_agent, skip=args.skip)
         if args.step == "wait":
-            return wait_report(args.change_slug, args.task, args.root, args.timeout, args.interval)
+            return wait_report(args.change_slug, args.task, args.root, args.timeout, args.interval,
+                               args.shell_budget)
         if args.step == "scope":
             return scope(args.change_slug, args.root, base=args.base, dry_run=args.dry_run, exclude=args.exclude)
         if args.step == "finalize":

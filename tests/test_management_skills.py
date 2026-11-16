@@ -12,7 +12,8 @@ SKILLS = ROOT / "skills"
 MANAGEMENT = ("foreman", "orchestrator")
 CASES = {
     "foreman": {"continue-executor", "continuation-unavailable", "review-and-recovery"},
-    "orchestrator": {"dependent-projects", "checkpoint-authority", "lost-event-and-recovery"},
+    "orchestrator": {"dependent-projects", "checkpoint-authority", "lost-event-and-recovery",
+                     "autonomous-decision"},
 }
 
 

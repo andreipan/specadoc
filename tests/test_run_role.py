@@ -427,13 +427,12 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
         self.noisy_codex()
         payload = {"status": "DONE", "summary": "ok", "files_changed": [],
                    "tests": {"red": "fails", "green": "passes"}, "concerns": [], "report": "runs/T1-report.md"}
-        run_file = self.start(payload)
+        run_file = self.start(payload)  # `wait` settles a good result itself (run 6.12/6.15)
         log = self.runs / "T1.worker.log"
-        full = log.stat().st_size
         self.assertEqual(0, self.run_cli("result", run_file).returncode)
         record = json.loads(Path(run_file).read_text(encoding="utf-8"))
         self.assertEqual({"input_tokens": 120, "cached_input_tokens": 40, "output_tokens": 10}, record["usage"])
-        self.assertEqual(full, record["log_bytes"])
+        self.assertGreater(record["log_bytes"], 400 * 80)
         self.assertLess(log.stat().st_size, 8192 + 200)
         self.assertTrue(log.read_text(encoding="utf-8").startswith("[specadoc: log cut"))
         again = self.run_cli("result", run_file)

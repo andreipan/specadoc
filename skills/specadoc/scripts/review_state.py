@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from run_role import _parse_json_text, schema_errors, schema_path
+from run_role import _parse_json_text, result_source, schema_errors, schema_path
 from task_state import digest, safe_path
 from validate_change import (Document, PENDING, check_review_round_structure, ids_in,
                              latest_review_round, minor_only_pass, review_policy_hash, round_is_stale)
@@ -104,6 +104,7 @@ def stale_cause(policy_changed: bool, stored: dict, current: dict | None, error:
 def record_result(change: Path, source: str, agent: str | None = None,
                   same_reviewer_reason: str | None = None) -> tuple[str, str | None]:
     """Settle the pending round; return its id and the stale cause (None when current)."""
+    source = result_source(source)  # 6.14: a run record, as design-review takes it
     result_path = safe_path(source, allow_missing=False, allow_absolute=True,
                             hint=f'save it under {change}/runs/')
     payload = _parse_json_text(result_path.read_text(encoding='utf-8'))

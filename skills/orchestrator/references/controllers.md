@@ -74,7 +74,11 @@ fifteen minutes. After each timeout read only the controller's status and its
 last error, not its log. A failed provider call can leave a controller errored
 while a wait for completion keeps waiting (3.5: a 30-minute wait returned after
 46 minutes): an errored turn needs a supported retry or a decision, not another
-wait. A wait that returns late is not evidence of progress.
+wait. A wait that returns late is not evidence of progress. A wait or status line that
+says `host slept N s` means the machine slept, not that the role stalled: in
+6.14 three reviewer runs and a worker looked stalled during macOS idle sleep and
+the run was stopped on a wrong diagnosis. Keep the machine awake (host notes)
+and never replace a runtime for a silence a sleep explains.
 
 Resume a controller from `specadoc_step.py status <slug>` and its
 `runs/handoff.md`, not by re-reading spec, plan and design: in 3.5 the

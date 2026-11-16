@@ -37,6 +37,11 @@ Rules:
   (`.claude/skills/orchestrator/references/controllers.md`, `roadmap.md` at the
   root). 4.6–4.8 controllers searched for an unnamed file with `find /`, which
   ran into the 120 s command timeout each time.
+- After research (`research.md`) the brief names the step's research file and
+  the decisions that answered its questions. The controller takes the file as
+  explore evidence, rechecks what it marks `depends on <step>`, asks nothing a
+  decision already answered, and returns each new divergence from a source in
+  the envelope for the BA register.
 - The plan checkpoint carries the bindings `role_routing.py` resolved; the
   approval message repeats them as `--bindings '<...>'` (4.6: `approve` without
   them was refused once).
@@ -48,6 +53,7 @@ Shape (keep under about 2,000 characters):
 
 Standing constraints: `<coordination dir>/brief.md` (mandate D<n>, test database D<m>).
 Use Specadoc for this change. Start from `specadoc_step.py status <slug>`.
+Research: `<coordination dir>/research/<step>.md` (questions settled in D<n>, D<m>).
 
 ## Outcome and why
 <two or three sentences; the roadmap row quoted verbatim>

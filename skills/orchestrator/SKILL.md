@@ -35,10 +35,15 @@ Foreman inside them. For one local change, prefer one ordinary controller.
    checkout) and, where the host gives a child another environment,
    `--probe --expect-head` through the host's launch (host notes). An error
    stops the run here, while the user is present: report it, do not work
-   around it.
+   around it. Keep the machine awake for the run as the host notes say: in
+   6.14 idle sleep looked like three stalled reviewer runs.
 5. Reuse the record found in step 1, or create one where `references/state.md`
    says. It tracks relationships and shared decisions, not duplicate local
    specifications, task lists, or verification logs.
+6. For a block of roadmap steps, run research before the first controller
+   (`references/research.md`): a read-only Specadoc explore per step, every
+   question that only the user may answer asked once, the rest decided under
+   the mandate and every divergence from a source kept in the BA register.
 
 ## Partition and dispatch
 
@@ -73,7 +78,9 @@ inside one repository and leave consumers on an obsolete contract.
 Continue the same controller for related work. At a question, read the
 controller's `specadoc_step.py status <slug>` and handoff, open only the plan
 section the decision needs, apply only the authority recorded in the mandate,
-and send a specific decision referencing the current checkpoint. Keep each
+and send a specific decision referencing the current checkpoint. Decide
+yourself what the mandate covers (`references/checkpoints.md` → Deciding
+without the user); a question it does not cover stops only its step. Keep each
 message short (about 150 words): the decision, checkpoint key and `D<n>`; the
 rationale stays in the coordination record, since every message stays in the
 controller's context for the rest of its session. Relay options
