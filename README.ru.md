@@ -1,4 +1,4 @@
-<!-- source-sha256: 54f729a27c279d175a8ed25cd7758fdd6cff7e240a4a75a9a8aec28e811ca723 -->
+<!-- source-sha256: 7442becc58adc32e6b9bcfc9b8e16a7691c636537ee2ef35bdbdf6afc58a87c9 -->
 # Specadoc
 
 [English](README.md)
@@ -64,9 +64,11 @@ Specadoc разделяет три вещи:
 1. Добавьте маркетплейс и установите плагин:
 
    ```bash
-   claude plugin marketplace add https://github.com/andreipan/specadoc
+   claude plugin marketplace add andreipan/specadoc
    claude plugin install specadoc@specadoc
    ```
+
+   Чтобы остаться на релизе, добавьте его тег: `andreipan/specadoc@v0.1.2`.
 
 2. Начните новую сессию в своём проекте.
 3. Запросите предложение:
@@ -79,8 +81,8 @@ Specadoc разделяет три вещи:
    запросите изменения.
 5. Запустите `/specadoc:specadoc apply <slug>`.
 
-Для Codex, OpenCode и обычных папок скиллов см.
-[Установка](docs/ru/guides/install.md). Полный разбор на примере см. в
+Для Codex (`codex plugin marketplace add andreipan/specadoc`), OpenCode и
+обычных папок скиллов см. [Установка](docs/ru/guides/install.md). Полный разбор на примере см. в
 [Ваше первое изменение](docs/ru/guides/first-change.md).
 
 ## Требования

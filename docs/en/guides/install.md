@@ -6,8 +6,8 @@ Specadoc is one plugin with six skills: `specadoc` and five optional skills. You
 
 | Host | Method | Skill name |
 |---|---|---|
-| Claude Code | plugin from a marketplace | `specadoc:specadoc` |
-| Codex | plugin from a local marketplace | `specadoc:specadoc` |
+| Claude Code | plugin from the GitHub marketplace | `specadoc:specadoc` |
+| Codex | plugin from the GitHub marketplace | `specadoc:specadoc` |
 | Codex CLI, OpenCode | plain skill folders | `specadoc` |
 
 The plugin version is in `plugin.json`. Specadoc needs no MCP server, no authentication and no lifecycle hooks. The install does not change your host configuration or write agent files to your project.
@@ -26,25 +26,23 @@ error: Specadoc scripts need Python 3.10+; this is 3.9.6 at /usr/bin/python3. Pu
 
 `run_role.py` starts a role on another runtime and uses `fcntl`. For this reason it does not run on Windows. The other scripts are not tested on Windows.
 
-## Get the source
+## Choose a version
 
-Clone the repository once. All install methods below use this checkout.
+The GitHub repository `andreipan/specadoc` is also the plugin marketplace for Claude Code and Codex. You do not need to clone it for a plugin install.
 
-```bash
-git clone https://github.com/andreipan/specadoc
-```
+- Without a tag, the marketplace follows the `main` branch.
+- With a release tag, the marketplace stays on that release. The tags are on the [releases page](https://github.com/andreipan/specadoc/releases). The examples below use `<tag>`, for example `v0.1.2`.
 
-In this guide, `<repo>` is the absolute path of the checkout.
+We recommend a tag for team projects, so that all members use the same version.
 
 ## Claude Code plugin
 
-1. Add the repository as a marketplace:
+1. Add the marketplace. Use one of these commands:
 
    ```bash
-   claude plugin marketplace add <repo>
+   claude plugin marketplace add andreipan/specadoc          # follows main
+   claude plugin marketplace add andreipan/specadoc@<tag>    # stays on a release
    ```
-
-   The command also accepts a Git URL instead of a local path.
 
 2. Install the plugin:
 
@@ -62,20 +60,34 @@ The plugin gives you these names:
 
 A skill loads only when a task matches its description. The `specadoc` skill runs only when you name it.
 
-To try the plugin for one session without an install, load it from the checkout:
+### Share the plugin with a team
+
+To declare the marketplace for a project, add `--scope project` to the `marketplace add` command. Claude Code then writes the marketplace to the project's `.claude/settings.json`. Commit this file.
+
+A team member gets the marketplace after they trust the project folder. Each member then installs the plugin:
 
 ```bash
+claude plugin install specadoc@specadoc --scope project
+```
+
+### Try the plugin without an install
+
+To load the plugin for one session only, clone the repository and give its path:
+
+```bash
+git clone https://github.com/andreipan/specadoc
 claude --plugin-dir <repo>
 ```
 
+`<repo>` is the absolute path of the clone.
+
 ## Codex plugin
 
-The checkout has a plugin manifest (`plugin.json`) and a local marketplace file (`.agents/plugins/marketplace.json`). The plugin installs all six skills.
-
-1. Add the checkout as a marketplace. Use an absolute path.
+1. Add the marketplace. Use one of these commands:
 
    ```bash
-   codex plugin marketplace add <repo>
+   codex plugin marketplace add andreipan/specadoc               # follows main
+   codex plugin marketplace add andreipan/specadoc --ref <tag>   # stays on a release
    ```
 
 2. Install the plugin:
@@ -94,11 +106,11 @@ The checkout has a plugin manifest (`plugin.json`) and a local marketplace file 
 5. Select the `specadoc:specadoc` skill. If your host supports it, type `$specadoc:specadoc`.
 6. Ask for a mode: `explore`, `propose`, `apply`, `light` or `archive`.
 
-You can also select Specadoc in the desktop plugin directory after you add the marketplace.
+The plugin installs all six skills. You can also select Specadoc in the desktop plugin directory after you add the marketplace.
 
 The `specadoc` skill has `allow_implicit_invocation: false`. Codex does not start it on its own. The other skills keep their own discovery rules.
 
-Codex runs the skills from its installed cache copy, not from your checkout. Do not install the plugin in a project that also has a linked or copied copy of the same skills.
+Codex runs the skills from its installed cache copy. Do not install the plugin in a project that also has a linked or copied copy of the same skills.
 
 For packaging, the offline pilot and a separate `CODEX_HOME`, see [Packaging](../maintainers/packaging.md).
 
@@ -106,7 +118,16 @@ For packaging, the offline pilot and a separate `CODEX_HOME`, see [Packaging](..
 
 Both hosts read Agent Skills folders. Link or copy each skill folder into the project.
 
-1. Link the `specadoc` skill:
+1. Clone the repository. To stay on a release, check out its tag:
+
+   ```bash
+   git clone https://github.com/andreipan/specadoc
+   git -C specadoc checkout <tag>
+   ```
+
+   In the commands below, `<repo>` is the absolute path of the clone.
+
+2. Link the `specadoc` skill:
 
    ```bash
    # Codex
@@ -115,9 +136,9 @@ Both hosts read Agent Skills folders. Link or copy each skill folder into the pr
    ln -s <repo>/skills/specadoc <project>/.opencode/skills/specadoc
    ```
 
-2. Link each optional skill that you need in the same folder. See the next section.
-3. Start a new session.
-4. Ask for the skill by its plain name, `specadoc`, and a mode.
+3. Link each optional skill that you need in the same folder. See the next section.
+4. Start a new session.
+5. Ask for the skill by its plain name, `specadoc`, and a mode.
 
 Specadoc does not write agent configuration for these hosts. If the project has its own roles (`.codex/agents/<role>.toml` or `.opencode/agents/<role>.md`), Specadoc uses them. Otherwise the controller gives the portable role contract from `skills/specadoc/references/roles/` to an available subagent. For the full order, see [Roles](../concepts/roles.md).
 
@@ -176,21 +197,37 @@ An update does not change `.specadoc.json` or your role files.
 
 ### Claude Code
 
-1. If you added the marketplace from a local path, pull the new version into the checkout.
-2. Update the marketplace and the plugin:
+If the marketplace follows `main`:
+
+1. Update the marketplace and the plugin:
 
    ```bash
    claude plugin marketplace update specadoc
    claude plugin update specadoc@specadoc
    ```
 
-3. Restart Claude Code. The update applies only after a restart.
+2. Restart Claude Code. The update applies only after a restart.
+
+A new release reaches you only when its version in `plugin.json` changes.
+
+To move to another release tag, add the marketplace again. The `marketplace remove` command also removes the plugin, so install it again:
+
+```bash
+claude plugin marketplace remove specadoc
+claude plugin marketplace add andreipan/specadoc@<tag>
+claude plugin install specadoc@specadoc
+```
 
 ### Codex plugin
 
-`codex plugin marketplace upgrade` refreshes only Git marketplaces. It does not refresh a local folder.
+If the marketplace follows `main`:
 
-1. Pull the new version into the checkout.
+1. Refresh the marketplace:
+
+   ```bash
+   codex plugin marketplace upgrade specadoc
+   ```
+
 2. Remove the plugin and add it again:
 
    ```bash
@@ -200,9 +237,18 @@ An update does not change `.specadoc.json` or your role files.
 
 3. Start a new chat.
 
+To move to another release tag, add the marketplace again with the new tag. Then remove the plugin and add it again. Without the reinstall, Codex keeps the old version.
+
+```bash
+codex plugin marketplace remove specadoc
+codex plugin marketplace add andreipan/specadoc --ref <tag>
+codex plugin remove specadoc@specadoc
+codex plugin add specadoc@specadoc
+```
+
 ### Plain skills
 
-- If you linked the folders, pull the new version into the checkout.
+- If you linked the folders, run `git pull` in the clone, or check out the new tag.
 - If you copied the folders, copy them again.
 
 Start a new session after the update.

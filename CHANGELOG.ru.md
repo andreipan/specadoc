@@ -1,4 +1,4 @@
-<!-- source-sha256: 74213a76acdc2dbacfe64a80a98f8c0a99585c30dd5311ba5e6c841bea483b63 -->
+<!-- source-sha256: 35d0a44361983fce5cb4286b93a6970998de48b4756fd1820dbb84cd6ae463d3 -->
 # Журнал изменений
 
 [English](CHANGELOG.md)
@@ -7,6 +7,12 @@
 Версии соответствуют [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Изменено
+
+- Руководство по установке использует маркетплейс на GitHub
+  (`andreipan/specadoc`) для Claude Code и Codex, с тегом релиза по желанию.
+  Оно также описывает область проекта для команды и переход на другой тег.
 
 ## [0.1.2] - 2026-11-17
 

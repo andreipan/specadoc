@@ -7,6 +7,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The install guide uses the GitHub marketplace (`andreipan/specadoc`) for
+  Claude Code and Codex, with an optional release tag. It also covers a project
+  scope for teams and how to move to another tag.
+
 ## [0.1.2] - 2026-11-17
 
 ### Changed

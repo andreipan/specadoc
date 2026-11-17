@@ -60,9 +60,11 @@ the model and effort come from the installed role file. See
 1. Add the marketplace and install the plugin:
 
    ```bash
-   claude plugin marketplace add https://github.com/andreipan/specadoc
+   claude plugin marketplace add andreipan/specadoc
    claude plugin install specadoc@specadoc
    ```
+
+   To stay on a release, add its tag: `andreipan/specadoc@v0.1.2`.
 
 2. Start a new session in your project.
 3. Ask for a proposal:
@@ -75,8 +77,8 @@ the model and effort come from the installed role file. See
    for changes.
 5. Run `/specadoc:specadoc apply <slug>`.
 
-For Codex, OpenCode and plain skill folders, see
-[Install](docs/en/guides/install.md). For a full walkthrough, see
+For Codex (`codex plugin marketplace add andreipan/specadoc`), OpenCode and
+plain skill folders, see [Install](docs/en/guides/install.md). For a full walkthrough, see
 [Your first change](docs/en/guides/first-change.md).
 
 ## Requirements
