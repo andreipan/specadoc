@@ -4,7 +4,8 @@
 
 This page lists every Python script of the `specadoc` and `orchestrator`
 skills: its purpose, subcommands, flags and exit codes. The flags come from the
-`--help` output and the argparse code of release `v0.1.1`.
+`--help` output and the argparse code. `tests/test_docs.py` checks that every
+script has a section here.
 
 ## Conventions
 

@@ -7,6 +7,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-17
+
 ### Changed
 
 - The documentation is rewritten in English and Russian. The `docs/` folder,

@@ -10,7 +10,7 @@ Specadoc is one plugin with six skills: `specadoc` and five optional skills. You
 | Codex | plugin from a local marketplace | `specadoc:specadoc` |
 | Codex CLI, OpenCode | plain skill folders | `specadoc` |
 
-The plugin version is 0.1.1. Specadoc needs no MCP server, no authentication and no lifecycle hooks. The install does not change your host configuration or write agent files to your project.
+The plugin version is in `plugin.json`. Specadoc needs no MCP server, no authentication and no lifecycle hooks. The install does not change your host configuration or write agent files to your project.
 
 ## Requirements
 

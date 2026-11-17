@@ -1,11 +1,12 @@
-<!-- source-sha256: 843b931095a2d3a14717305ee55ec0acdadbb6cd1e89a02f581c3fa0d00e11bb -->
+<!-- source-sha256: d4c242d398470483746ac739e9e2409954f068ebfc2a21ebb0e2e71e01d00546 -->
 # Скрипты
 
 [English](../../en/reference/scripts.md)
 
 На этой странице перечислены все скрипты Python скиллов `specadoc` и
 `orchestrator`: назначение, подкоманды, флаги и коды выхода. Флаги взяты из
-вывода `--help` и кода argparse релиза `v0.1.1`.
+вывода `--help` и кода argparse. `tests/test_docs.py` проверяет, что у каждого
+скрипта здесь есть раздел.
 
 ## Обозначения
 
