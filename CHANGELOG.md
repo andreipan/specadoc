@@ -13,6 +13,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Claude Code and Codex, with an optional release tag. It also covers a project
   scope for teams and how to move to another tag.
 
+### Fixed
+
+- The `.DS_Store` scope test no longer depends on a global gitignore, so
+  `scripts/check.sh` passes on machines that ignore `.DS_Store` globally.
+
 ## [0.1.2] - 2026-11-17
 
 ### Changed

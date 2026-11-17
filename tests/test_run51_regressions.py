@@ -3,6 +3,7 @@ a whole-suite run before acceptance, Completion evidence by hand, .DS_Store in R
 from __future__ import annotations
 
 import json
+import os
 import re
 import unittest
 from pathlib import Path
@@ -123,6 +124,8 @@ class Run51CompletionEvidenceTest(Run411Base):
 
 class Run51ScopeTest(Run411Base):
     def test_scope_leaves_out_os_files_and_excluded_paths(self):
+        # A global gitignore with .DS_Store would hide the file from git; the scope filter must drop it itself.
+        self.git('config', 'core.excludesFile', os.devnull)
         self.commit_all()
         self.repo.joinpath("label.py").write_text('def label():\n    return "ready!"\n')
         self.repo.joinpath(".DS_Store").write_bytes(b"\0")
