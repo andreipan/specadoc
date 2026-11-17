@@ -78,6 +78,9 @@ class PluginPackageTest(unittest.TestCase):
                 self.assertIn(f'skills/{name}/agents/openai.yaml', names)
                 self.assertTrue(any(n.startswith(f'skills/{name}/evals/') for n in names))
             self.assertIn('skills/specadoc/references/roles/reviewer.md', names)
+            for name in ('README.md', 'README.ru.md', 'CHANGELOG.md', 'CHANGELOG.ru.md',
+                         'docs/en/index.md', 'docs/ru/index.md'):
+                self.assertIn(name, names)
             self.assertFalse(any(n.startswith(('agents/', '.git', '.agents/', '.claude-plugin/', 'tests/', 'scripts/')) for n in names))
             self.assertFalse(any('__pycache__' in n or n.endswith('.pyc') for n in names))
             unpacked = self.base / 'unpacked'

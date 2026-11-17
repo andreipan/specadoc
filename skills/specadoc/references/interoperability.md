@@ -50,6 +50,10 @@ step they own and record which one ran:
 - **Tool router** — the host's policy for symbol-aware (IDE/LSP) and code-graph
   tools, including fallbacks. Without it, use `rg`/file inspection and state the
   limitation.
+- **Role tooling block** — each role contract keeps its tool guidance between
+  `<!-- specadoc:tooling:begin -->` and `<!-- specadoc:tooling:end -->`. A host
+  that generates its own role files replaces only that block (for example with
+  its tool router); scope, rules and the report format stay unchanged.
 
 Specadoc bundles standalone, opt-in companions for cleanup, architecture design,
 and domain modeling (see the README); any equivalent host skill may take their place.

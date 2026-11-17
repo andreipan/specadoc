@@ -12,7 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ('specadoc', 'tidy', 'codebase-design', 'domain-modeling', 'foreman', 'orchestrator')
 EXPLICIT_SKILLS = ('specadoc', 'foreman', 'orchestrator')
-TOP_FILES = ('plugin.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')
+TOP_FILES = ('plugin.json', 'README.md', 'README.ru.md', 'CHANGELOG.md', 'CHANGELOG.ru.md',
+             'LICENSE', 'THIRD_PARTY_NOTICES.md')
+DOC_LANGUAGES = ('en', 'ru')
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -26,6 +28,15 @@ def frontmatter(path: Path) -> dict[str, str]:
 
 def resources(root: Path) -> list[Path]:
     paths = [root / name for name in TOP_FILES]
+    for language in DOC_LANGUAGES:
+        docs = root / 'docs' / language
+        if not docs.is_dir():
+            raise ValueError(f'missing documentation: docs/{language}')
+        for path in sorted(docs.rglob('*')):
+            if path.is_symlink():
+                raise ValueError(f'non-portable symlink: {path.relative_to(root)}')
+            if path.is_file() and path.suffix == '.md':
+                paths.append(path)
     for name in SKILLS:
         for path in sorted((root / 'skills' / name).rglob('*')):
             relative = path.relative_to(root)

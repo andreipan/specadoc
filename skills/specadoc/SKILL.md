@@ -28,7 +28,7 @@ Explicit modes win:
 
 Without an explicit mode:
 
-1. Select `apply` only for an existing slug whose plan records both approvals.
+1. Select `apply` only for an existing slug whose plan records plan approval.
 2. Select `explore` when material requirements are unresolved or the area is
    unfamiliar.
 3. Select `propose` when any `light` eligibility condition fails: another

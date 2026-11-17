@@ -119,12 +119,12 @@ def pilot():
             assert 'allow_implicit_invocation: false' in policy.read_text()
         report['checks'].append('Installed explicit-only policy preserved: PASS (configuration, not model routing)')
         scripts = cache / 'skills/specadoc/scripts'
-        for script in sorted(scripts.glob('*.py')):
-            if script.name != 'specadoc_root.py':
-                run([sys.executable, '-B', str(script), '--help'], project, env)
-        run([sys.executable, '-B', str(scripts / 'init_change.py'), 'pilot'], project, env)
+        helpers = [s for s in sorted(scripts.glob('*.py')) if s.name != 'specadoc_root.py']
+        for script in helpers:
+            run([sys.executable, '-B', str(script), '--help'], project, env)
+        run([sys.executable, '-B', str(scripts / 'init_change.py'), 'pilot', '--no-scout', 'pilot change'], project, env)
         assert (project / 'docs/specadoc/pilot/spec.md').is_file()
-        report['checks'].append('Eight cached CLI helpers and artifact initialization: PASS')
+        report['checks'].append(f'{len(helpers)} cached CLI helpers and artifact initialization: PASS')
         marker = '\nLocal pilot update marker.\n'
         readme = source / 'README.md'
         readme.write_text(readme.read_text() + marker)

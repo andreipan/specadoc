@@ -24,7 +24,8 @@ Three roots, one responsibility each:
 A capability file states observable behavior only: `C<n>` SHALL statements,
 invariants, at most five key paths, and a provenance row per contributing
 change. It never lists tasks, diffs, file inventories or history. It is written
-from the accepted `spec.md` at archive time, never from the diff, and never
+from the accepted `spec.md` after review PASS (`apply.md` step 9), never
+from the diff, and never
 while the change is still in flight.
 
 ### Declaring the change as operations

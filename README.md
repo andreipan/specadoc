@@ -1,299 +1,122 @@
 # Specadoc
 
-## Project-owned routing
+[Русский](README.ru.md)
 
-Optional `.specadoc.json` can select `claude`, `codex` or `opencode` per role
-without embedding personal models in the plugin or installer configuration.
-Existing root-only configurations remain compatible. Model and effort come
-only from the target runtime's installed role file, resolved again at every
-dispatch; edit that file or `.specadoc.json` to change a binding.
-The controller runtime is checked, never automatically switched. Routing
-scripts require Python 3.11+.
+Specadoc is an engineering lifecycle for coding agents in Claude Code, Codex
+and OpenCode. It turns a request into a written contract, an approved plan,
+test-first implementation, an independent review and a compact archive record.
 
-See [project configuration](skills/specadoc/references/project-config.md) for
-the schema, read-only resolver, external runner and migration contract. Updating Specadoc does not rewrite the project JSON or personal role
-settings. Non-migrated projects retain their existing registry/wrapper behavior.
+Specadoc runs only when you call it by name. It never takes over ordinary
+coding work.
 
-An explicit engineering lifecycle for coding agents: **explore → propose →
-apply → archive**. Specadoc keeps a stable behavioral contract (`spec.md`) apart
-from mutable execution state (`plan.md`), gates each phase with deterministic
-checks, and routes work to three bounded roles:
+## Why
 
-| Role | Job |
-|---|---|
-| `scout` | One bounded, read-only investigation; returns a fixed report. |
-| `worker` | One fully specified, low-decision task, test-first. |
-| `reviewer` | Independent read-only review of the final diff against the spec. |
+A coding agent that works from a chat message alone forgets decisions, changes
+requirements to fit its code and marks its own work as done. Specadoc keeps
+three things apart:
 
-Specadoc fixes no model level. Each role's model and effort come from its
-installed role file, and the plan preview shows them.
+- The spec (`spec.md`) says what the change must do. It stays stable after
+  approval.
+- The plan (`plan.md`) holds tasks, approvals and evidence. It changes as the
+  work goes on.
+- The review is done by a separate read-only `reviewer`, never by the agent
+  that wrote the code.
 
-The controller (your main agent session) owns requirements, architecture,
-approvals and final verification. Specadoc runs only when you invoke it
-explicitly; it never takes over ordinary coding work.
+Deterministic scripts check each phase. A failed check stops the work. It does
+not let the agent rewrite the plan or weaken a test to pass.
 
 ## Modes
 
-- `specadoc explore <request>`: facts and stress-testing, no files.
-- `specadoc propose <request|slug>`: writes `docs/specadoc/<slug>/spec.md` and
-  `plan.md`, shows the role bindings, and stops at the plan checkpoint.
-- `specadoc apply <slug>`: TDD implementation, bounded workers, controller
-  verification, final reviewer.
-- `specadoc archive <slug>`: compacts a finished change into
-  `docs/specadoc/archive/<slug>/record.md` (≤ 16 KiB).
+| Mode | What it does |
+|---|---|
+| `explore <request>` | Finds facts and tests the idea. Writes no files. |
+| `propose <request\|slug>` | Writes `spec.md` and `plan.md`, validates them, and stops for your plan approval. |
+| `apply <slug>` | Implements the approved plan test-first, runs final verification and the independent review. |
+| `light <request>` | A small change in one session. Updates capability specs, keeps the plan in chat, creates no change folder. |
+| `archive <slug>` | Compacts a finished change into one bounded `record.md`. Runs only on request. |
 
-## Install
+Without a mode, Specadoc picks one by fixed rules. See
+[Lifecycle](docs/en/concepts/lifecycle.md).
 
-### Claude Code (plugin)
+## Roles
 
-```bash
-claude plugin marketplace add <git-url-or-local-path-of-this-repo>
-claude plugin install specadoc@specadoc
-```
+Your main agent session is the **controller**. It owns requirements,
+architecture, approvals and final verification. It sends bounded work to
+three roles:
 
-The skill is invoked as `/specadoc:specadoc`. The roles are available as
-`specadoc:scout`, `specadoc:worker` and `specadoc:reviewer`. For a single
-session from a checkout, run `claude --plugin-dir <path>`.
+| Role | Job |
+|---|---|
+| `scout` | One bounded read-only investigation with a fixed report. |
+| `worker` | One fully specified, low-decision task, test-first. |
+| `reviewer` | Independent read-only review of the final diff against the spec. |
 
-### Codex plugin (local marketplace)
+Each role can run on the same host or on another runtime. A project
+`.specadoc.json` file selects the runtime per role. Specadoc fixes no model:
+the model and effort come from the installed role file. See
+[Roles](docs/en/concepts/roles.md) and [Routing](docs/en/guides/routing.md).
 
-This checkout includes a portable root `plugin.json` and a repo marketplace at
-`.agents/plugins/marketplace.json`. The plugin is version **0.1.1** and installs
-all six skills. No MCP, authentication, lifecycle hooks, project agent files,
-or automatic host configuration is required. Python 3.9+ is needed to run the
-lifecycle helpers. Installing a plugin does not install Python.
+## Quick start (Claude Code)
 
-From an isolated test project, with a separate `CODEX_HOME` for a pilot:
+1. Add the marketplace and install the plugin:
 
-```bash
-codex plugin marketplace add /absolute/path/to/specadoc
-codex plugin add specadoc@specadoc
-codex plugin list
-```
+   ```bash
+   claude plugin marketplace add https://github.com/andreipan/specadoc
+   claude plugin install specadoc@specadoc
+   ```
 
-You can also select Specadoc in the desktop plugin directory after adding the
-marketplace. Start a new chat and explicitly select the installed
-`specadoc:specadoc` skill (`$specadoc:specadoc` when supported); plain skill
-installations use `specadoc`. Ask for `explore`, `propose`, `apply` or `archive`.
-Specadoc has `allow_implicit_invocation: false`; companion skills keep their
-own discovery rules and are optional within the lifecycle.
+2. Start a new session in your project.
+3. Ask for a proposal:
 
-Do not install alongside a symlink/copy of the same skills in a pilot project.
-The installed cache copy, not the source checkout, supplies runtime resources.
-An embedded role contract is not a registered agent or a model configuration:
-project profiles win; otherwise pass the contract to an available, permitted
-subagent. With no independent reviewer, managed review remains incomplete —
-the controller cannot claim an independent PASS.
+   ```text
+   /specadoc:specadoc propose add rate limiting to the login endpoint
+   ```
 
-After changing the local source, remove and reinstall in the isolated pilot,
-then start a new chat and check the cache copy:
+4. Read `docs/specadoc/<slug>/spec.md` and `plan.md`. Approve the plan or ask
+   for changes.
+5. Run `/specadoc:specadoc apply <slug>`.
 
-```bash
-codex plugin remove specadoc@specadoc
-codex plugin add specadoc@specadoc
-```
+For Codex, OpenCode and plain skill folders, see
+[Install](docs/en/guides/install.md). For a full walkthrough, see
+[Your first change](docs/en/guides/first-change.md).
 
-`codex plugin marketplace upgrade` refreshes Git-backed sources only; it does not
-refresh a local directory. After checking the reinstalled cache, clean up with:
+## Requirements
 
-```bash
-codex plugin remove specadoc@specadoc
-codex plugin marketplace remove specadoc
-```
+- Python 3.10 or newer. Python 3.11 or newer for Codex TOML role files.
+- Git in the project.
+- No MCP server, authentication or lifecycle hooks.
 
-CLI/plugin availability varies by host version. Apply your repository's command
-prefix to these examples when required; do not change global configuration just
-to perform a smoke test.
+## Bundled skills
 
-### Plain skills (Codex CLI and OpenCode)
-
-Both read Agent Skills folders. Link or copy the skill folder:
-
-```bash
-ln -s <repo>/skills/specadoc <project>/.agents/skills/specadoc     # Codex
-ln -s <repo>/skills/specadoc <project>/.opencode/skills/specadoc   # OpenCode
-```
-
-Link companion skills (below) the same way, one folder per skill.
-
-The portable role contracts are in `skills/specadoc/references/roles/`. Existing
-Codex/OpenCode project roles take precedence; otherwise include the relevant
-contract in a permitted subagent's prompt. Scout/worker work may fall back to
-the controller, but independent review cannot. No agent configuration is
-written automatically.
-
-## Companion skills
-
-Standalone, opt-in skills that Specadoc uses when installed and that also work
-without it:
+The plugin also ships five skills. Each one works without Specadoc.
 
 | Skill | Use |
 |---|---|
-| `tidy` | Behavior-preserving cleanup in REFACTOR, before final verification and review. |
-| `codebase-design` | Controller decision on an unresolved interface or seam. |
+| `tidy` | Behavior-preserving cleanup before final verification and review. |
+| `codebase-design` | A controller decision on an open interface or seam. |
 | `domain-modeling` | Ambiguous terms, states and invariants during clarification. |
+| `foreman` | One persistent executor for a long task. |
+| `orchestrator` | Several Specadoc controllers that work toward one outcome. |
 
-Install only the ones a project needs. As a Claude Code plugin, every folder in
-`skills/` is available as `specadoc:<name>`; descriptions keep them from loading
-until a task matches.
+See [Companion skills](docs/en/guides/companion-skills.md) and
+[Orchestrator and Foreman](docs/en/guides/orchestrator-and-foreman.md).
 
-### Recommended external skill: `grilling`
+## Documentation
 
-Install `grilling` separately if you want to stress-test an idea before running
-`specadoc propose`. It helps clarify requirements, challenge hidden assumptions
-and resolve design decisions before writing the specification. Invoke it
-explicitly before Specadoc; it is optional, not bundled with this plugin, and
-not required for any lifecycle gate.
+All documentation is in English and Russian. Start at the
+[documentation map](docs/en/index.md).
 
-Install its Agent Skills folder using your host's normal skill installation
-method (for plain skills, link or copy it as shown above).
-
-## Optional management modes
-
-These are explicit opt-in skills, not new lifecycle modes or required agent
-roles. Installing them does not activate them or change existing role bindings.
-
-| Skill | Use | Boundary |
-|---|---|---|
-| `foreman` | One persistent executor for a long coding, research, browser, or data task. | Main session owns decisions and acceptance; executor does the hands-on work. Standalone, no Specadoc dependency. |
-| `orchestrator` | Several independent Specadoc controllers contributing to one outcome. | Main session owns shared contracts, dependencies, and integration; each controller owns its local lifecycle. |
-
-Examples of explicit requests (Claude plugin skills are `specadoc:foreman` and
-`specadoc:orchestrator`; plain installations use the unqualified skill names):
-
-> Use foreman: investigate the intermittent import failure through one persistent
-> executor. Preserve the public error format and verify the original failure case.
-
-> Use orchestrator: coordinate separate Specadoc controllers for the service,
-> SDK, and portal. Agree the API contract before dependent implementation and
-> verify the whole flow. You may accept ordinary local plans within this scope;
-> ask me about changed requirements or external effects. Do not deploy or publish.
-
-Orchestrator never activates implicitly. When a plan you approve will launch
-two or more Specadoc controllers in different repositories, invoke it by name;
-otherwise the session coordinates without a recorded mandate, the routing guard,
-or a coordination record.
-
-Foreman requires an executor that can be continued; Orchestrator requires
-independent controllers capable of using their own workers and reviewer. A
-generic child agent may not support this nesting. Both skills preflight actual
-capabilities and report missing support rather than inventing APIs, timers, or
-independent review. Follow the host's foreground/background and ACP delivery
-rules; durable unattended monitoring is optional, not promised.
-
-Use installed project/host model and effort bindings. Neither skill pins a model,
-selects a model tier, edits role settings, or silently substitutes a requested
-unavailable model. Model comparisons and billed pilot runs are separate work.
-
-Do not wrap every controller in Foreman: existing Specadoc task boundaries,
-approval gates, verification, and independent review remain authoritative.
-Orchestrator accepts ordinary local plan checkpoints only under an explicit
-user mandate allowed by host/repository rules. Coordination is not permission
-to deploy, run production migrations, publish, or bypass a tool denial.
-
-Keep long-running coordination notes in an authorized workspace, linking local
-Specadoc plans rather than copying them. One writer owns each checkout; shared
-databases, ports, and other resources also need owners. Local review PASS is not
-end-to-end success. Recovery checks actual sessions and artifacts before any
-retry, replacement, or response to a stale checkpoint.
-
-Each management skill includes three simulation cases under its `evals/`
-directory, with prompts and trace graders. They cover continuation, unavailable
-capabilities, authority, dependency conflicts, and lost-event recovery. Static
-tests check their presence and package contracts; they do not prove runtime
-behavior. Run billed with-skill/baseline evaluations and live host pilots only
-with an agreed model/budget; no live results are implied by these fixtures.
-
-## Roles and overrides
-
-Without `.specadoc.json` routing, Specadoc resolves each role in this order
-(see `skills/specadoc/references/model-routing.md`):
-
-1. a project role: `.claude/agents/<role>.md`, `.codex/agents/<role>.toml`, or
-   `.opencode/agents/<role>.md`;
-2. a registered plugin role (for example Claude's `specadoc:<role>`);
-3. a permitted available subagent given the bundled portable contract;
-4. no subagents: bounded controller scout/worker work, incomplete independent
-   review gate (never a self-reviewed PASS).
-
-Portable contracts are canonical; the checkout's Claude `agents/*.md` files are
-generated adapters. Edit the contract, then run `python3 scripts/render_roles.py`.
-The checker refuses stale adapters. Claude-specific model/tool metadata lives
-separately in `scripts/claude-roles.json`; it does not bind Codex models.
-
-Each shipped role has a block between `<!-- specadoc:tooling:begin -->` and
-`<!-- specadoc:tooling:end -->`. That block holds neutral tool guidance. Hosts
-that generate their own roles can replace only that block, for example with
-IDE-MCP or code-graph tooling, and keep the rest of the role and its report
-format unchanged.
-
-## Host conventions
-
-Examples use bare commands such as `python3 <skill-root>/scripts/...`.
-`<skill-root>` is this skill's directory (`${CLAUDE_SKILL_DIR}` in Claude Code).
-If your repository requires a command prefix, a memory protocol or a harness
-instruction file, Specadoc treats it as a repository instruction (see
-`references/interoperability.md`).
-
-## Scripts
-
-Lifecycle scripts use only the Python standard library (Python 3.9 or newer).
-They use the project's artifact root: `--root`, else `$SPECADOC_ROOT`,
-else `.specadoc.json` (`{"root": "<path>"}`), else `docs/specadoc` (legacy
-`docs/agent` is still picked up, with a warning, until moved by
-`migrate_root.py`):
-
-`init_change.py` preflights the whole set before writing, stages the rendered
-templates, and rolls back handled publication errors, including restoring
-original bytes with `--force`. It refuses non-regular artifact destinations.
-It is not crash-atomic across multiple files. If rollback itself fails, its
-error names retained recovery files; recover those before retrying.
-
-Light changes update capability specs in place and keep the plan, approval and
-verification in chat; they create no change folder and run no file-based
-lifecycle gates.
-
-| Script | Purpose |
-|---|---|
-| `init_change.py` | Create `spec.md` and `plan.md` from templates. |
-| `validate_change.py` | Phase gates: `spec`, `plan`, `pre-review`, `final`. |
-| `specadoc_step.py` | One call per apply step: `dispatch`, `report`, `accept`, `external-result`, `refresh`, `status`, `handoff`, `pre-review`. |
-| `review_snapshot.py` | Hash the review scope and verify a recorded PASS. |
-| `archive_change.py` | Compact a closed change into one bounded record. |
-| `migrate_archive.py` | Migrate legacy archives, with a verified backup. |
-| `doctor.py` | Read-only health check of capability specs and archives. |
-| `collect_tokens.py` | Token accounting from Claude Code, Codex, or OpenCode logs. |
-| `migrate_root.py` | Move the artifact root (default `docs/agent` → `docs/specadoc`). |
-| `specadoc_root.py` | Shared artifact-root resolution used by the scripts. |
-
-## Development
-
-```bash
-scripts/check.sh            # unit tests + plugin manifest validation
-PYTHON=python3.14 scripts/check.sh
-python3 scripts/package_plugin.py --check
-python3 scripts/package_plugin.py   # dist/specadoc-0.1.1.zip + SHA-256
-python3 scripts/smoke_codex.py --report dist/codex-pilot.json # opt-in offline pilot
-```
-
-The checkout-only build tools are not bundled in the release ZIP. The ZIP has a
-portable manifest, all six skill folders and their resources, this README,
-LICENSE and third-party notices. It excludes tests, marketplace catalogs,
-Claude adapters, caches and Git data. Sorted entries, fixed timestamps and modes
-make repeat builds byte-identical in the same Python/zlib environment. Unpack
-the ZIP and add a separate marketplace entry if testing it as a local source.
-
-Behavioral evaluation cases live in `tests/evals/specadoc.json`. Their presence
-and automatic package checks are not evidence of a model-run evaluation;
-record actual runs and skipped checks separately.
-
-This release prepares local distribution only. No OpenAI portal upload,
-submission, publisher verification or public publication is performed. Package
-readiness is not public directory approval. Official packaging reference:
-[Package your plugin](https://developers.openai.com/plugins/build/plugins).
-
-`tests/test_neutrality.py` keeps host-specific vocabulary out of the shipped
-skill and roles.
+- Concepts: [lifecycle](docs/en/concepts/lifecycle.md),
+  [roles](docs/en/concepts/roles.md),
+  [artifacts and gates](docs/en/concepts/artifacts-and-gates.md)
+- Guides: [install](docs/en/guides/install.md),
+  [first change](docs/en/guides/first-change.md),
+  [light or propose](docs/en/guides/light-or-propose.md),
+  [troubleshooting](docs/en/guides/troubleshooting.md)
+- Reference: [modes](docs/en/reference/modes.md),
+  [scripts](docs/en/reference/scripts.md),
+  [configuration](docs/en/reference/config.md),
+  [glossary](docs/en/reference/glossary.md)
+- Changes: [CHANGELOG](CHANGELOG.md)
 
 ## License
 

@@ -35,8 +35,8 @@ Load only for `specadoc apply <slug>`.
    start; record the run with `external-result <slug> T<n> --outcome PASS|FAIL
    --evidence '<run>'` (FAIL returns it to work; correct a recorded result with
    `--supersede '<why>'`, never edit `runs/*.json`).
-6. `scope <slug>` fills Review scope from the diff since `--base` (HEAD); one
-   worker runs `tidy <slug>`'s brief, then `refresh`. Then the whole suite and
+6. `scope <slug>` fills Review scope from the `--base` (HEAD) diff; if
+   needed, one worker runs `tidy <slug>`'s brief, then `refresh`. Then the whole suite and
    gates run once, never a path subset: `finalize <slug> --run` runs
    `verification.final` of `.specadoc.json`; without it run them yourself and
    pass `--observed '<run>'` (and Browser state for UI).
@@ -70,8 +70,8 @@ Load only for `specadoc apply <slug>`.
   order with their report and frozen Verification, listing every failure. Without `Verification inputs` any later edit
   makes a task stale; declare them when checks are narrow.
 - **Corrective work.** `dispatch <slug> T<n> --reopen '<reason>'` archives the
-  attempt and starts from the current tree (stale dependencies are refreshed
-  first); only for code fixes, not staleness.
+  attempt and starts from the current tree (stale dependencies refreshed first);
+  only for code fixes, not staleness.
 - **Review rounds.** New requirements: `--review-type initial --reason
   requirements`; polish: `--reason polish`; corrections stay `re-review`. A
   fourth `initial` needs `--review-decision '<decision, author, scope>'`. One
