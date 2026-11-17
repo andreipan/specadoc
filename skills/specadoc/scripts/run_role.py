@@ -45,12 +45,14 @@ RUNTIMES = ("codex", "claude", "opencode")
 WRITERS = {"worker"}
 READ_TOOLS = "Read,Grep,Glob,Bash"
 WRITE_TOOLS = "Read,Edit,Write,Grep,Glob,Bash"
-# OpenCode checks every command of a shell line separately against its full text.
-# 2026-11-13: OpenCode 2.2.7 and 2.3.0 reject these all the same (`git status` alone answers
-# "Permission denied: shell"), so no brief may depend on them; `pre-review` writes the diff as files.
+# OpenCode checks every command of a shell line separately against its full text, after
+# plugins have rewritten it: a host plugin that prefixes commands with a wrapper (2026-11-17)
+# makes these bare rules miss, so the installed role adds such forms (`role_shell_rules`).
 READ_SHELL = ("git diff", "git log", "git show", "git status")
-# Later rules win: these re-deny writes a read-only git command could still make.
-SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*")
+# Later rules win: these re-deny writes a read-only command could still make, whatever the role
+# allows. `--pre` makes ripgrep run a program.
+SHELL_WRITES = ("*>*", "*--output*", "*--ext-diff*", "*--pre*")
+PERMISSION_FIELD = re.compile(r"(?:-\s+)?(action|resource|effect):\s*(.*?)\s*")
 STILL_RUNNING = 3
 SANDBOXED = 4
 # A successful run keeps only this much of its log; usage moves into the run file.
@@ -165,7 +167,40 @@ def build_command(runtime: str, role: str, model: str, effort: str | None, cwd: 
     raise RunError(f"unsupported runtime {runtime!r}")
 
 
-def opencode_config(role: str) -> str:
+def role_shell_rules(cwd: Path, role: str) -> list[dict[str, str]]:
+    """Shell allow rules of the installed OpenCode role, `.opencode/agents/<role>.md`.
+
+    Only `permissions` entries with `action: shell` and `effect: allow` are taken, one
+    `key: value` per line; every other entry is ignored, so a role cannot widen edits or
+    other tools here. A resource must start with a literal command word (`*` alone or a
+    leading `*` would allow any command); the write guards are appended after these.
+    """
+    path = cwd / ".opencode" / "agents" / f"{role}.md"
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---\n") or "\n---\n" not in text[4:]:
+        return []
+    entries: list[dict[str, str]] = []
+    inside = False
+    for line in text[4:].split("\n---\n", 1)[0].splitlines():
+        if not line.startswith(" "):
+            inside = line.strip() == "permissions:"
+            continue
+        if not inside:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            entries.append({})
+        if entries and (match := PERMISSION_FIELD.fullmatch(stripped)):
+            entries[-1][match.group(1)] = match.group(2).strip("\"'")
+    return [{"action": "shell", "resource": entry["resource"], "effect": "allow"}
+            for entry in entries
+            if entry.get("action") == "shell" and entry.get("effect") == "allow"
+            and entry.get("resource", "").strip() and not entry["resource"].startswith("*")]
+
+
+def opencode_config(role: str, cwd: Path | None = None) -> str:
     config = json.loads(os.environ.get("OPENCODE_CONFIG_CONTENT") or "{}")
     actions = ["read", "glob", "grep", "webfetch", "websearch", "skill"]
     if role in WRITERS:
@@ -175,6 +210,7 @@ def opencode_config(role: str) -> str:
     if role not in WRITERS:
         rules += [{"action": "shell", "resource": pattern, "effect": "allow"}
                   for command in READ_SHELL for pattern in (command, f"{command} *")]
+        rules += role_shell_rules(cwd or Path.cwd(), role)
         rules += [{"action": "shell", "resource": pattern, "effect": "deny"} for pattern in SHELL_WRITES]
     config.setdefault("agents", {})["specadoc-external"] = {
         "mode": "primary", "system": f"Execute only the Specadoc {role} dispatch. No nested agents or git mutations.",
@@ -300,7 +336,7 @@ def start(args: argparse.Namespace) -> int:
     env.pop("CLAUDE_CODE_SESSION_ID", None)
     suffix = ""
     if args.runtime == "opencode":
-        env["OPENCODE_CONFIG_CONTENT"] = opencode_config(args.role)
+        env["OPENCODE_CONFIG_CONTENT"] = opencode_config(args.role, cwd)
         suffix = "\nReturn only a JSON object matching this schema as your final message:\n"
         suffix += schema_path(args.role).read_text(encoding="utf-8")
     env.update(

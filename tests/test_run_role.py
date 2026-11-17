@@ -277,12 +277,47 @@ print(json.dumps({"type":"text", "part":{"messageID":"last", "text":os.environ["
             shell = [(r["resource"], r["effect"]) for r in rules if r["action"] == "shell"]
             if role == "reviewer":
                 self.assertIn(("git diff *", "allow"), shell)
-                self.assertEqual(shell[-1], ("*--ext-diff*", "deny"))  # write guards come last
+                self.assertEqual(shell[-1], ("*--pre*", "deny"))  # write guards come last
             self.assertNotIn("subagent", allowed)
             self.assertIn("JSON object matching this schema", (self.repo / "prompt.seen").read_text())
             output = self.run_cli("result", run_file)
             self.assertEqual(output.returncode, 0 if role == "worker" else 1)
             self.assertEqual(json.loads(output.stdout)["result"], payload)
+
+    def test_opencode_read_role_adds_only_its_shell_allows_before_the_write_guards(self) -> None:
+        spec = importlib.util.spec_from_file_location("run_role_shell", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        agents = self.repo / ".opencode" / "agents"
+        agents.mkdir(parents=True)
+        (agents / "reviewer.md").write_text(
+            "---\ndescription: r\nmodel: openai/m\npermissions:\n"
+            "  - action: edit\n    resource: \"*\"\n    effect: deny\n"
+            "  - action: shell\n    resource: \"rtk git diff *\"\n    effect: allow\n"
+            "  - action: shell\n    resource: rg *\n    effect: allow\n"
+            "  - action: edit\n    resource: \"*\"\n    effect: allow\n"
+            "  - action: shell\n    resource: \"*\"\n    effect: allow\n"
+            "  - action: shell\n    resource: \"* git status\"\n    effect: allow\n"
+            "  - action: shell\n    resource: \"rm *\"\n    effect: deny\n"
+            "---\n\nbody\n")
+        rules = json.loads(module.opencode_config("reviewer", self.repo))["agents"]["specadoc-external"]["permissions"]
+        shell = [(r["resource"], r["effect"]) for r in rules if r["action"] == "shell"]
+        self.assertIn(("rtk git diff *", "allow"), shell)
+        self.assertIn(("rg *", "allow"), shell)
+        self.assertNotIn(("*", "allow"), shell)
+        self.assertNotIn(("* git status", "allow"), shell)
+        self.assertNotIn(("rm *", "deny"), shell)  # only allows are taken
+        self.assertFalse(any(r["action"] == "edit" and r["effect"] == "allow" for r in rules))
+        guards = [(pattern, "deny") for pattern in module.SHELL_WRITES]
+        self.assertEqual(shell[-len(guards):], guards)
+        self.assertLess(shell.index(("rg *", "allow")), shell.index(guards[0]))
+        # The worker keeps any shell command; without a role file the reviewer keeps the bare git reads.
+        worker = json.loads(module.opencode_config("worker", self.repo))["agents"]["specadoc-external"]["permissions"]
+        self.assertIn({"action": "shell", "resource": "*", "effect": "allow"}, worker)
+        (agents / "reviewer.md").unlink()
+        bare = json.loads(module.opencode_config("reviewer", self.repo))["agents"]["specadoc-external"]["permissions"]
+        self.assertNotIn("rg *", [r["resource"] for r in bare])
+        self.assertIn("git diff *", [r["resource"] for r in bare])
 
     def test_role_does_not_inherit_launcher_claude_session(self) -> None:
         fake = self.bin / "codex"

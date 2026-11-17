@@ -140,11 +140,17 @@ For a worker, wrap the run in the file-based handoff of `subagent-routing.md`:
 - `opencode`: V2 `opencode run --standalone --format json --auto`, with
   `provider/model#effort` and a dedicated primary agent (not the installed role
   wrapper). Scout/reviewer permit only read/search/web/skill tools and the shell
-  commands `git diff|log|show|status`, without redirection, `--output` or
-  `--ext-diff`; edits, other commands, MCP tools and nested agents are denied.
-  Worker additionally permits edit and any shell command. OpenCode 2.2.7 and
-  2.3.0 reject every scout/reviewer shell call all the same (2026-11-13), so a
-  reviewer brief names the files `pre-review` writes instead of asking for git.
+  commands `git diff|log|show|status`, plus the `action: shell`, `effect: allow`
+  entries of the installed role's `permissions` list
+  (`.opencode/agents/<role>.md`, one `key: value` per line; a resource must start
+  with a command word). Redirection, `--output`, `--ext-diff` and `--pre` stay
+  denied after them; edits, other commands, MCP tools and nested agents are denied.
+  Worker additionally permits edit and any shell command. OpenCode checks a
+  command after plugins rewrite it: a host plugin that prefixes commands with a
+  wrapper makes the bare `git …` rules miss, so the role lists the wrapped forms
+  (2026-11-17; earlier this looked like OpenCode rejecting every read-only shell
+  call). A reviewer brief still names the files `pre-review` writes, so a review
+  does not depend on the shell.
   These are tool permissions, not an OS sandbox. The schema is appended to the
   prompt and the final text JSON is validated locally, not by the provider. A reply
   wrapped in a code fence or surrounded by prose is accepted: the last JSON object
