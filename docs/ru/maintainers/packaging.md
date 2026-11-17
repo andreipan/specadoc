@@ -1,4 +1,4 @@
-<!-- source-sha256: e612904dc50f760f0a0ff3c37bd2743501a2cfce0011e93ab271a597940079c8 -->
+<!-- source-sha256: 6da72d7d1fe43aeb7fb1150848b30e684245c4c153b701875153ae4b505ee4e5 -->
 # Упаковка и релиз
 
 [English](../../en/maintainers/packaging.md)
@@ -185,12 +185,19 @@ codex plugin marketplace remove specadoc
 3. В `CHANGELOG.md` перенесите записи из `## [Unreleased]` в новый раздел
    `## [X.Y.Z] - YYYY-MM-DD`.
 4. Внесите такую же правку в `CHANGELOG.ru.md`.
-5. Запустите `scripts/check.sh`. Если шаг упал, устраните причину и запустите скрипт снова.
-6. Запустите `python3 scripts/package_plugin.py`. Сохраните выведенный дайджест SHA-256.
-7. Если CLI `codex` доступен, можно запустить
+5. Укажите пример тега `vX.Y.Z` в `README.md`, `README.ru.md` и в обоих
+   руководствах по установке. `tests/test_docs.py` проверяет эти примеры.
+6. Запустите `python3 scripts/docs_sync.py --stamp` для каждого изменённого русского файла.
+7. Запустите `scripts/check.sh`. Если шаг упал, устраните причину и запустите скрипт снова.
+8. Запустите `python3 scripts/package_plugin.py`. Сохраните выведенный дайджест SHA-256.
+9. Если CLI `codex` доступен, можно запустить
    `python3 scripts/smoke_codex.py --report dist/codex-pilot.json`.
-8. Закоммитьте правки версии и журнала изменений.
-9. Создайте аннотированный тег: `git tag -a vX.Y.Z -m "Specadoc X.Y.Z"`.
-10. Отправьте тег: `git push origin vX.Y.Z`.
+10. Закоммитьте правки версии и журнала изменений.
+11. Создайте аннотированный тег: `git tag -a vX.Y.Z -m "Specadoc X.Y.Z"`.
+12. Отправьте ветку и тег: `git push origin main vX.Y.Z`.
+13. Создайте релиз на GitHub из тега. В описание возьмите раздел журнала
+    изменений и приложите ZIP:
+    `gh release create vX.Y.Z dist/specadoc-X.Y.Z.zip --verify-tag --notes-file <notes>`.
 
-Не загружайте ZIP в публичный каталог плагинов. Релиз — это тег и локальный ZIP.
+Не загружайте ZIP в публичный каталог плагинов. Релиз — это тег и релиз на
+GitHub с ZIP.

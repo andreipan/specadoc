@@ -1,4 +1,4 @@
-<!-- source-sha256: f6f968a5c1d3c81c401143f6feeab7f014df4a9dbade7646d8b55f768bfc3bf6 -->
+<!-- source-sha256: 850091b4c04db31ea71b577f0cc2c8fcfe03df913bb55980c46300a794912e4f -->
 # Установка Specadoc
 
 [English](../../en/guides/install.md)
@@ -32,7 +32,7 @@ error: Specadoc scripts need Python 3.10+; this is 3.9.6 at /usr/bin/python3. Pu
 Репозиторий `andreipan/specadoc` на GitHub одновременно служит маркетплейсом плагина для Claude Code и Codex. Для установки плагина клонировать его не нужно.
 
 - Без тега маркетплейс следует за веткой `main`.
-- С тегом релиза маркетплейс остаётся на этом релизе. Теги перечислены на [странице релизов](https://github.com/andreipan/specadoc/releases). В примерах ниже тег обозначен как `<tag>`, например `v0.1.2`.
+- С тегом релиза маркетплейс остаётся на этом релизе. Теги перечислены на [странице релизов](https://github.com/andreipan/specadoc/releases). В примерах ниже тег обозначен как `<tag>`, например `v0.1.3`.
 
 Для командных проектов рекомендуем тег: тогда все участники работают с одной версией.
 

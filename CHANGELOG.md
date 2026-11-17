@@ -7,11 +7,16 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-17
+
 ### Changed
 
 - The install guide uses the GitHub marketplace (`andreipan/specadoc`) for
   Claude Code and Codex, with an optional release tag. It also covers a project
   scope for teams and how to move to another tag.
+- `tests/test_docs.py` checks that the example release tag in the README files
+  and install guides matches the version in `plugin.json`. The release steps
+  in the packaging guide now include it and the GitHub release.
 
 ### Fixed
 

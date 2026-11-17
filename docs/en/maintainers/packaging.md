@@ -186,13 +186,19 @@ Do these steps from the repository root:
 3. In `CHANGELOG.md`, move the `## [Unreleased]` entries into a new
    `## [X.Y.Z] - YYYY-MM-DD` section.
 4. Make the same change in `CHANGELOG.ru.md`.
-5. Run `scripts/check.sh`. If a step fails, fix the cause and run it again.
-6. Run `python3 scripts/package_plugin.py`. Keep the printed SHA-256 digest.
-7. If the `codex` CLI is available, you can run
+5. Set the example tag `vX.Y.Z` in `README.md`, `README.ru.md` and both
+   install guides. `tests/test_docs.py` checks these examples.
+6. Run `python3 scripts/docs_sync.py --stamp` on each changed Russian file.
+7. Run `scripts/check.sh`. If a step fails, fix the cause and run it again.
+8. Run `python3 scripts/package_plugin.py`. Keep the printed SHA-256 digest.
+9. If the `codex` CLI is available, you can run
    `python3 scripts/smoke_codex.py --report dist/codex-pilot.json`.
-8. Commit the version and the changelog changes.
-9. Make an annotated tag: `git tag -a vX.Y.Z -m "Specadoc X.Y.Z"`.
-10. Push the tag: `git push origin vX.Y.Z`.
+10. Commit the version and the changelog changes.
+11. Make an annotated tag: `git tag -a vX.Y.Z -m "Specadoc X.Y.Z"`.
+12. Push the branch and the tag: `git push origin main vX.Y.Z`.
+13. Make a GitHub release from the tag. Use the changelog section as the
+    notes and attach the ZIP:
+    `gh release create vX.Y.Z dist/specadoc-X.Y.Z.zip --verify-tag --notes-file <notes>`.
 
-Do not upload the ZIP to a public plugin directory. The release is the tag
-and the local ZIP.
+Do not upload the ZIP to a public plugin directory. The release is the tag and
+the GitHub release with the ZIP.

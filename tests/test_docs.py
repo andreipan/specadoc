@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import re
 import tempfile
@@ -93,6 +94,15 @@ class DocsTest(unittest.TestCase):
                 elif anchor and linked.suffix == '.md' and anchor not in anchors(linked):
                     broken.append(f'{path.relative_to(ROOT)}: {target} (no such heading)')
         self.assertEqual([], broken, '\n'.join(broken))
+
+    def test_release_tag_examples_match_the_version(self):
+        version = json.loads((ROOT / 'plugin.json').read_text())['version']
+        paths = [ROOT / 'README.md', ROOT / 'README.ru.md',
+                 ROOT / 'docs/en/guides/install.md', ROOT / 'docs/ru/guides/install.md']
+        stale = [f'{p.relative_to(ROOT)}: v{found}' for p in paths
+                 for found in re.findall(r'\bv(\d+\.\d+\.\d+)\b', p.read_text(encoding='utf-8'))
+                 if found != version]
+        self.assertEqual([], stale, f'update the example tag to v{version}')
 
     def test_each_document_links_its_other_language(self):
         sync = load('docs_sync')

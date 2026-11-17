@@ -1,4 +1,4 @@
-<!-- source-sha256: 7442becc58adc32e6b9bcfc9b8e16a7691c636537ee2ef35bdbdf6afc58a87c9 -->
+<!-- source-sha256: 09541eafa128e73e2f0df23a4cabe162d654ace71ae0944c8f330ab36c8188a1 -->
 # Specadoc
 
 [English](README.md)
@@ -68,7 +68,7 @@ Specadoc разделяет три вещи:
    claude plugin install specadoc@specadoc
    ```
 
-   Чтобы остаться на релизе, добавьте его тег: `andreipan/specadoc@v0.1.2`.
+   Чтобы остаться на релизе, добавьте его тег: `andreipan/specadoc@v0.1.3`.
 
 2. Начните новую сессию в своём проекте.
 3. Запросите предложение:
