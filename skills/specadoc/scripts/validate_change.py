@@ -787,8 +787,8 @@ def evidence_staleness(runs: Path, task: str, files_field: str) -> tuple[bool | 
         return False, "declared Verification inputs changed"
     if current_inputs.get("python") != inputs.get("python"):
         return False, "the Python interpreter changed"
-    if current_inputs.get("environment_hash") != inputs.get("environment_hash"):
-        names = ", ".join(environment_drift(inputs, current_inputs))
+    if drift := environment_drift(inputs, current_inputs):
+        names = ", ".join(drift)
         return False, (f"environment changed: {names}; list only verifier-relevant variables in "
                        ".specadoc.json verification.environment")
     if set(current) != set(recorded):

@@ -25,6 +25,10 @@ the user already settled.
 - Earlier steps of the block are not built yet. A conclusion that rests on code
   an earlier step will write is marked `depends on <step>`; facts from external
   sources (Confluence, ERD, producer code, framework behaviour) are not.
+- Before writing a brief, search the project's memory and docs, where the host
+  has them, for each topic of the step (authentication, integrations, earlier
+  decisions) and cite the hits in the brief (7.2: the authentication design
+  was already in project memory; a third research session found it).
 - Brief each session from `references/research-brief.md`: the step's source
   excerpt and the decisions it relies on are cited as in a controller brief, and
   the brief is what allows `explore` to write its one report file. The session
@@ -42,7 +46,9 @@ Compact, in the user's language, each claim with file:line or page id:
 4. Questions, numbered `Q<step>-<n>`, or `QX-<name>` when another step shares
    them, each with options, a recommendation and a class:
    - **A**: changes the external contract, response codes, irreversible data,
-     security or money. Only the user answers.
+     security or money. Only the user answers. Each carries its origin: the
+     roadmap line, decision or source quote that made it open (8.2: a deferred
+     code reached the user without its history and came back as a question).
    - **B**: everything else. The orchestrator decides it (`references/checkpoints.md`
      → Deciding without the user).
 5. Deferred answers: a question that waits for a third party ("after Hub

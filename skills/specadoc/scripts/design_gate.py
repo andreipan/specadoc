@@ -205,7 +205,8 @@ def recorded_findings(plan: Document) -> list[str]:
     start = next((i for i, line in enumerate(lines) if line.strip() == "### Findings"), None)
     if start is None:
         return []
-    return [line for line in lines[start + 1:]
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")), len(lines))
+    return [line for line in lines[start + 1:end]
             if FINDING.match(line) or ITEM.fullmatch(line) or RESOLUTION.fullmatch(line) or line.startswith("- ")]
 
 
@@ -300,15 +301,7 @@ def accept(change: Path, source: str) -> list[str]:
         raise ValueError("a BLOCKER of the recorded round stays open: accept takes IMPORTANT findings only; "
                          "fix it and review again (`continue: <source>`) or ask the user")
     state = round_state(change)
-    obligations, severity = [], None
-    for index, line in enumerate(findings):
-        if match := FINDING.match(line):
-            severity = match["severity"]
-        elif (item := ITEM.fullmatch(line)) and severity == "IMPORTANT":
-            note = RESOLUTION.fullmatch(findings[index + 1]) if index + 1 < len(findings) else None
-            answer = f" (author: {note['kind']}: {note['text']})" if note else ""
-            obligations.append(f"- Design obligation {item['id']} (accepted after round {state['recorded']}; "
-                               f"{source}): {item['text']}{answer}")
+    obligations = important_obligations(findings, f"accepted after round {state['recorded']}; {source}")
     lines = list(plan.lines)
     start, end = plan.sections[DESIGN_REVIEW]
     for index in range(start + 1, end):
@@ -316,19 +309,65 @@ def accept(change: Path, source: str) -> list[str]:
             lines[index] = f"**Result:** {ACCEPTED}"
             lines.insert(index + 1, f"**Accepted by:** {source}")
             break
+    plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    add_constraints(plan_path, obligations)
+    state["decisions"].append({"round": state["recorded"] + 1, "kind": "accept", "source": source})
+    save_round_state(change, state)
+    return obligations
+
+
+def important_obligations(findings: list[str], why: str) -> list[str]:
+    """One `## Global constraints` line per IMPORTANT item of the recorded round, with the author's answer."""
+    obligations, severity = [], None
+    for index, line in enumerate(findings):
+        if match := FINDING.match(line):
+            severity = match["severity"]
+        elif (item := ITEM.fullmatch(line)) and severity == "IMPORTANT":
+            note = RESOLUTION.fullmatch(findings[index + 1]) if index + 1 < len(findings) else None
+            answer = f" (author: {note['kind']}: {note['text']})" if note else ""
+            obligations.append(f"- Design obligation {item['id']} ({why}): {item['text']}{answer}")
+    return obligations
+
+
+def add_constraints(plan_path: Path, obligations: list[str]) -> None:
+    """Append lines to `## Global constraints`, creating the section when the plan has none; a line already
+    there is not added again (a repeated `continue` for the same round)."""
+    plan = Document(plan_path, str(plan_path))
+    lines = list(plan.lines)
+    obligations = [line for line in obligations if line not in lines]
+    if not obligations:
+        return
     if "Global constraints" in plan.sections:
-        anchor = Document(plan_path, str(plan_path)).sections["Global constraints"][1]
-        # The insert above moved later sections down by one line when Global constraints follows it.
-        anchor += 1 if anchor > start else 0
+        anchor = plan.sections["Global constraints"][1]
         while anchor > 0 and not lines[anchor - 1].strip():
             anchor -= 1
         lines[anchor:anchor] = obligations
     else:
         lines += ["", "## Global constraints", "", *obligations]
     plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
-    state["decisions"].append({"round": state["recorded"] + 1, "kind": "accept", "source": source})
-    save_round_state(change, state)
+
+
+def carry_important(change: Path, source: str) -> list[str]:
+    """Past the cap a `continue` round checks the BLOCKER items only: the IMPORTANT items of the recorded
+    round become apply obligations now, as an accept would make them. 7.1, 8.1, 8.2: rounds 5-11 of three
+    changes each re-checked every IMPORTANT item and the accept condition (no BLOCKER) stayed out of reach."""
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    obligations = important_obligations(recorded_findings(plan),
+                                        f"carried after round {round_state(change)['recorded']}; {source}")
+    add_constraints(plan_path, obligations)
     return obligations
+
+
+def blocker_findings(findings: list[str]) -> list[str]:
+    """The BLOCKER findings of a recorded round with their items and answers."""
+    kept, keep = [], False
+    for line in findings:
+        if match := FINDING.match(line):
+            keep = match["severity"] == "BLOCKER"
+        if keep:
+            kept.append(line)
+    return kept
 
 
 def resolve(change: Path, text: str) -> tuple[list[str], list[str]]:
@@ -443,17 +482,28 @@ def write_brief(change: Path, full: bool = False, authorization: str | None = No
     prior: list[str] = []
     if previous:
         findings, changes = previous
+        carried = []
+        if authorization:
+            findings = blocker_findings(findings)
+            carried = ["- Past the design round cap: the IMPORTANT items of the previous round are apply "
+                       "obligations in `## Global constraints` now; check the BLOCKER items below and the changes."]
         scope = ["- This is a re-review. Each finding under `Previous findings` lists its items (`F1.2`) and, "
                  "under each, where the author says it is resolved or why it is rejected. Check that place for "
                  "every item and name the items still open by id; a finding stays open, with its severity, "
                  "while one item is open. Add no item to a previous finding: a gap none of its items names is a "
-                 "new finding.",
-                 # 6.5 rounds 3 and 4 found three real IMPORTANT defects in text the round before had left
-                 # unchanged (timestamps outside the model's fillable list, `{}` read as an empty list).
-                 "- Then review the lines under `Changes since the reviewed design` by the questions below. "
-                 "Outside those changes report a new finding only when it is a BLOCKER or an IMPORTANT whose "
-                 "summary cites the file:line that proves it; report no MINOR there."]
-        prior = ["## Previous findings", "", *(findings or ["- None: the design changed after a PASS."]), "",
+                 "new finding.", *carried,
+                 # 7.1: rounds 2-5 of one change each cited five to seven files no round had cited before;
+                 # the old rule (a new IMPORTANT outside the changes if it cites file:line) filtered nothing,
+                 # so every round was a whole review again (8, 11 and 7 rounds).
+                 "- Then ask the questions below of the lines under `Changes since the reviewed design` and the "
+                 "inventory rows they touch, not of the whole design again.",
+                 "- Set `origin` on every finding: `previous` when it keeps an item above open, `change` for a "
+                 "defect in the changed lines, `new` for anything else. Outside the changes report only a BLOCKER "
+                 "(origin `new`, its summary citing the file:line that proves it); an IMPORTANT or MINOR there "
+                 "belongs in `report` as a note and does not fail the round."]
+        none = ("- None: the IMPORTANT items are apply obligations now." if authorization
+                else "- None: the design changed after a PASS.")
+        prior = ["## Previous findings", "", *(findings or [none]), "",
                 "## Changes since the reviewed design", "", "````diff", *(changes or ["(no change)"]), "````", ""]
     lines = [f"# Design {'re-review' if previous else 'review'}: `{change.name}`", "",
              *([f"Round authorization: {authorization}", ""] if authorization else []), "## Contract", "",
@@ -484,7 +534,8 @@ def write_brief(change: Path, full: bool = False, authorization: str | None = No
              # 6.1: a planned path broke the closed use-case folder rule and stopped apply; 6.1/6.2: the spec
              # promised one Gate request (GETs retry) and a timestamp format the connector rejects.
              # 6.5: half of the findings of rounds 2-5 were folder and naming rules, one rule a round.
-             "- Check every inventory path against the repository's folder and naming rules (code standards, "
+             f"- Check {'each inventory path the changes add or move' if previous else 'every inventory path'} "
+             "against the repository's folder and naming rules (code standards, "
              "lint structure rules), row by row and in this round: for each row find the rule that fixes its "
              "folder and the rule that fixes its name and kind, and end `report` with one line per row, "
              "`<path>: <rule file:line>` or `<path>: no rule`. A path such a rule forbids is IMPORTANT. Check "
@@ -535,16 +586,26 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         payload = payload["result"]
     if errors := schema_errors(payload, json.loads(schema_path("reviewer").read_text())):
         raise ValueError("invalid design review result: " + "; ".join(errors))
-    if payload["verdict"] == "PASS" and any(f["severity"] in ("BLOCKER", "IMPORTANT") for f in payload["findings"]):
+    counted, notes = split_findings(payload["findings"], rereview_brief(change))
+    verdict = payload["verdict"]
+    if verdict == "FAIL" and notes and not any(f["severity"] in BLOCKING for f in counted):
+        verdict = "PASS"
+    if verdict == "PASS" and any(f["severity"] in BLOCKING for f in counted):
         raise ValueError("design review PASS contradicts open BLOCKER/IMPORTANT findings")
     flat = lambda value: " ".join(value.split())  # noqa: E731
-    body = ["", f"**Result:** {payload['verdict']}", f"**Inventory hash:** {current}",
+    note_lines = [f"- note ({f['severity']}, outside the changes): {flat(f['location'])} — {flat(f['summary'])}"
+                  for f in notes]
+    body = ["", f"**Result:** {verdict}",
+            *([f"**Reviewer verdict:** {payload['verdict']} (only findings outside the re-review scope; see "
+               "Notes)"] if verdict != payload["verdict"] else []),
+            f"**Inventory hash:** {current}",
             f"**Reviewer:** {flat(reviewer)}",
             *([f"**Reviewer agent:** `{agent}`"] if agent else []),
             *([f"**Same reviewer reason:** {flat(same_reviewer_reason)}"] if agent and same_reviewer_reason else []),
             f"**Result source:** `{source}`",
             f"**Result digest:** {digest(result_path)}", "", "### Findings", "",
-            *(finding_lines(payload["findings"]) or ["- None."]), ""]
+            *(finding_lines(counted) or ["- None."]), "",
+            *(["### Notes outside the re-review scope", "", *note_lines, ""] if note_lines else [])]
     lines = list(plan.lines)
     if DESIGN_REVIEW in plan.sections:
         start, end = plan.sections[DESIGN_REVIEW]
@@ -561,7 +622,28 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
     state = round_state(change)
     state["recorded"] += 1
     save_round_state(change, state)
-    return payload["verdict"]
+    # A recorded brief starts no other round (8.2: a chain ran the reviewer on the previous brief after
+    # design-brief had refused round 5).
+    (change / "runs" / BRIEF).unlink(missing_ok=True)
+    return verdict
+
+
+def rereview_brief(change: Path) -> bool:
+    """Whether the brief this round answered was a re-review (its first line says so)."""
+    try:
+        with (change / "runs" / BRIEF).open(encoding="utf-8") as handle:
+            return handle.readline().startswith("# Design re-review")
+    except OSError:
+        return False
+
+
+def split_findings(findings: list[dict], rereview: bool) -> tuple[list[dict], list[dict]]:
+    """(findings that judge the round, notes). In a re-review an IMPORTANT or MINOR with origin `new` lies
+    outside the changes and the open items, so it is a note, not a reason to fail the round."""
+    if not rereview:
+        return list(findings), []
+    notes = [f for f in findings if f.get("origin") == "new" and f["severity"] != "BLOCKER"]
+    return [f for f in findings if f not in notes], notes
 
 
 def stale_brief(source: str) -> None:

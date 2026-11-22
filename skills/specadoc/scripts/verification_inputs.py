@@ -76,7 +76,11 @@ def capture(fields: dict[str, str], artifact_root: str) -> dict:
 # sessions and hosts without changing what a check verifies.
 VOLATILE_ENVIRONMENT = ("PWD", "OLDPWD", "SHLVL", "_", "TMPDIR", "*_TMPDIR", "TMPPREFIX", "SSH_AUTH_SOCK",
                         "XPC_SERVICE_NAME", "XPC_FLAGS", "*PROXY*", "*SESSION_ID", "*SESSIONID", "*_THREAD_ID",
-                        "*_PID", "*_SOCKET", "*_TOKEN")
+                        "*_PID", "*_SOCKET", "*_TOKEN",
+                        # Terminal host and agent runtime variables name the session or pane, never what a
+                        # check verifies (7.1-8.2: every new controller saw all accepted tasks as stale on
+                        # HC_TERMINAL_ID, HC_SCOPE and CLAUDE_CODE_CHILD_NOTES_DIR).
+                        "HC_*", "CLAUDE_CODE_*", "*_TERMINAL_ID")
 
 
 def environment_patterns() -> tuple[tuple[str, ...], bool]:
@@ -101,21 +105,33 @@ def session_neutral(value: str) -> str:
     return value
 
 
+def relevant_variable():
+    """Predicate: does this variable name count as verifier configuration under the current rules?"""
+    selected, allowlist = environment_patterns()
+    def relevant(name: str) -> bool:
+        return any(fnmatch.fnmatchcase(name.upper(), pattern.upper()) for pattern in selected) == allowlist
+    return relevant
+
+
 def environment_digests() -> dict[str, str]:
     """Short digest per relevant variable name; values are never stored."""
-    selected, allowlist = environment_patterns()
-    def matches(name: str) -> bool:
-        return any(fnmatch.fnmatchcase(name.upper(), pattern.upper()) for pattern in selected)
+    relevant = relevant_variable()
     return {name: hashlib.sha256(session_neutral(value).encode()).hexdigest()[:16]
-            for name, value in sorted(os.environ.items()) if matches(name) == allowlist}
+            for name, value in sorted(os.environ.items()) if relevant(name)}
 
 
 def environment_drift(previous: dict, current: dict) -> list[str]:
-    """Names of variables whose digest differs, for a stale-evidence message."""
+    """Names of relevant variables whose digest differs; empty when the environment still matches.
+
+    A record made before a variable joined the volatile list still holds its digest; the current rules
+    decide, so such a record is not stale for that variable alone.
+    """
     before, after = previous.get("environment"), current.get("environment")
     if not isinstance(before, dict) or not isinstance(after, dict):
         return [] if previous.get("environment_hash") == current.get("environment_hash") else ["(unrecorded)"]
-    return sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
+    relevant = relevant_variable()
+    return sorted(name for name in before.keys() | after.keys()
+                  if relevant(name) and before.get(name) != after.get(name))
 
 
 def content_hash(manifest: dict) -> str:

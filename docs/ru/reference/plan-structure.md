@@ -1,4 +1,4 @@
-<!-- source-sha256: e67d75905e532b3279331e17ff0ee979e57c3eb6dc92eb38aeb673bead02b26a -->
+<!-- source-sha256: 4ff804e3f897bf6fd49a58710dd952306ae12937b90e693b05134e3bbfc8180c -->
 # Структура плана
 
 [English](../../en/reference/plan-structure.md)
@@ -399,7 +399,7 @@ status: archived | forced
 | Ключевые пути возможности | 5 | Правило шаблона. |
 | Раунды ревью `initial` | 3 | Для четвёртого нужен `--review-decision`. Повторные ревью не учитываются. |
 | Раунды ревью дизайна | 4 | Для следующего раунда после FAIL нужен `--attempt-decision`. |
-| Контекст контроллера при `dispatch` | 200k токенов | `dispatch` останавливается. Запишите передачу сессии и продолжите в новой сессии. |
+| Контекст контроллера при `dispatch` и `design-brief` | 200k токенов (`context.dispatch_guard`) | Шаг останавливается. Запишите передачу сессии и продолжите в новой сессии. |
 
 У текста скилла тоже есть лимиты в байтах, они заданы в
 [`assets/mode-budget.json`](../../../skills/specadoc/assets/mode-budget.json).

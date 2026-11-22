@@ -99,6 +99,17 @@ CONTEXT_GUARD = 200_000
 PHASE_BOUNDARY_CONTEXT = 120_000
 # A review round plus MINOR fixes took about 40k in 4.1; above this, hand off before the review.
 REVIEW_HANDOFF_CONTEXT = 160_000
+# 7.1-8.2: controllers ran to 373k without compaction and a fresh one needs 60-100k before its first step,
+# so the numbers depend on the model; `.specadoc.json` `context` may set each of them.
+CONTEXT_KEYS = {"phase_boundary": PHASE_BOUNDARY_CONTEXT, "review_boundary": REVIEW_HANDOFF_CONTEXT,
+                "dispatch_guard": CONTEXT_GUARD}
+
+
+def context_limits() -> dict[str, int]:
+    """Context boundaries in tokens: the defaults, or the project's `.specadoc.json` `context` values."""
+    from specadoc_config import load_config
+    configured = load_config(Path.cwd()).get("context") or {}
+    return {key: int(configured.get(key, default)) for key, default in CONTEXT_KEYS.items()}
 
 
 def run_script(script: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -259,16 +270,18 @@ def observed_context(controller: str | None, context_tokens: int | None) -> tupl
     if context_tokens is None and controller in (None, "claude"):
         from collect_tokens import claude_context_tokens, current_claude_transcript
         if (transcript := current_claude_transcript()) is not None:
-            return claude_context_tokens(transcript), f"read from {transcript.name}"
+            # 7.1: an orchestrator ran `status` and read its own size as the controller's.
+            return claude_context_tokens(transcript), f"read from this session's transcript {transcript.name}"
     return context_tokens, "reported"
 
 
 def dispatch(slug: str, task: str, root: str | None, controller: str | None = None,
              context_tokens: int | None = None, reopen: str | None = None) -> int:
     context_tokens, context_source = observed_context(controller, context_tokens)
-    if context_tokens is not None and context_tokens >= CONTEXT_GUARD:
+    guard = context_limits()["dispatch_guard"]
+    if context_tokens is not None and context_tokens >= guard:
         return emit([f"context budget ({context_source})"], "BLOCKED", [],
-                    f"controller context is {context_tokens} tokens, at least {CONTEXT_GUARD // 1000}k",
+                    f"controller context is {context_tokens} tokens, at least {guard // 1000}k",
                     f"save the current handoff (specadoc_step.py handoff {slug} --file -) and resume apply in a "
                     f"fresh session from specadoc_step.py status {slug}")
     plan_path = Path(resolve_root(root).path) / slug / "plan.md"
@@ -874,11 +887,12 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
 
 
 def design_brief(slug: str, root: str | None, controller: str | None, full: bool = False,
-                 decision: str | None = None) -> int:
+                 decision: str | None = None, context_tokens: int | None = None) -> int:
     import design_gate
     change = Path(resolve_root(root).path) / slug
     plan = Document(change / "plan.md", "plan.md")
     authorization = None
+    continue_source = None
     if design_gate.rows(plan) and (number := design_gate.needs_decision(change, plan)):
         if decision is None:
             return emit(["Class inventory", "design round cap"], "BLOCKED", [],
@@ -895,8 +909,20 @@ def design_brief(slug: str, root: str | None, controller: str | None, full: bool
                         "the plan for approval (or apply the orchestrator mandate), then dispatch",
                         f"obligations: {len(obligations)}")
         authorization = f"round {number}, continue — {source}"
+        continue_source = source
     elif decision is not None:
         design_gate.parse_decision(decision)
+    # 7.1-8.2: propose controllers entered design round 1 at 176-254k and ran rounds up to 373k; only
+    # dispatch measured context. The refusal uses dispatch's guard: at the review boundary a fresh session
+    # (60-100k before its first step) would leave room for two or three rounds; `status` advises there.
+    context_tokens, context_source = observed_context(controller, context_tokens)
+    guard = context_limits()["dispatch_guard"]
+    if context_tokens is not None and context_tokens >= guard:
+        return emit([f"context budget ({context_source})"], "BLOCKED", [],
+                    f"controller context is {context_tokens} tokens, at least {guard // 1000}k; "
+                    "a design round and its fixes need about 25-40k",
+                    f"save the handoff (specadoc_step.py handoff {slug} --file -) and run this design round from a "
+                    f"fresh session (specadoc_step.py status {slug})")
     if not design_gate.rows(plan):
         return emit(["Class inventory"], "BLOCKED", [], "plan.md has no Class inventory rows",
                     "list every new non-test file (File | Layer | Why it exists | Kind) first")
@@ -908,7 +934,17 @@ def design_brief(slug: str, root: str | None, controller: str | None, full: bool
                     f"{design_gate.short(open_items)}",
                     f"fix each in spec.md, plan.md or design.md, then design-resolve {slug} --file - with one line "
                     f"per item, {design_gate.RESOLVE_EXAMPLE}; the item list is under `## Design review` in plan.md")
-    checked = ["Class inventory", *binding_check("reviewer", controller)]
+    # 8.1: a reviewer started on a plan with `<...>` placeholders was stopped and run again.
+    gate = run_script("validate_change.py", slug, "--phase", "plan", *root_args(root))
+    if gate.returncode:
+        output = tail(gate.stderr + gate.stdout)
+        return emit(["Class inventory", "plan validation"], "FAIL", [],
+                    "\n".join(line for line in output.splitlines() if not line.strip().startswith("warning:"))
+                    or output, f"fix the plan, then design-brief {slug} again")
+    checked = ["Class inventory", "plan validation", *binding_check("reviewer", controller)]
+    if continue_source:
+        carried = design_gate.carry_important(change, continue_source)
+        checked.append(f"carried {len(carried)} IMPORTANT item(s) into Global constraints as apply obligations")
     path, rereview = design_gate.write_brief(change, full, authorization)
     if authorization:
         design_gate.record_continue(change, authorization)
@@ -948,8 +984,11 @@ def design_review(slug: str, root: str | None, source: str | None, controller: s
     if verdict == "PASS":
         if shown := fill_bindings(change / "plan.md", controller):
             checked.append(f"Bindings shown: {shown}")
-        return emit(checked, "PASS", [], "", "design gate passed; present the plan for approval (or apply the "
-                    "orchestrator mandate), then dispatch")
+        notes = ("read `### Notes outside the re-review scope` in plan.md and fix the notes that hold before "
+                 "approval; " if "### Notes outside the re-review scope" in (change / "plan.md").read_text(
+                     encoding="utf-8") else "")
+        return emit(checked, "PASS", [], "", f"design gate passed; {notes}present the plan for approval (or apply "
+                    "the orchestrator mandate), then dispatch")
     plan = Document(change / "plan.md", "plan.md")
     return emit(checked, "FAIL", [], "design review FAIL; read its findings in plan.md",
                 f"close every item ({', '.join(design_gate.unresolved(plan)) or 'none listed'}) in this pass, "
@@ -1139,15 +1178,20 @@ def status(slug: str, root: str | None, controller: str | None = None,
         locally_ready = bool(latest) and outcome.upper() == "PASS" and not (working or stale or unstarted)
         # A stale round re-run on an unchanged diff needs no fixes (~5–6k), not a fresh session.
         rerun = stale_round and "content changed" not in latest[1].get("Stale reason", "")
-        if context_tokens >= PHASE_BOUNDARY_CONTEXT and apply_start:
+        limits = context_limits()
+        phase, review = limits["phase_boundary"] // 1000, limits["review_boundary"] // 1000
+        if context_tokens >= limits["phase_boundary"] and apply_start:
             advice = ("; phase boundary: fresh session recommended before worker dispatch "
-                      f"(at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
-        elif context_tokens >= REVIEW_HANDOFF_CONTEXT and next_step.startswith("pre-review") and not rerun:
+                      f"(at least {phase}k)")
+        elif context_tokens >= limits["review_boundary"] and next_kind == "design-review":
+            advice = ("; review boundary: write the handoff and run the design round in a fresh session "
+                      f"(at least {review}k; design-brief refuses at {limits['dispatch_guard'] // 1000}k)")
+        elif context_tokens >= limits["review_boundary"] and next_step.startswith("pre-review") and not rerun:
             advice = ("; review boundary: write the handoff and review in a fresh session; a round and its "
-                      f"fixes need about 40k (at least {REVIEW_HANDOFF_CONTEXT // 1000}k)")
-        elif context_tokens >= PHASE_BOUNDARY_CONTEXT and locally_ready:
+                      f"fixes need about 40k (at least {review}k)")
+        elif context_tokens >= limits["phase_boundary"] and locally_ready:
             advice = ("; phase boundary: locally ready; continue for the final gate, but start a later fix "
-                      f"in a fresh session (at least {PHASE_BOUNDARY_CONTEXT // 1000}k)")
+                      f"in a fresh session (at least {phase}k)")
         lines.append(f"context: {context_tokens} tokens ({context_source}){advice}")
     return done({
         "result": "active", "plan_bytes": plan_path.stat().st_size,
@@ -2153,7 +2197,9 @@ def build_parser() -> argparse.ArgumentParser:
     brief.add_argument("--full", action="store_true",
                        help="A whole review again instead of a re-review of the recorded round (after a redesign)")
     brief.add_argument("--attempt-decision", metavar="KIND: SOURCE",
-                       help="Past the design round cap: `continue: <source>` or `accept: <source>`")
+                       help="Past the design round cap: `continue: <source>` (the open IMPORTANT items become "
+                            "apply obligations; the round checks the BLOCKER items) or `accept: <source>`")
+    brief.add_argument("--context-tokens", type=int, help="Observed current controller input context")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
     resolved = steps.add_parser("design-resolve", help="Answer each item of the recorded FAIL design round")
@@ -2279,7 +2325,7 @@ def main() -> int:
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
         if args.step == "design-brief":
             return design_brief(args.change_slug, args.root, args.controller_runtime, args.full,
-                                args.attempt_decision)
+                                args.attempt_decision, args.context_tokens)
         if args.step == "design-review":
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
                                  args.from_agent, args.same_reviewer_reason)

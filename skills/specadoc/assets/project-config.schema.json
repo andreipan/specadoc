@@ -52,6 +52,25 @@
           "enum": ["required", "optional"]
         }
       }
+    },
+    "context": {
+      "description": "Controller context boundaries in tokens, for models whose window or price differs from the defaults",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "phase_boundary": {
+          "description": "status advises a fresh session before a phase that dispatches workers (default 120000)",
+          "type": "integer", "minimum": 20000
+        },
+        "review_boundary": {
+          "description": "status advises a fresh session before a design or code review round (default 160000)",
+          "type": "integer", "minimum": 20000
+        },
+        "dispatch_guard": {
+          "description": "dispatch and design-brief refuse at this context (default 200000)",
+          "type": "integer", "minimum": 20000
+        }
+      }
     }
   },
   "dependentRequired": {"roles": ["version"]},

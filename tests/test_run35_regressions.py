@@ -528,9 +528,11 @@ class DesignGateTest(unittest.TestCase):
         changes = text.split('## Changes since the reviewed design', 1)[1].split('## Requirements', 1)[0]
         self.assertIn('+| `src/port.py` | application | R1 needs a label source port and cache | port |', changes)
         self.assertIn('-| `src/port.py` | application | R1 needs a label source port | port |', changes)
-        # 6.5: a strict "BLOCKER only" rule would have dropped three real IMPORTANT findings of rounds 3 and 4.
-        self.assertIn('Outside those changes report a new finding only when it is a BLOCKER or an IMPORTANT '
-                      'whose summary cites the file:line that proves it; report no MINOR there.', text)
+        # 6.5 found three real IMPORTANT defects outside the changes, so they are still reported, as notes;
+        # 7.1-8.2 showed that letting them fail the round turned every round into a whole review.
+        self.assertIn('Outside the changes report only a BLOCKER (origin `new`, its summary citing the file:line '
+                      'that proves it); an IMPORTANT or MINOR there belongs in `report` as a note', text)
+        self.assertIn('Set `origin` on every finding', text)
         self.assertIn('second implementation', text, 'the first-review questions still apply to the changes')
         self.assertIn('## Class inventory', text.split('## Changes since the reviewed design', 1)[1])
         self.assertIn('--- reviewed plan.md', changes)

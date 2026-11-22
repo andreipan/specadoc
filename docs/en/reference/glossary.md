@@ -25,7 +25,7 @@ severities and statuses are fixed English identifiers.
 | class inventory | The `## Class inventory` table in `plan.md`. It lists each new non-test file with its layer, reason and kind (`port`, `concrete` or `file`). | [Artifacts and gates](../concepts/artifacts-and-gates.md#design-gate) |
 | companion skill | An optional skill that Specadoc uses for one step: `tidy`, `codebase-design` or `domain-modeling`, or an equivalent host skill. | [Companion skills](../guides/companion-skills.md) |
 | context discipline | The rules that keep the controller's context small: no repeated reads, raw success logs or repository tours, and compact step output. | [Roles](../concepts/roles.md#context-discipline) |
-| context guard | The limit of about 200k tokens of controller context. At this limit, `dispatch` stops and the controller writes a handoff. | [Roles](../concepts/roles.md#session-boundaries) |
+| context guard | The limit of about 200k tokens of controller context (`context.dispatch_guard`). At this limit, `dispatch` and `design-brief` stop and the controller writes a handoff. | [Roles](../concepts/roles.md#session-boundaries) |
 | contract file | A file `<root>/contracts/<contract>.md` in the repository of a shared package. It describes a cross-service contract change and its consumers. | [Plan structure](plan-structure.md#contract-file) |
 | controller | The main agent session. It owns decisions, approvals, final verification and the artifacts. | [Roles](../concepts/roles.md#who-decides-what) |
 | controller justification | The task field that says why a task that is ready for a worker stays with the controller. | [Roles](../concepts/roles.md#worker) |

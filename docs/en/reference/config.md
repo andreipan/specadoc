@@ -61,6 +61,9 @@ of your project.
 | `verification.final` | list of strings | none | The whole suite and gates, run once before the first review. |
 | `verification.probe` | list of strings | none | Quick commands that `doctor.py --probe` runs. |
 | `review.tidy` | `required` or `optional` | `optional` | Whether a tidy pass is mandatory before the first initial review. |
+| `context.phase_boundary` | integer, at least 20000 | `120000` | Context at which `status` advises a fresh session before worker dispatch. |
+| `context.review_boundary` | integer, at least 20000 | `160000` | Context at which `status` advises a fresh session before a review round. |
+| `context.dispatch_guard` | integer, at least 20000 | `200000` | Context at which `dispatch` and `design-brief` refuse. |
 
 Each list item must be a non-empty string. Each role object has only the key
 `runtime`. Models, effort, permissions and tools do not go in this file. They
@@ -165,6 +168,17 @@ opt-in REFACTOR companion.
 
 ```json
 {"version": 1, "review": {"tidy": "required"}}
+```
+
+### context
+
+The controller context boundaries, in tokens. The defaults weigh the cost of
+re-reading a long context on every call against a fresh session, which needs
+60–100k before its first step. Set them for a model with another window or
+price; each key is optional.
+
+```json
+{"version": 1, "context": {"phase_boundary": 120000, "review_boundary": 160000, "dispatch_guard": 200000}}
 ```
 
 ### Host configuration in Verification

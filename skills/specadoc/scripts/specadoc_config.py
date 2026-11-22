@@ -29,7 +29,7 @@ ROLES = ("scout", "worker", "reviewer")
 def validate_config(data: object) -> dict:
     if not isinstance(data, dict):
         raise ValueError("expected Specadoc config object")
-    unknown = set(data) - {"$schema", "root", "version", "roles", "verification", "review"}
+    unknown = set(data) - {"$schema", "root", "version", "roles", "verification", "review", "context"}
     if unknown:
         raise ValueError(f"expected known Specadoc keys; unknown: {', '.join(sorted(unknown))}")
     if "verification" in data:
@@ -54,6 +54,13 @@ def validate_config(data: object) -> dict:
             raise ValueError("review: expected an object with tidy only")
         if review.get("tidy", "optional") not in ("required", "optional"):
             raise ValueError("review.tidy: expected required or optional")
+    if "context" in data:
+        context = data["context"]
+        keys = ("phase_boundary", "review_boundary", "dispatch_guard")
+        if not isinstance(context, dict) or set(context) - set(keys):
+            raise ValueError("context: expected an object with phase_boundary, review_boundary and dispatch_guard only")
+        if not all(type(value) is int and value >= 20_000 for value in context.values()):
+            raise ValueError("context: expected token counts as integers of at least 20000")
     if "root" in data and (not isinstance(data["root"], str) or not data["root"].strip()):
         raise ValueError("expected nonempty root path")
     if "version" in data and (type(data["version"]) is not int or data["version"] != 1):

@@ -305,6 +305,30 @@ class ApplyEfficiencyTest(unittest.TestCase):
             result = self.run_step('pre-review', 'demo', '--dry-run')
         self.assertEqual(0, result.returncode, result.stdout)
 
+    def test_terminal_host_and_agent_runtime_variables_do_not_stale_evidence(self):
+        """7.1-8.2: a new controller in a terminal host saw every accepted task as stale."""
+        from unittest.mock import patch
+        import os
+        with patch.dict(os.environ, HC_TERMINAL_ID='t1', HC_SCOPE='a', CLAUDE_CODE_CHILD_NOTES_DIR='/n/a'):
+            self.accepted()
+        with patch.dict(os.environ, HC_TERMINAL_ID='t2', HC_SCOPE='b', CLAUDE_CODE_CHILD_NOTES_DIR='/n/b',
+                        WEZTERM_TERMINAL_ID='w2'):
+            result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertEqual(0, result.returncode, result.stdout)
+
+    def test_record_made_before_a_variable_became_volatile_is_not_stale_for_it(self):
+        import hashlib
+        self.accepted()
+        path = self.change / 'runs/T1-baseline.json'
+        state = json.loads(path.read_text())
+        inputs = state['verification']['inputs']
+        inputs['environment']['HC_TERMINAL_ID'] = '0' * 16
+        inputs['environment_hash'] = hashlib.sha256(json.dumps(
+            inputs['environment'], sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        path.write_text(json.dumps(state))
+        result = self.run_step('pre-review', 'demo', '--dry-run')
+        self.assertEqual(0, result.returncode, result.stdout)
+
     def test_session_scratch_directory_inside_a_value_does_not_stale_evidence(self):
         """3.6: PHP_INI_SCAN_DIR=":$TMPDIR/ini" differed in every sandboxed session."""
         from unittest.mock import patch

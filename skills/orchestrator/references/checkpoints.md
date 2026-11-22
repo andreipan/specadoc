@@ -86,10 +86,15 @@ each with `coordination_log.py decision --by orchestrator`: a code review round
 with `--review-decision 'orchestrator D<n> under mandate D<m>: one extra round
 for <scope>'`; a design round past Specadoc's cap (four recorded rounds) with
 `design-brief <slug> --attempt-decision 'continue: orchestrator D<n> under
-mandate D<m>'`, or `'accept: …'` to carry the open IMPORTANT items into apply as
-obligations. Accept when the open items are test cases or spec wording, continue
-when one changes behaviour; a BLOCKER is never accepted. Name every such round
-in the final report. Without a mandate the round is the user's. Never write
+mandate D<m>'` (the open IMPORTANT items become apply obligations and the round
+checks the BLOCKER items), or `'accept: …'` to carry the open IMPORTANT items
+into apply as obligations. Accept when the open items are test cases or spec
+wording, continue when one changes behaviour; a BLOCKER is never accepted. A
+BLOCKER on test design, spec wording or an internal rule is yours as well; when
+it comes back in a new form after a round, choose a simpler check or drop the
+claim with its residual risk recorded instead of ordering the same round again
+(7.1, 8.1, 8.2: 8, 11 and 7 design rounds, and 4 h 15 min waiting for the user on a
+race-test BLOCKER). Name every such round in the final report. Without a mandate the round is the user's. Never write
 "user-approved" without the user's words (6.12-6.15 asked the user for rounds
 the mandate covered and waited up to 14 hours).
 
@@ -154,7 +159,8 @@ question tool (it blocks child reports): write the question to the block's
 `questions.md`, state it to the user in plain text at the end of the turn with
 the options and your recommendation, and continue the independent steps. The
 user answers in an ordinary message; record the answer as `D<n>` and resume
-the step. Use the question tool only while every child is idle.
+the step. When every child is idle, ask with the question tool, never in plain
+text (8.2: a plain-text question waited 520 minutes and no user-wait count saw it).
 
 ## Acceptance is not authorization
 

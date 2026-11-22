@@ -40,6 +40,14 @@
           "summary": {
             "type": "string"
           },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "previous",
+              "change",
+              "new"
+            ]
+          },
           "items": {
             "type": "array",
             "items": {

@@ -455,15 +455,23 @@ and `status` use it. The other steps accept it and ignore it.
 
 | Step | Arguments and flags | Meaning |
 |---|---|---|
-| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>']` | Write `runs/design-brief.md` for the design reviewer. `--full` asks for a whole review after a redesign. |
+| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>'] [--context-tokens N]` | Validate the plan, then write `runs/design-brief.md` for the design reviewer. Refuse at the context guard (200k by default, `context.dispatch_guard`): hand off and run the round from a fresh session. `--full` asks for a whole review after a redesign. |
 | `design-review` | `<slug> (--result-file FILE \| --from-agent ID) [--same-reviewer-reason TEXT]` | Record the design verdict in `## Design review`, bound to the inventory hash. |
 | `design-resolve` | `<slug> --file FILE\|-` | Answer each item of a FAIL design round: `F1.2: resolved: <where>` or `F1.2: rejected: <why>`. |
 | `approve` | `<slug> --by {user,orchestrator} --source TEXT [--bindings TEXT]` | Record the plan approval and its source. Hash `spec.md` and `design.md` into `runs/approval.json`. |
 
 After four design rounds, a new round after a FAIL needs `--attempt-decision`.
-`continue: <source>` allows one more round. `accept: <source>` closes the gate,
-and each open IMPORTANT item becomes a design obligation in
-`## Global constraints`. A BLOCKER item is never accepted.
+`continue: <source>` allows one more round: each open IMPORTANT item becomes a
+design obligation in `## Global constraints`, and the round checks the BLOCKER
+items and the changes. `accept: <source>` closes the gate, and each open
+IMPORTANT item becomes a design obligation. A BLOCKER item is never accepted.
+
+In a re-review every finding carries `origin`: `previous` (an earlier item is
+still open), `change` (a defect in the changed lines) or `new`. A `new`
+IMPORTANT or MINOR finding lies outside the changes: `design-review` records it
+under `### Notes outside the re-review scope` and it does not fail the round.
+The recorded round removes `runs/design-brief.md`, so a reviewer cannot start on
+it again.
 
 `approve` refuses when the design review is not current, a review round is
 pending, or `validate_change.py --phase plan` fails. It also refuses when no

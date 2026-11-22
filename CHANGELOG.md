@@ -7,6 +7,37 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Design re-reviews converge: every finding names its `origin` (`previous`,
+  `change`, `new`), the re-review questions apply to the changed lines, and a
+  `new` IMPORTANT or MINOR outside the changes is recorded as a note instead of
+  failing the round. Runs 7.1, 8.1 and 8.2 took 8, 11 and 7 design rounds
+  because every re-review was a whole review again.
+- Past the design round cap, `continue` turns the open IMPORTANT items into
+  apply obligations and the next round checks the BLOCKER items only.
+- `design-brief` validates the plan first and refuses at the context guard
+  (200k, `--context-tokens`), as `dispatch` does; `status` advises a fresh
+  session at the 160k review boundary during the design phase too.
+  `model-routing.md` lists the 120k, 160k and 200k boundaries in one place.
+- `.specadoc.json` `context` sets the three boundaries (`phase_boundary`,
+  `review_boundary`, `dispatch_guard`) for a model with another window or
+  price.
+- The orchestrator decides test-design and spec-wording BLOCKERs under its
+  mandate, asks with the question tool when every child is idle, names what runs
+  when it ends a turn to wait, keeps its coordination directory in
+  `.git/info/exclude`, and searches project memory and docs before a research
+  brief.
+
+### Fixed
+
+- Terminal-host and agent-runtime variables (`HC_*`, `CLAUDE_CODE_*`,
+  `*_TERMINAL_ID`) no longer make accepted evidence stale in a new controller
+  session, including records made before this change.
+- A recorded design round removes its brief, so a chained `run_role start`
+  after a refused `design-brief` cannot run on the previous brief.
+- `status` says when the context it reports is the calling session's own.
+
 ## [0.1.3] - 2026-11-17
 
 ### Changed

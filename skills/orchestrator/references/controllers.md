@@ -68,7 +68,9 @@ After the answer, collect child news you missed before ending the turn.
 Every wake re-reads the orchestrator's whole context. In 3.6 about 25 of 38
 three-minute waits timed out, and the wakes, not the wait output, made the cost.
 Prefer a host event that fires when a controller turn finishes, fails or is
-interrupted: end your turn and continue when it arrives. Only when the host has
+interrupted: end your turn and continue when it arrives. End that turn with one
+line per running child: its step and phase and what will wake you (7.1: after a
+bare "waiting for the report" the user asked for the status twice in an hour). Only when the host has
 no such event, or your turn must not end, wait in bounded intervals of about
 fifteen minutes. After each timeout read only the controller's status and its
 last error, not its log. A failed provider call can leave a controller errored
@@ -82,7 +84,8 @@ and never replace a runtime for a silence a sleep explains.
 
 Resume a controller from `specadoc_step.py status <slug>` and its
 `runs/handoff.md`, not by re-reading spec, plan and design: in 3.5 the
-orchestrator re-read plan.md five times.
+orchestrator re-read plan.md five times. Run in your own shell, `status` reports
+your context, not the controller's; take the controller's size from its envelope.
 
 ## Keep sessions few and small
 

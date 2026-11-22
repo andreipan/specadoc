@@ -86,6 +86,19 @@ Then `pre-review` refuses the first `initial` round until `specadoc_step.py tidy
 <slug>` recorded one pass over Review scope (`apply.md` step 6). Re-reviews never
 need another pass. Default `optional`: tidy stays an opt-in REFACTOR companion.
 
+The controller context boundaries (`model-routing.md` → Session boundaries)
+weigh the cost of re-reading a long context against a fresh session, which
+needs 60–100k before its first step. A project whose model has another window
+or price sets any of them, in tokens:
+
+```json
+{"version": 1, "context": {"phase_boundary": 120000, "review_boundary": 160000, "dispatch_guard": 200000}}
+```
+
+`status` advises a fresh session at `phase_boundary` before worker dispatch and
+at `review_boundary` before a review round; `dispatch` and `design-brief` refuse
+at `dispatch_guard`.
+
 Keep a host or sandbox setting out of `Verification`: a command that starts
 with `NAME=value` or `env` freezes one session's runtime into the plan, and the
 next session, sandbox or validator runs it differently (3.7/3.8: an

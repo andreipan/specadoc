@@ -6,7 +6,10 @@ brief names) covering the same repository or roadmap; a later step of that
 roadmap appends to it. Keep the record in the project work area, not in
 host-private session storage: the next step may run in another session or host.
 Otherwise choose a small coordination directory in an authorized workspace, for
-example `orchestration/<task>/`, containing:
+example `orchestration/<task>/`. Inside a checkout, list the directory in that
+checkout's `.git/info/exclude` when you create it: otherwise Specadoc counts
+your notes as task changes (a media-project run: failed reports, refreshes
+and pre-reviews in five controllers). It contains:
 
 - **brief.md:** shared goal, verbatim user invariants, boundaries, mandate,
   acceptance scenario, and shared contract ownership/revisions.

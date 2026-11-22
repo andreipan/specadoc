@@ -386,7 +386,7 @@ Legacy changes created before these sections existed are not expected to pass.
 | Capability key paths | 5 | Template rule. |
 | `initial` review rounds | 3 | A fourth needs `--review-decision`. Re-reviews do not count. |
 | Design review rounds | 4 | The next round after a FAIL needs `--attempt-decision`. |
-| Controller context at `dispatch` | 200k tokens | `dispatch` stops. Write a handoff and continue in a new session. |
+| Controller context at `dispatch` and `design-brief` | 200k tokens (`context.dispatch_guard`) | The step stops. Write a handoff and continue in a new session. |
 
 The skill text also has byte limits, in
 [`assets/mode-budget.json`](../../../skills/specadoc/assets/mode-budget.json).

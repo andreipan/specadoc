@@ -1,4 +1,4 @@
-<!-- source-sha256: 5b48a374d9ee65ada88f20d71ea15b4323d7910f8bd853450a1392e39f3b9dc0 -->
+<!-- source-sha256: f289377c3cb2249287a3808109c18cccbf812c53ea75bf4819b0aa3980b6d026 -->
 # Глоссарий
 
 [English](../../en/reference/glossary.md)
@@ -46,7 +46,7 @@
 | **область ревью** (review scope) | Список `## Review scope`: пути файлов исполняемого диффа относительно корня репозитория. Его пишет `specadoc_step.py scope`. | [Структура плана](plan-structure.md#planmd) |
 | **обоснование контроллера** (controller justification) | Поле задачи. Оно объясняет, почему задача, готовая для `worker`, остаётся у контроллера. | [Роли](../concepts/roles.md#worker) |
 | **обязательство дизайна** (design obligation) | Открытый пункт IMPORTANT из раунда дизайна с FAIL, который контроллер принимает после лимита раундов. Пункт попадает в `## Global constraints` и обязателен для `apply`. | [Артефакты и гейты](../concepts/artifacts-and-gates.md#гейт-дизайна) |
-| **ограничитель контекста** (context guard) | Предел контекста контроллера, около 200k токенов. На этом пределе `dispatch` останавливается, и контроллер пишет передачу сессии. | [Роли](../concepts/roles.md#границы-сессий) |
+| **ограничитель контекста** (context guard) | Предел контекста контроллера, около 200k токенов (`context.dispatch_guard`). На этом пределе `dispatch` и `design-brief` останавливаются, и контроллер пишет передачу сессии. | [Роли](../concepts/roles.md#границы-сессий) |
 | **одобрение** (approval) | Решение пользователя, которое записано в `plan.md` командой `specadoc_step.py approve`. Оркестратор может дать одобрение по записанному мандату пользователя. | [Артефакты и гейты](../concepts/artifacts-and-gates.md#одобрения) |
 | **операция над возможностью** (capability operation) | Одна строка под спецификацией возможности в `## Affected capabilities`: `ADDED`, `MODIFIED`, `REMOVED` или `RENAMED` для требования `C<n>` с id `R<n>`, на которые она ссылается. | [Артефакты и гейты](../concepts/artifacts-and-gates.md#операции-над-возможностями) |
 | **отправка задачи** (dispatch) | Шаг `specadoc_step.py dispatch`. Шаг проверяет задачу, пишет её базовый снимок и бриф и передаёт задачу `worker` или контроллеру. | [Роли](../concepts/roles.md#worker) |

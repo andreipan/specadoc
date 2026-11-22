@@ -1,4 +1,4 @@
-<!-- source-sha256: d4c242d398470483746ac739e9e2409954f068ebfc2a21ebb0e2e71e01d00546 -->
+<!-- source-sha256: 1463c9ec0e8da1a7e34e23b90eeaa38a48228168df870782cdf94ae04f043d6b -->
 # Скрипты
 
 [English](../../en/reference/scripts.md)
@@ -465,16 +465,24 @@ FAIL — замечание, которое вы можете исправить
 
 | Шаг | Аргументы и флаги | Значение |
 |---|---|---|
-| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>']` | Пишет `runs/design-brief.md` для reviewer дизайна. `--full` запрашивает полное ревью после переработки дизайна. |
+| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>'] [--context-tokens N]` | Проверяет план, затем пишет `runs/design-brief.md` для reviewer дизайна. На ограничителе контекста (по умолчанию 200k, `context.dispatch_guard`) отказывает: нужно передать работу и провести раунд в новой сессии. `--full` запрашивает полное ревью после переработки дизайна. |
 | `design-review` | `<slug> (--result-file FILE \| --from-agent ID) [--same-reviewer-reason TEXT]` | Записывает вердикт дизайна в `## Design review` с привязкой к хешу реестра классов. |
 | `design-resolve` | `<slug> --file FILE\|-` | Отвечает на каждый пункт раунда дизайна с FAIL: `F1.2: resolved: <where>` или `F1.2: rejected: <why>`. |
 | `approve` | `<slug> --by {user,orchestrator} --source TEXT [--bindings TEXT]` | Записывает одобрение плана и его источник. Записывает хеши `spec.md` и `design.md` в `runs/approval.json`. |
 
 После четырёх раундов дизайна новый раунд после FAIL требует
-`--attempt-decision`. `continue: <source>` разрешает ещё один раунд.
+`--attempt-decision`. `continue: <source>` разрешает ещё один раунд: каждый
+открытый пункт IMPORTANT становится обязательством дизайна в
+`## Global constraints`, а раунд проверяет пункты BLOCKER и изменения.
 `accept: <source>` закрывает гейт, и каждый открытый пункт IMPORTANT становится
-обязательством дизайна в `## Global constraints`. Пункт BLOCKER никогда не
-принимается.
+обязательством дизайна. Пункт BLOCKER никогда не принимается.
+
+В повторном ревью у каждого замечания есть `origin`: `previous` (прежний пункт
+ещё открыт), `change` (дефект в изменённых строках) или `new`. Замечание `new`
+уровня IMPORTANT или MINOR лежит вне изменений: `design-review` записывает его в
+`### Notes outside the re-review scope`, и раунд из-за него не проваливается.
+Записанный раунд удаляет `runs/design-brief.md`, поэтому reviewer не запустится
+на нём повторно.
 
 `approve` отказывает, если ревью дизайна не актуально, раунд ревью ожидает
 результата или `validate_change.py --phase plan` завершается с ошибкой. Шаг
