@@ -7,6 +7,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-22
+
 ### Changed
 
 - Design re-reviews converge: every finding names its `origin` (`previous`,

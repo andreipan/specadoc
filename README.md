@@ -64,7 +64,7 @@ the model and effort come from the installed role file. See
    claude plugin install specadoc@specadoc
    ```
 
-   To stay on a release, add its tag: `andreipan/specadoc@v0.1.3`.
+   To stay on a release, add its tag: `andreipan/specadoc@v0.1.4`.
 
 2. Start a new session in your project.
 3. Ask for a proposal:

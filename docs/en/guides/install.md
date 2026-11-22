@@ -31,7 +31,7 @@ error: Specadoc scripts need Python 3.10+; this is 3.9.6 at /usr/bin/python3. Pu
 The GitHub repository `andreipan/specadoc` is also the plugin marketplace for Claude Code and Codex. You do not need to clone it for a plugin install.
 
 - Without a tag, the marketplace follows the `main` branch.
-- With a release tag, the marketplace stays on that release. The tags are on the [releases page](https://github.com/andreipan/specadoc/releases). The examples below use `<tag>`, for example `v0.1.3`.
+- With a release tag, the marketplace stays on that release. The tags are on the [releases page](https://github.com/andreipan/specadoc/releases). The examples below use `<tag>`, for example `v0.1.4`.
 
 We recommend a tag for team projects, so that all members use the same version.
 

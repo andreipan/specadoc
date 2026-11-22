@@ -1,4 +1,4 @@
-<!-- source-sha256: f0f27cea17563c6c2cce112ad57fb9db78f2a88af651a8edc5e4e45f0825eb74 -->
+<!-- source-sha256: 4a2a074620094045045e0c47365f798213e5d3a443dec1b9c5e022e2e728c2ec -->
 # Журнал изменений
 
 [English](CHANGELOG.md)
@@ -7,6 +7,8 @@
 Версии соответствуют [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.4] - 2026-11-22
 
 ### Изменено
 
