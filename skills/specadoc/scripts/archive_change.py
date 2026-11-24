@@ -301,6 +301,9 @@ def render_record(
         values["review"] = f"Tidy {tidy.get('outcome', 'recorded')}: {tidy.get('summary', '-')}\n\n{values['review']}"
     except (OSError, ValueError, AttributeError):
         pass
+    from design_gate import rounds_line  # per-round design counts for later retros (8.1, 8.2 lost theirs)
+    if rounds := rounds_line(change):
+        values["review"] = f"{rounds}\n\n{values['review']}"
     values["measurement"] = _token_totals_only(values["measurement"])
     if migration_summary.strip():
         values["summary"] = "\n\n".join(

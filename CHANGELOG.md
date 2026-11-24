@@ -7,6 +7,44 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Design review findings carry a `class`. From design round 3 only must-not-ship
+  findings (`data`, `money`, `access`, `user-path`, `wrong-result`) hold the
+  design: a BLOCKER or IMPORTANT of class `other` becomes a design obligation
+  `R<round>.<n>` and the round is `ACCEPTED` when nothing must-not-ship is left.
+  Runs 7.1, 8.1 and 8.2 took 8, 11 and 7 rounds, and 6.17 round 2 still had
+  more BLOCKERs than round 1, mostly test design and spec wording. A finding
+  without a class is never deferred. A must-not-ship class needs a state that
+  can occur: a replay of 7.1, 6.17, 8.1, 8.2 and organization-audit-events
+  found that rounds 3+ kept failing on hypothetical states (a legacy row,
+  deadline arithmetic, an unverified provider claim).
+- A design round after the second with must-not-ship items open needs
+  `design-brief --verify-by '<method or owner>'`; the same method twice is
+  refused.
+- A task names the design obligations it meets in `**Obligations:**`;
+  `approve` refuses an obligation no task names, the worker brief lists the
+  task's obligations, and `pre-review` writes `runs/G<n>-obligations.md` for
+  the code reviewer, who reports an unmet one as IMPORTANT.
+- Each design round's counts go to `runs/design-round.json` and, at archive,
+  to one `Design rounds:` line in `record.md` (8.1 and 8.2 lost them with
+  `runs/`).
+
+### Added
+
+- `specadoc_step.py deviation <slug> T<n> --text '<what and why>'`: a worker
+  records each departure from its brief as it happens in
+  `runs/T<n>-deviations.md`, which survives the worker's own compaction.
+  `report` needs `--deviation '<id>: kept|reverted: <why>'` for every entry and
+  turns a kept one into a concern; `accept` refuses an entry recorded after the
+  report; a reopen archives the file; `pre-review` writes the decided entries
+  to `runs/G<n>-deviations.md` for the code reviewer.
+- `coordination_log.py capsule <record>` prints the orchestrator's role
+  reminder for after a compaction: the granting mandate, the current state,
+  `status.md`, the newest decisions and fixed rules, at most 60 lines. Week 47
+  orchestrator sessions compacted at 202-274k and lost their role; a host hook
+  may inject the capsule, otherwise the orchestrator reads it first.
+
 ## [0.1.4] - 2026-11-22
 
 ### Changed

@@ -22,6 +22,9 @@ Steps:
 - `manifest <slug> T<n>` — JSON actual changed paths and suggested review bullets.
 - `report <slug> T<n> --status … --summary … --red … --green …` — write the task
   report and its schema-valid result JSON from the actual delta.
+- `deviation <slug> T<n> --text '<what and why>'` — a worker records a departure
+  from its brief as it happens; `report` needs `--deviation '<id>: kept|reverted:
+  <why>'` for each, and `accept` refuses an entry recorded after the report.
 - `accept <slug> T<n>` — scope check, report validation, exact Verification
   commands, then a second scope check.
   Commands must occupy the entire field, backticked and separated by semicolons.
@@ -184,9 +187,15 @@ def reopen_attempt(change: Path, task: str, reason: str) -> list[dict]:
     if report.is_file():
         archived_report = report.with_name(f"{task}-report-a{len(attempts) + 1}.md")
         report.replace(archived_report)
+    deviations = change / "runs" / f"{task}-deviations.md"
+    archived_deviations = None
+    if deviations.is_file():
+        archived_deviations = deviations.with_name(f"{task}-deviations-a{len(attempts) + 1}.md")
+        deviations.replace(archived_deviations)
     attempts.append({**{key: value for key, value in record.items() if key != "manifest"},
                      "reopened_at": timestamp(), "reopen_reason": " ".join(reason.split()),
-                     "report": archived_report.name if archived_report else None})
+                     "report": archived_report.name if archived_report else None,
+                     "deviations": archived_deviations.name if archived_deviations else None})
     baseline_path.unlink()
     plan_path = change / "plan.md"
     plan_path.write_text(update_task(Document(plan_path, str(plan_path)), task, {}, reopen=True), encoding="utf-8")
@@ -197,15 +206,17 @@ def restore_attempt(change: Path, task: str, attempts: list[dict], manifest: dic
     """Undo a reopen that did not dispatch: the previous attempt's baseline and report come back, so a
     refused reopen leaves no attempt behind (5.2: two refused reopens made T2's next try attempt 3)."""
     last = attempts[-1]
-    previous = {key: value for key, value in last.items() if key not in ("reopened_at", "reopen_reason", "report")}
+    previous = {key: value for key, value in last.items()
+                if key not in ("reopened_at", "reopen_reason", "report", "deviations")}
     previous.update(attempts=attempts[:-1], manifest=manifest)
     if not previous["attempts"]:
         previous.pop("attempts")
     save(change / "runs" / f"{task}-baseline.json", previous)
-    if last.get("report"):
-        archived = change / "runs" / last["report"]
-        if archived.is_file():
-            archived.replace(change / "runs" / f"{task}-report.md")
+    for key, name in (("report", f"{task}-report.md"), ("deviations", f"{task}-deviations.md")):
+        if last.get(key):
+            archived = change / "runs" / last[key]
+            if archived.is_file():
+                archived.replace(change / "runs" / name)
 
 
 def preflight_checks(slug: str, task: str, root: str | None, controller: str | None) -> tuple[list[str], list[str]]:
@@ -378,8 +389,42 @@ RED_AFTER_CODE = re.compile(
     r"|post[- ]hoc red|retro(?:active|spective) red", re.I)
 
 
+DEVIATION_LIMIT = 400
+DEVIATION_LINE = re.compile(r"- (?P<id>T\d+\.d\d+) \((?P<at>[^)]*)\): (?P<text>.+)")
+DISPOSITION = re.compile(r"\s*(?P<id>T\d+\.d\d+)\s*:\s*(?P<kind>kept|reverted)\s*:\s*(?P<why>\S.*?)\s*$", re.I)
+
+
+def read_deviations(change: Path, task: str) -> dict[str, str]:
+    """The task's recorded deviations by id (`runs/T<n>-deviations.md`)."""
+    try:
+        text = (change / "runs" / f"{task}-deviations.md").read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return {m["id"]: m["text"] for line in text.splitlines() if (m := DEVIATION_LINE.fullmatch(line.strip()))}
+
+
+def record_deviation(slug: str, task: str, root: str | None, text: str) -> int:
+    """Append one departure from the brief as it happens, so it survives the worker's own compaction; the
+    final report section alone lost them (AI Dev Live 2026, coordinator-mode: a live deviations file)."""
+    change = Path(resolve_root(root).path) / slug
+    text = " ".join(text.split())
+    if placeholder(text) or len(text.split()) < 3:
+        raise ValueError("--text names what departs from the brief and why, in three words or more")
+    if len(text) > DEVIATION_LIMIT:
+        raise ValueError(f"--text is at most {DEVIATION_LIMIT} characters: record one deviation per entry")
+    if not (change / "runs" / f"{task}-baseline.json").is_file():
+        raise ValueError(f"{task} is not dispatched; record a deviation while working on a dispatched task")
+    identifier = f"{task}.d{len(read_deviations(change, task)) + 1}"
+    path = change / "runs" / f"{task}-deviations.md"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"- {identifier} ({timestamp()}): {text}\n")
+    return emit([f"recorded {identifier} in {path}"], "CHECKED", [], "",
+                f"continue; report needs --deviation '{identifier}: kept|reverted: <why>'")
+
+
 def write_report(slug: str, task: str, root: str | None, status: str, summary: str, red: str, green: str,
-                 concerns: list[str], body_file: str | None = None, mutation: str | None = None) -> int:
+                 concerns: list[str], body_file: str | None = None, mutation: str | None = None,
+                 deviations: list[str] | None = None) -> int:
     """Write the task report and its schema-valid result JSON; never hand-written JSON."""
     from run_role import schema_errors, schema_path
     from review_snapshot import _under
@@ -397,6 +442,25 @@ def write_report(slug: str, task: str, root: str | None, status: str, summary: s
     mutation = " ".join((mutation or "").split())
     if mutation:
         payload["tests"]["mutation"] = mutation
+    recorded = read_deviations(Path(artifact_root) / slug, task)
+    decided: dict[str, tuple[str, str]] = {}
+    for raw in deviations or []:
+        if not (match := DISPOSITION.fullmatch(raw)):
+            raise ValueError(f"--deviation takes `<id>: kept|reverted: <why>`, e.g. `{task}.d1: kept: the brief's "
+                             f"helper does not exist`; not: {raw.strip()}")
+        if match["id"] not in recorded:
+            raise ValueError(f"{match['id']} is not a recorded deviation of {task}; recorded: "
+                             f"{', '.join(recorded) or 'none'}")
+        decided[match["id"]] = (match["kind"].lower(), " ".join(match["why"].split()))
+    undecided = [identifier for identifier in recorded if identifier not in decided]
+    if status in ("DONE", "DONE_WITH_CONCERNS") and undecided:
+        return emit(checked, "FAIL", [], f"deviation(s) {', '.join(undecided)} have no decision",
+                    f"report not written: add --deviation '<id>: kept|reverted: <why>' for each entry of "
+                    f"runs/{task}-deviations.md")
+    # A kept deviation is a concern: `accept` then needs the controller's decision on it.
+    concerns += [f"deviation {identifier} kept: {recorded[identifier]} — {why}"
+                 for identifier, (kind, why) in decided.items() if kind == "kept"]
+    payload["concerns"] = concerns
     admitted = next((found.group(0) for text in (payload["tests"]["red"], *concerns)
                      if (found := RED_AFTER_CODE.search(text))), None)
     if status in ("DONE", "DONE_WITH_CONCERNS") and admitted and not mutation:
@@ -414,7 +478,11 @@ def write_report(slug: str, task: str, root: str | None, status: str, summary: s
     sections = [f"# {task} report", "", "## Summary", "", payload["summary"], "", "## RED", "", payload["tests"]["red"],
                 *(["", "## Mutation evidence", "", mutation] if mutation else []),
                 "", "## GREEN", "", payload["tests"]["green"], "", "## Concerns", "",
-                *([f"- {item}" for item in concerns] or ["None"]), ""]
+                *([f"- {item}" for item in concerns] or ["None"]), "",
+                *(["## Deviations", "",
+                   *(f"- {identifier}: {decided[identifier][0] if identifier in decided else 'undecided'}: {text}"
+                     + (f" — {decided[identifier][1]}" if identifier in decided else "")
+                     for identifier, text in recorded.items()), ""] if recorded else [])]
     if body.strip():
         sections += ["## Notes", "", body.strip(), ""]
     # A completion report with a scope violation is not written: `wait` would release the controller
@@ -610,6 +678,12 @@ def accept(slug: str, task: str, root: str | None, *, scope_only: bool = False, 
     except (OSError, ValueError) as exc:
         return emit(checked, "BLOCKED", violations or changed, str(exc),
                     "supply a schema-valid worker report/result and exact Verification commands")
+    report_text = Path(report).read_text(encoding="utf-8") if Path(report).is_file() else ""
+    if late := [identifier for identifier in read_deviations(change, task)
+                if not re.search(rf"\b{re.escape(identifier)}\b", report_text)]:
+        return emit(checked, "BLOCKED", violations or changed,
+                    f"deviation(s) {', '.join(late)} of runs/{task}-deviations.md were recorded after the report",
+                    f"the worker reports {task} again with --deviation '<id>: kept|reverted: <why>' for each")
     if not commands:
         return emit(checked, "BLOCKED", violations, "Verification has no backticked command", "run the Verification yourself")
     baseline_path = change / "runs" / f"{task}-baseline.json"
@@ -887,7 +961,8 @@ def refresh(slug: str, root: str | None, verification_timeout: float = 600,
 
 
 def design_brief(slug: str, root: str | None, controller: str | None, full: bool = False,
-                 decision: str | None = None, context_tokens: int | None = None) -> int:
+                 decision: str | None = None, context_tokens: int | None = None,
+                 verify_by: str | None = None) -> int:
     import design_gate
     change = Path(resolve_root(root).path) / slug
     plan = Document(change / "plan.md", "plan.md")
@@ -912,6 +987,16 @@ def design_brief(slug: str, root: str | None, controller: str | None, full: bool
         continue_source = source
     elif decision is not None:
         design_gate.parse_decision(decision)
+    # Past SHIP_ROUNDS a round with must-not-ship items open changes how they are verified (another method
+    # or owner), not only the reviewer: 7.1 r4-r7 and 8.1 r5-r9 repeated the same check of one item.
+    method_round = design_gate.needs_method(change, plan) if design_gate.rows(plan) and not full else None
+    if method_round and not verify_by:
+        return emit(["Class inventory", "round method"], "BLOCKED", [],
+                    f"design round {method_round} follows {design_gate.SHIP_ROUNDS} rounds with "
+                    f"{design_gate.open_ship_items(plan)} must-not-ship finding(s) open",
+                    f"design-brief {slug} --verify-by '<how this round verifies them differently, or who owns "
+                    "them>' (e.g. `spike test of the lock order`, `user decides the retry contract`), or drop the "
+                    "claim with its residual risk recorded and design-resolve it")
     # 7.1-8.2: propose controllers entered design round 1 at 176-254k and ran rounds up to 373k; only
     # dispatch measured context. The refusal uses dispatch's guard: at the review boundary a fresh session
     # (60-100k before its first step) would leave room for two or three rounds; `status` advises there.
@@ -945,7 +1030,12 @@ def design_brief(slug: str, root: str | None, controller: str | None, full: bool
     if continue_source:
         carried = design_gate.carry_important(change, continue_source)
         checked.append(f"carried {len(carried)} IMPORTANT item(s) into Global constraints as apply obligations")
-    path, rereview = design_gate.write_brief(change, full, authorization)
+    method = None
+    if method_round and verify_by:
+        design_gate.record_method(change, method_round, verify_by)
+        method = verify_by
+        checked.append(f"recorded Design round method: round {method_round}")
+    path, rereview = design_gate.write_brief(change, full, authorization, method)
     if authorization:
         design_gate.record_continue(change, authorization)
         checked.append(f"recorded Design round authorization: {authorization}")
@@ -981,14 +1071,18 @@ def design_review(slug: str, root: str | None, source: str | None, controller: s
     source = reviewer_source(change, source, agent, f"design-review-{number}-reply.md")
     verdict = design_gate.record(change, source, reviewer, agent, same_reviewer_reason)
     checked += ["reviewer schema", "inventory hash", "recorded Design review"] + ([f"reply saved to {source}"] if agent else [])
-    if verdict == "PASS":
+    if verdict in ("PASS", design_gate.ACCEPTED):
         if shown := fill_bindings(change / "plan.md", controller):
             checked.append(f"Bindings shown: {shown}")
+        text = (change / "plan.md").read_text(encoding="utf-8")
         notes = ("read `### Notes outside the re-review scope` in plan.md and fix the notes that hold before "
-                 "approval; " if "### Notes outside the re-review scope" in (change / "plan.md").read_text(
-                     encoding="utf-8") else "")
-        return emit(checked, "PASS", [], "", f"design gate passed; {notes}present the plan for approval (or apply "
-                    "the orchestrator mandate), then dispatch")
+                 "approval; " if "### Notes outside the re-review scope" in text else "")
+        if uncited := design_gate.uncited_obligations(Document(change / "plan.md", "plan.md")):
+            notes += (f"name each design obligation ({design_gate.short(uncited)}, in Global constraints) in the "
+                      "`**Obligations:**` field of the task that meets it; ")
+        label = "passed" if verdict == "PASS" else f"accepted by the {design_gate.SHIP_RULE}"
+        return emit(checked, "PASS", [], "", f"design gate {label}; {notes}present the plan for approval (or "
+                    "apply the orchestrator mandate), then dispatch")
     plan = Document(change / "plan.md", "plan.md")
     return emit(checked, "FAIL", [], "design review FAIL; read its findings in plan.md",
                 f"close every item ({', '.join(design_gate.unresolved(plan)) or 'none listed'}) in this pass, "
@@ -1257,6 +1351,12 @@ def approve(slug: str, root: str | None, by: str, source: str, bindings: str | N
     import design_gate
     if design_gate.rows(plan) and (error := design_gate.review_error(plan)):
         return emit(checked + ["design review"], "BLOCKED", [], error, "finish the design review before approval")
+    # An obligation the design gate deferred or accepted is met by a named task, or nobody owns it
+    # (8.2 r5: a real privacy defect would have survived only as such an obligation).
+    if uncited := design_gate.uncited_obligations(plan):
+        return emit(checked + ["design obligations"], "BLOCKED", [],
+                    f"design obligation(s) {design_gate.short(uncited)} in Global constraints are named by no task",
+                    "add each id to the `**Obligations:**` field of the task that meets it, then approve")
     latest = latest_review_round(plan)
     if latest and latest[1].get("Outcome", "").strip().upper() not in ("PASS", "FAIL"):
         return emit(checked + ["review round"], "BLOCKED", [],
@@ -1608,7 +1708,8 @@ def pre_review(slug: str, root: str | None, controller: str | None = None, *,
         files = review_files(change, identifier, changed)
         return emit(checked, "PASS", changed, "",
                     f"dispatch independent reviewer for recorded {identifier}"
-                    + (f"; name {' and '.join(files)} in its brief (the diff against HEAD and git status; "
+                    + (f"; name {' and '.join(files)} in its brief (the diff against HEAD and git status"
+                       f"{', plus design obligations or worker deviations to check' if len(files) > 2 else ''}; "
                        "the reviewer needs no shell)" if files else ""),
                     f"snapshot: {payload['hash']}\npolicy snapshot: {review_policy_hash(plan)}\nmanifest: recorded in plan.md")
     detail = f"snapshot: {payload['hash']}\npolicy snapshot: {review_policy_hash(plan)}\n```json\n{json.dumps(payload['manifest'])}\n```"
@@ -1638,6 +1739,20 @@ def review_files(change: Path, identifier: str, paths: list[str]) -> list[str]:
     runs = change / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     written = {runs / f"{identifier}-head.diff": text, runs / f"{identifier}-status.txt": status.stdout}
+    from design_gate import obligation_lines
+    if obligations := obligation_lines(Document(change / "plan.md", "plan.md")):
+        written[runs / f"{identifier}-obligations.md"] = "\n".join([
+            "# Design obligations", "", "Each must hold in this diff; an unmet one is an IMPORTANT finding.", "",
+            *obligations.values()]) + "\n"
+    decided: list[str] = []
+    for report in sorted(runs.glob("T*-report.md"), key=lambda path: int(re.match(r"T(\d+)", path.name)[1])):
+        parts = report.read_text(encoding="utf-8").split("\n## Deviations\n", 1)
+        if len(parts) == 2:
+            decided += [line for line in parts[1].split("\n## ", 1)[0].splitlines() if line.startswith("- ")]
+    if decided:
+        written[runs / f"{identifier}-deviations.md"] = "\n".join([
+            "# Worker deviations from their briefs", "",
+            "Check each kept one against the spec; a reverted one must be gone from the diff.", "", *decided]) + "\n"
     for path, content in written.items():
         path.write_text(content, encoding="utf-8")
     return [path.as_posix() for path in written]
@@ -2200,6 +2315,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Past the design round cap: `continue: <source>` (the open IMPORTANT items become "
                             "apply obligations; the round checks the BLOCKER items) or `accept: <source>`")
     brief.add_argument("--context-tokens", type=int, help="Observed current controller input context")
+    brief.add_argument("--verify-by", metavar="METHOD",
+                       help="Past the second design round with must-not-ship items open: how this round verifies "
+                            "them differently, or who owns them (recorded in Confirmed decisions)")
     reviewed = steps.add_parser("design-review", help="Record the design reviewer's result against the inventory")
     reviewed.add_argument("change_slug")
     resolved = steps.add_parser("design-resolve", help="Answer each item of the recorded FAIL design round")
@@ -2233,7 +2351,13 @@ def build_parser() -> argparse.ArgumentParser:
     reported.add_argument("--mutation", help="When a test did not fail before the code: each break made and the "
                                              "test that then failed")
     reported.add_argument("--concern", action="append", default=[], help="One concern; repeat as needed")
+    reported.add_argument("--deviation", action="append", default=[], metavar="ID: kept|reverted: WHY",
+                          help="Decision on one recorded deviation (runs/T<n>-deviations.md); one per entry")
     reported.add_argument("--body-file", help="Optional longer notes appended to the report")
+    deviated = steps.add_parser("deviation", help="Record one departure from the task brief as it happens")
+    deviated.add_argument("change_slug")
+    deviated.add_argument("task", help="Task id such as T3")
+    deviated.add_argument("--text", required=True, help="What departs from the brief and why (at most 400 characters)")
     external = steps.add_parser("external-result", help="Record a task's External verification result")
     external.add_argument("change_slug")
     external.add_argument("task", help="Task id such as T6")
@@ -2270,7 +2394,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 PROPOSE_STEPS = ("approve", "design-brief", "design-review", "design-resolve")
 # Read-only steps also run by an orchestrator; they must not record its session.
-UNRECORDED_STEPS = ("status", "preflight", "manifest")
+UNRECORDED_STEPS = ("status", "preflight", "manifest", "deviation")
 
 
 def record_session(args: argparse.Namespace) -> None:
@@ -2303,7 +2427,8 @@ def record_session(args: argparse.Namespace) -> None:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest", "external-result", "report") and not re.fullmatch(r"T\d+", args.task):
+    if args.step in ("preflight", "dispatch", "accept", "amend", "manifest", "external-result", "report",
+                     "deviation") and not re.fullmatch(r"T\d+", args.task):
         print("error: task must look like T<n>", file=sys.stderr)
         return 2
     try:
@@ -2325,7 +2450,7 @@ def main() -> int:
             return amend(args.change_slug, args.task, args.root, args.allow, args.controller_path, args.reason, args.derived)
         if args.step == "design-brief":
             return design_brief(args.change_slug, args.root, args.controller_runtime, args.full,
-                                args.attempt_decision, args.context_tokens)
+                                args.attempt_decision, args.context_tokens, args.verify_by)
         if args.step == "design-review":
             return design_review(args.change_slug, args.root, args.result_file, args.controller_runtime,
                                  args.from_agent, args.same_reviewer_reason)
@@ -2351,7 +2476,9 @@ def main() -> int:
                           as_json=args.json)
         if args.step == "report":
             return write_report(args.change_slug, args.task, args.root, args.status, args.summary, args.red,
-                                args.green, args.concern, args.body_file, args.mutation)
+                                args.green, args.concern, args.body_file, args.mutation, args.deviation)
+        if args.step == "deviation":
+            return record_deviation(args.change_slug, args.task, args.root, args.text)
         if args.step == "external-result":
             return external_result(args.change_slug, args.task, args.root, args.outcome, args.evidence, args.log,
                                    args.supersede)

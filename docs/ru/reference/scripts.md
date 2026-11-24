@@ -1,4 +1,4 @@
-<!-- source-sha256: 1463c9ec0e8da1a7e34e23b90eeaa38a48228168df870782cdf94ae04f043d6b -->
+<!-- source-sha256: 1ee7a8d947db2f3526f8b8d5931a1b8ff2189f5de91d1a602cc81d22f8ae587b -->
 # Скрипты
 
 [English](../../en/reference/scripts.md)
@@ -465,7 +465,7 @@ FAIL — замечание, которое вы можете исправить
 
 | Шаг | Аргументы и флаги | Значение |
 |---|---|---|
-| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>'] [--context-tokens N]` | Проверяет план, затем пишет `runs/design-brief.md` для reviewer дизайна. На ограничителе контекста (по умолчанию 200k, `context.dispatch_guard`) отказывает: нужно передать работу и провести раунд в новой сессии. `--full` запрашивает полное ревью после переработки дизайна. |
+| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>'] [--verify-by METHOD] [--context-tokens N]` | Проверяет план, затем пишет `runs/design-brief.md` для reviewer дизайна. На ограничителе контекста (по умолчанию 200k, `context.dispatch_guard`) отказывает: нужно передать работу и провести раунд в новой сессии. `--full` запрашивает полное ревью после переработки дизайна. `--verify-by` называет, как раунд после второго проверяет открытые пункты must-not-ship по-другому или кто ими владеет. |
 | `design-review` | `<slug> (--result-file FILE \| --from-agent ID) [--same-reviewer-reason TEXT]` | Записывает вердикт дизайна в `## Design review` с привязкой к хешу реестра классов. |
 | `design-resolve` | `<slug> --file FILE\|-` | Отвечает на каждый пункт раунда дизайна с FAIL: `F1.2: resolved: <where>` или `F1.2: rejected: <why>`. |
 | `approve` | `<slug> --by {user,orchestrator} --source TEXT [--bindings TEXT]` | Записывает одобрение плана и его источник. Записывает хеши `spec.md` и `design.md` в `runs/approval.json`. |
@@ -484,9 +484,29 @@ FAIL — замечание, которое вы можете исправить
 Записанный раунд удаляет `runs/design-brief.md`, поэтому reviewer не запустится
 на нём повторно.
 
+У каждого замечания BLOCKER и IMPORTANT есть `class`: `data`, `money`, `access`,
+`user-path` и `wrong-result` относятся к must-not-ship; `other` — это дизайн
+тестов, формулировки спеки, внутренние правила или структура. Классу must-not-ship
+нужно состояние, которое может возникнуть (путь в коде, существующие строки, вход,
+который допускает спека); гипотетическое состояние — `other`, пока не показано
+обратное. С третьего раунда
+дизайна BLOCKER или IMPORTANT класса `other` становится обязательством дизайна
+`R<раунд>.<n>` в `## Global constraints` и попадает в список `### Deferred to
+apply (not must-not-ship)`. Если замечаний must-not-ship не осталось, раунд
+получает `ACCEPTED` по правилу must-not-ship. Замечание без `class` никогда не
+откладывается. Раунду после второго с открытыми пунктами must-not-ship нужен
+`--verify-by '<метод или владелец>'`; он записывается в `## Confirmed decisions`
+как `Design round method`, повтор того же метода отклоняется. Счётчики каждого
+раунда пишутся в `runs/design-round.json`, а при архивации — одной строкой
+`Design rounds:` в `record.md`.
+
 `approve` отказывает, если ревью дизайна не актуально, раунд ревью ожидает
-результата или `validate_change.py --phase plan` завершается с ошибкой. Шаг
-также отказывает, если строка привязок не записана, а `--bindings` не задан.
+результата, обязательство дизайна не названо ни в одном поле `**Obligations:**`
+задачи или `validate_change.py --phase plan` завершается с ошибкой. Шаг также
+отказывает, если строка привязок не записана, а `--bindings` не задан. Бриф
+worker перечисляет обязательства своей задачи; `pre-review` пишет
+`runs/G<n>-obligations.md` для reviewer кода, и невыполненное обязательство —
+замечание IMPORTANT.
 
 ### Шаги apply: задачи
 
@@ -496,7 +516,8 @@ FAIL — замечание, которое вы можете исправить
 | `preflight` | `<slug> T<n>` | Проверяет задачу и не меняет файлы. Команды Verification не запускает. |
 | `dispatch` | `<slug> T<n> [--context-tokens N] [--reopen REASON]` | Выполняет preflight, затем пишет базовый снимок задачи и `runs/T<n>-brief.md`. |
 | `wait` | `<slug> T<n>\|tidy [--timeout S] [--shell-budget S]` | Ждёт новый отчёт задачи с любым статусом или запись tidy. Тайм-аут по умолчанию: 540 секунд. |
-| `report` | `<slug> T<n> --status STATUS --summary TEXT --red TEXT --green TEXT [--mutation TEXT] [--concern TEXT] [--body-file FILE]` | Пишет отчёт задачи и его JSON с результатом по фактическим изменениям. |
+| `report` | `<slug> T<n> --status STATUS --summary TEXT --red TEXT --green TEXT [--mutation TEXT] [--concern TEXT] [--deviation 'ID: kept\|reverted: WHY'] [--body-file FILE]` | Пишет отчёт задачи и его JSON с результатом по фактическим изменениям. Отчёту DONE нужно решение по каждому записанному отклонению; оставленное (kept) становится замечанием (concern). |
+| `deviation` | `<slug> T<n> --text TEXT` | Worker записывает одно отступление от брифа в момент, когда оно случилось, в `runs/T<n>-deviations.md` (id `T<n>.d<k>`, не больше 400 символов). Файл переживает компакт контекста самого worker; `accept` отклоняет запись, сделанную после отчёта, reopen архивирует файл вместе с отчётом, а `pre-review` пишет решённые записи в `runs/G<n>-deviations.md` для reviewer кода. |
 | `accept` | `<slug> T<n> [--scope-only] [--result-file FILE] [--note TEXT] [--resolved HOW] [--verification-timeout S]` | Проверяет область, проверяет отчёт, запускает команды Verification, снова проверяет область, записывает доказательства (Evidence). |
 | `external-result` | `<slug> T<n> --outcome {PASS,FAIL} --evidence TEXT [--log PATH] [--supersede REASON]` | Записывает результат проверки `External verification:` задачи. |
 | `amend` | `<slug> T<n> [--allow PATH] [--derived PATH] [--controller-path PATH] --reason TEXT` | Добавляет в область задачи путь worker, производный путь или правку контроллера. |
@@ -714,6 +735,7 @@ python3 <orchestrator-root>/scripts/coordination_log.py decision <log> --by {use
 python3 <orchestrator-root>/scripts/coordination_log.py state <log> --file PATH|-
 python3 <orchestrator-root>/scripts/coordination_log.py last <log>
 python3 <orchestrator-root>/scripts/coordination_log.py get <log> D<n>
+python3 <orchestrator-root>/scripts/coordination_log.py capsule <log> [--status PATH] [--max-lines N]
 ```
 
 | Подкоманда | Значение |
@@ -722,6 +744,7 @@ python3 <orchestrator-root>/scripts/coordination_log.py get <log> D<n>
 | `state` | Заменяет блок между маркерами текущего состояния. |
 | `last` | Выводит заголовок самого нового решения. |
 | `get` | Выводит одно решение. |
+| `capsule` | Выводит памятку роли оркестратора для чтения после компакта: мандат, который его выдал (решение пользователя, где назван мандат, а не принятое по нему), блок текущего состояния, текущее состояние из `status.md` рядом с журналом, заголовки пяти последних решений и неизменные правила; не больше `--max-lines` (60) строк и 4096 байт. |
 
 `--by user` требует `--quote` со словами самого пользователя. Ответ из одного
 «go» или «ok» также требует `--confirms`: этот флаг называет единственное

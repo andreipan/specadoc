@@ -116,7 +116,8 @@ List every changed file and its purpose.
 Map each supplied requirement or scenario to code and tests.
 
 ## Deviations
-Any deviation from the task or plan. Write "None" when absent.
+Any deviation from the task or plan. Write "None" when absent. Record each one
+as it happens (`specadoc_step.py deviation`, see the brief), not only here.
 
 ## Outstanding items
 Anything the user asked for in this session that was not addressed, so a

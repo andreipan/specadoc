@@ -612,7 +612,7 @@ def check_spec(spec: Document, root: str, *, expect_capabilities_applied: bool =
 # Path and command fields whose indented continuation lines are part of the
 # value: a wrapped `Files:` must not silently lose its second line (3.7, 3.8).
 CONTINUED_FIELDS = frozenset({"Files", "Derived files", "Verification", "Verification inputs",
-                              "Depends on", "Scope amendment"})
+                              "Depends on", "Scope amendment", "Obligations"})
 
 
 def task_fields(plan: Document, start: int, end: int) -> dict[str, str]:
@@ -920,6 +920,25 @@ def change_folder_paths(plan: Document, files_field: str) -> list[str]:
         return []
     return [pattern for pattern in files_patterns(files_field)[0]
             if pattern == folder or pattern.startswith(folder + "/")]
+
+
+def obligation_field_violations(plan: Document) -> list[Violation]:
+    """A task's `**Obligations:**` names design obligations of `## Global constraints` by id only."""
+    from design_gate import obligation_lines
+    known = obligation_lines(plan)
+    violations = []
+    for identifier, start, end in plan.blocks("Tasks", "T"):
+        value = task_fields(plan, start, end).get("Obligations")
+        if value is None:
+            continue
+        cited = re.findall(r"[A-Z]\d+(?:\.\d+)+", value)
+        unknown = [item for item in cited if item not in known]
+        if not cited or unknown:
+            violations.append(Violation(
+                plan.display, start + 1,
+                f"{identifier}: **Obligations:** names ids of `- Design obligation <id>` lines in Global "
+                f"constraints ({', '.join(known) or 'there are none'}); unknown: {', '.join(unknown) or value}"))
+    return violations
 
 
 def check_plan(plan: Document, requirement_ids: list[str]) -> list[Violation]:
@@ -1711,6 +1730,12 @@ def main() -> int:
         from design_gate import missing_inventory_warning
         cross_warnings += (repeated_verification_warnings(plan) + controller_routing_warnings(plan)
                            + missing_inventory_warning(plan) + verification_env_warnings(plan))
+    if args.phase in ("plan", "pre-review", "final"):
+        violations += obligation_field_violations(plan)
+        from design_gate import short, uncited_obligations
+        if uncited := uncited_obligations(plan):
+            cross_warnings.append(f"design obligation(s) {short(uncited)} in Global constraints are named by no "
+                                  "task's **Obligations:** field; `approve` refuses that")
     if args.phase != "spec":
         cross_warnings += plan_size_warnings(plan)
     task_count = len(plan.blocks("Tasks", "T"))

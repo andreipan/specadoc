@@ -48,6 +48,17 @@
               "new"
             ]
           },
+          "class": {
+            "type": "string",
+            "enum": [
+              "data",
+              "money",
+              "access",
+              "user-path",
+              "wrong-result",
+              "other"
+            ]
+          },
           "items": {
             "type": "array",
             "items": {

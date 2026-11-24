@@ -6,6 +6,7 @@
     coordination_log.py state <file> --file <path|->
     coordination_log.py last <file>
     coordination_log.py get <file> D<n>
+    coordination_log.py capsule <file> [--status <status.md>] [--max-lines 60]
 
 `decision` appends `### D<n> — <title> [by <author>] (<UTC time>)` after the
 highest existing D<n>; earlier entries are never rewritten. `--by user` needs
@@ -17,6 +18,10 @@ under the mandate.
 a controller cites the number the log assigned (4.1/4.2: D12 sent for D11). `state` replaces only the block
 between the current-state markers, created under the first heading when absent.
 Both refuse oversized text: the log records verdicts and references, not logs.
+`capsule` prints a short role reminder for the orchestrator to re-read after a
+compaction (week 47: orchestrator sessions compacted at 202-274k and lost their
+role): the mandate, the current state, the newest decisions and fixed rules. A
+host hook may inject it; without one the orchestrator runs it itself.
 """
 from __future__ import annotations
 
@@ -109,12 +114,94 @@ def state(path: Path, body: str) -> None:
     write(path, updated.rstrip("\n") + "\n")
 
 
+CAPSULE_BYTES = 4096
+MANDATE = re.compile(r"mandat|мандат", re.I)
+UNDER = re.compile(r"\b(?:under|по|в рамках) (?:the )?(?:mandate|мандат)", re.I)
+CAPSULE_RULES = [
+    "## Rules",
+    "- You coordinate controllers: do not read repository code, tests or skills and do not run quality tools or "
+    "tests yourself; a scout or the integration verifier does, and you read verdicts and cited lines.",
+    "- Decide only what the mandate covers (references/checkpoints.md, Decision boundaries); a changed contract, "
+    "response code, data, security, money, production, a dependency install or routing goes to the user.",
+    "- Record each decision with `coordination_log.py decision <record> --by orchestrator` and cite the D<n> that "
+    "`last` or `get` prints, never one from memory.",
+    "- One writer per checkout; never edit a controller's active diff or direct its workers.",
+    "- Relay a controller's options verbatim; use the question tool only while every child is idle.",
+    "- Keep each message to a controller near 150 words: the decision, the checkpoint key and D<n>.",
+    "- Next: run `specadoc_step.py status <slug>` for every live controller and reconcile before acting.",
+]
+
+
+def current_block(path: Path) -> list[str]:
+    """Lines of the current-state block, or []."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    if BEGIN not in text or END not in text:
+        return []
+    return [line for line in text.split(BEGIN, 1)[1].split(END, 1)[0].strip().splitlines() if line.strip()]
+
+
+def capsule(path: Path, status: Path | None = None, max_lines: int = 60) -> str:
+    """The orchestrator's role reminder: at most `max_lines` lines and CAPSULE_BYTES bytes."""
+    if not path.is_file():
+        raise ValueError(f"{path} does not exist")
+    found = entries(path)
+    state_lines = current_block(path)
+    if not found and not state_lines:
+        raise ValueError(f"{path} has neither decisions nor a current-state block; it is not a coordination record")
+    # The mandate is the user's decision that grants it, not the later ones taken "under mandate D<n>"
+    # (stage 6: D118 grants it; D125-D150 cite it).
+    headers = [(text, text.splitlines()[0]) for _, text in reversed(found)]
+    granted = [text for text, header in headers if MANDATE.search(header) and not UNDER.search(header)]
+    mandate = next((text for text in granted if "[by user]" in text.splitlines()[0]), None) \
+        or next(iter(granted), None) \
+        or next((text for text, header in headers if MANDATE.search(header) and "[by user]" in header), None)
+    status = status if status is not None else path.with_name("status.md")
+    status_lines = current_block(status) if status != path else []
+    head = ["# Orchestrator capsule — re-read after a compaction", "",
+            f"You are the orchestrator of this run. Record: `{path}`.", ""]
+    sections: list[list[str]] = []
+    if mandate:
+        lines = mandate.splitlines()
+        sections.append(["## Mandate", lines[0].removeprefix("### "), *lines[1:7]])
+    if state_lines:
+        sections.append(["## Current state", *state_lines])
+    if status_lines:
+        sections.append([f"## Status ({status.name})", *status_lines])
+    if found:
+        sections.append(["## Newest decisions", *(f"- {text.splitlines()[0].removeprefix('### ')}"
+                                                  for _, text in found[-5:])])
+    tail = ["", *CAPSULE_RULES]
+    budget = max_lines - len(head) - len(tail)
+
+    def render(parts: list[list[str]]) -> list[str]:
+        lines: list[str] = []
+        for part in parts:
+            lines += [*part, ""]
+        return lines
+
+    body = render(sections)
+    # Trim from the bottom of each long section until the capsule fits: rules and the mandate header stay.
+    while (len(body) > budget or len("\n".join(head + body + tail).encode("utf-8")) > CAPSULE_BYTES) and \
+            any(len(part) > 2 for part in sections):
+        longest = max(sections, key=len)
+        longest.pop()
+        body = render(sections)
+    return "\n".join(head + body + tail).rstrip() + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     actions = parser.add_subparsers(dest="action", required=True)
-    for name in ("decision", "state", "last", "get"):
+    for name in ("decision", "state", "last", "get", "capsule"):
         action = actions.add_parser(name)
         action.add_argument("log", type=Path)
+        if name == "capsule":
+            action.add_argument("--status", type=Path, help="status.md with its own current-state block "
+                                                           "(default: status.md beside the record)")
+            action.add_argument("--max-lines", type=int, default=60)
         if name in ("decision", "state"):
             action.add_argument("--file", required=True, help="Entry text file, or - for stdin")
         if name == "decision":
@@ -127,6 +214,9 @@ def main() -> int:
             action.add_argument("id", help="Decision id such as D12")
     args = parser.parse_args()
     try:
+        if args.action == "capsule":
+            print(capsule(args.log, args.status, args.max_lines), end="")
+            return 0
         if args.action in ("last", "get"):
             found = entries(args.log)
             if args.action == "last":

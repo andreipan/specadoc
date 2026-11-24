@@ -23,6 +23,13 @@ DESIGN_REVIEW = "Design review"
 # 6.12 took six design rounds, 6.14 seven: after ROUND_CAP recorded rounds the next one needs a decision,
 # `continue: <source>` (one more round) or `accept: <source>` (open IMPORTANT items become apply obligations).
 ROUND_CAP = 4
+# After SHIP_ROUNDS recorded rounds only "must not ship" defects hold the design; a BLOCKER or IMPORTANT of
+# class `other` becomes an apply obligation. 7.1, 8.1, 8.2 took 8, 11 and 7 rounds, and from round 3 on most
+# of their BLOCKERs were test design or spec wording; 6.17 r2 (after `origin`) still had more BLOCKERs than r1.
+SHIP_ROUNDS = 2
+SHIP_CLASSES = ("data", "money", "access", "user-path", "wrong-result")
+OTHER = "other"
+SHIP_RULE = f"must-not-ship rule after design round {SHIP_ROUNDS}"
 ROUND_FILE = "design-round.json"
 ACCEPTED = "ACCEPTED"
 DECISION = re.compile(r"\s*(?P<kind>continue|accept)\s*:\s*(?P<source>\S.*?)\s*$", re.I)
@@ -174,7 +181,8 @@ def missing_inventory_warning(plan: Document) -> list[str]:
 
 
 BLOCKING = ("BLOCKER", "IMPORTANT")
-FINDING = re.compile(r"- (?P<severity>BLOCKER|IMPORTANT|MINOR): ")
+FINDING = re.compile(r"- (?P<severity>BLOCKER|IMPORTANT|MINOR)(?: \[(?P<cls>[a-z-]+)\])?: ")
+OBLIGATION = re.compile(r"\s*- Design obligation (?P<id>[A-Z]\d+(?:\.\d+)+) \(")
 ITEM = re.compile(r"  - (?P<id>F\d+\.\d+): (?P<text>.*)")
 RESOLUTION = re.compile(r"    - (?P<kind>resolved|rejected): (?P<text>.*)")
 ENTRY = re.compile(r"\s*(?:[-*]\s*)?(?P<id>F\d+\.\d+)\s*[:=]\s*(?P<kind>resolved|rejected)\s*:\s*(?P<text>.+?)\s*$", re.I)
@@ -189,7 +197,8 @@ def finding_lines(findings: list[dict]) -> list[str]:
     flat = lambda value: " ".join(str(value).split())  # noqa: E731
     lines, number = [], 0
     for finding in findings:
-        lines.append(f"- {finding['severity']}: {flat(finding['location'])} — {flat(finding['summary'])}")
+        tag = f" [{finding['class']}]" if finding.get("class") else ""
+        lines.append(f"- {finding['severity']}{tag}: {flat(finding['location'])} — {flat(finding['summary'])}")
         if finding["severity"] in BLOCKING:
             number += 1
             items = [flat(item) for item in finding.get("items") or [] if flat(item)] or ["the whole finding"]
@@ -232,7 +241,8 @@ def round_state(change: Path) -> dict:
         state = json.loads((change / "runs" / ROUND_FILE).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         state = {}
-    return {"recorded": int(state.get("recorded", 0)), "decisions": list(state.get("decisions", []))}
+    return {"recorded": int(state.get("recorded", 0)), "decisions": list(state.get("decisions", [])),
+            "rounds": list(state.get("rounds", []))}
 
 
 def save_round_state(change: Path, state: dict) -> None:
@@ -277,6 +287,109 @@ def record_continue(change: Path, authorization: str) -> None:
     state = round_state(change)
     state["decisions"].append({"round": state["recorded"] + 1, "kind": "continue", "source": authorization})
     save_round_state(change, state)
+
+
+def must_not_ship(finding: dict) -> bool:
+    """A finding without a class counts as must-not-ship: the rule never defers what it cannot classify."""
+    return finding.get("class", "") != OTHER
+
+
+def open_ship_items(plan: Document) -> int:
+    """BLOCKER/IMPORTANT findings of the recorded FAIL round with an explicit must-not-ship class. An
+    unclassified finding is never deferred, but it does not demand a new method either (a reviewer that
+    sets no class keeps the earlier behavior)."""
+    if review_fields(plan).get("Result", "").upper() != "FAIL":
+        return 0
+    return sum(1 for line in recorded_findings(plan)
+               if (m := FINDING.match(line)) and m["severity"] in BLOCKING and m["cls"] in SHIP_CLASSES)
+
+
+def needs_method(change: Path, plan: Document) -> int | None:
+    """The next round's number when it is past SHIP_ROUNDS with must-not-ship findings still open: that
+    round must change how it verifies them (another method or owner), not only the reviewer model."""
+    recorded = round_state(change)["recorded"]
+    if recorded >= SHIP_ROUNDS and open_ship_items(plan):
+        return recorded + 1
+    return None
+
+
+def methods(plan: Document) -> list[str]:
+    """Verification methods recorded for earlier design rounds, in order."""
+    found = []
+    for _, line in (plan.body("Confirmed decisions") if "Confirmed decisions" in plan.sections else []):
+        if m := re.match(r"\s*- Design round method: round \d+ — (?P<text>.+?)\s*$", line):
+            found.append(" ".join(m["text"].split()).lower())
+    return found
+
+
+def record_method(change: Path, number: int, method: str) -> None:
+    """Keep the round's verification method in `## Confirmed decisions`; the same method twice is refused."""
+    method = " ".join(method.split())
+    plan_path = change / "plan.md"
+    plan = Document(plan_path, str(plan_path))
+    if len(method.split()) < 3:
+        raise ValueError("--verify-by needs the method or owner of this round in three words or more, e.g. "
+                         "`spike test of the lock order` or `user decides the retry contract`")
+    if method.lower() in methods(plan):
+        raise ValueError(f"design round {number} repeats an earlier method ({method}); a round past "
+                         f"{SHIP_ROUNDS} changes how the open items are verified or who owns them")
+    line = f"- Design round method: round {number} — {method}"
+    lines = list(plan.lines)
+    if "Confirmed decisions" in plan.sections:
+        anchor = plan.sections["Confirmed decisions"][1]
+        while anchor > 0 and not lines[anchor - 1].strip():
+            anchor -= 1
+        lines[anchor:anchor] = [line]
+    else:
+        lines += ["", "## Confirmed decisions", "", line]
+    plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+
+
+def deferred_obligations(findings: list[dict], number: int) -> list[str]:
+    """`## Global constraints` lines for the BLOCKER/IMPORTANT findings of class `other` a round past
+    SHIP_ROUNDS defers: one per item, ids `R<round>.<n>`."""
+    flat = lambda value: " ".join(str(value).split())  # noqa: E731
+    lines, index = [], 0
+    for finding in findings:
+        items = [flat(item) for item in finding.get("items") or [] if flat(item)] or [flat(finding["summary"])]
+        for item in items:
+            index += 1
+            lines.append(f"- Design obligation R{number}.{index} (deferred in design round {number}, not "
+                         f"must-not-ship; {finding['severity']}): {flat(finding['location'])} — {item}")
+    return lines
+
+
+def obligation_lines(plan: Document) -> dict[str, str]:
+    """Design obligations of `## Global constraints` by id."""
+    if "Global constraints" not in plan.sections:
+        return {}
+    return {m["id"]: line.strip() for _, line in plan.body("Global constraints") if (m := OBLIGATION.match(line))}
+
+
+def uncited_obligations(plan: Document) -> list[str]:
+    """Design obligation ids no task names in its `**Obligations:**` field."""
+    from validate_change import task_fields
+    known = obligation_lines(plan)
+    if not known:
+        return []
+    cited: set[str] = set()
+    for _, start, end in plan.blocks("Tasks", "T"):
+        cited |= set(re.findall(r"[A-Z]\d+(?:\.\d+)+", task_fields(plan, start, end).get("Obligations", "")))
+    return [identifier for identifier in known if identifier not in cited]
+
+
+def rounds_line(change: Path, limit: int = 400) -> str | None:
+    """One archive line with every recorded round's verdict and counts, or None before the first round."""
+    rounds = round_state(change)["rounds"]
+    if not rounds:
+        return None
+    parts = [f"r{r['round']} {r['verdict']} B{r.get('BLOCKER', 0)}/I{r.get('IMPORTANT', 0)}/M{r.get('MINOR', 0)}"
+             + (f" +{r['deferred']} deferred" if r.get("deferred") else "") for r in rounds]
+    line = "Design rounds: " + ", ".join(parts)
+    while len(line) > limit and len(parts) > 3:
+        parts = [parts[0], "…", *parts[-(len(parts) - 3):]] if parts[1] != "…" else [parts[0], "…", *parts[3:]]
+        line = "Design rounds: " + ", ".join(parts)
+    return line
 
 
 def passed_label(plan: Document) -> str:
@@ -456,7 +569,8 @@ def previous_round(change: Path, plan: Document) -> tuple[list[str], list[str]] 
     return [line for line in findings if line.strip() != "- None."], changes
 
 
-def write_brief(change: Path, full: bool = False, authorization: str | None = None) -> tuple[Path, bool]:
+def write_brief(change: Path, full: bool = False, authorization: str | None = None,
+                method: str | None = None) -> tuple[Path, bool]:
     """Reviewer prompt from the plan sections that decide the design; no code yet. After a recorded
     round it is a re-review of that round's findings and of what changed in spec.md, plan.md and
     design.md since, unless `full`. Returns the path and whether the brief is a re-review.
@@ -505,8 +619,14 @@ def write_brief(change: Path, full: bool = False, authorization: str | None = No
                 else "- None: the design changed after a PASS.")
         prior = ["## Previous findings", "", *(findings or [none]), "",
                 "## Changes since the reviewed design", "", "````diff", *(changes or ["(no change)"]), "````", ""]
+    number = round_state(change)["recorded"] + 1
+    ship = ([f"- This is design round {number}: only must-not-ship findings (class other than `other`) hold the "
+             "design now. A BLOCKER or IMPORTANT of class `other` becomes an apply obligation and does not fail "
+             "the round, so classify honestly."] if number > SHIP_ROUNDS else [])
     lines = [f"# Design {'re-review' if previous else 'review'}: `{change.name}`", "",
-             *([f"Round authorization: {authorization}", ""] if authorization else []), "## Contract", "",
+             *([f"Round authorization: {authorization}", ""] if authorization else []),
+             *([f"Round method: {' '.join(method.split())} (check the open must-not-ship items this way)", ""]
+               if method else []), "## Contract", "",
              "- Read-only. Review the design before any code exists; do not edit files or run builds.",
              "- Inspect the existing code the plan names as exemplars only to judge the design.",
              *scope,
@@ -547,6 +667,14 @@ def write_brief(change: Path, full: bool = False, authorization: str | None = No
              "them all in this round: the author answers item by item and a re-review adds none.",
              "- BLOCKER: the design cannot meet a requirement or breaks a layer rule. IMPORTANT: a file or port "
              "without a reason, or a clearly simpler design. MINOR: naming or placement.",
+             "- Set `class` on every BLOCKER and IMPORTANT: `data` (data lost or corrupted), `money`, `access` "
+             "(secrets, authentication, another user's data, personal data left in clear), `user-path` (a user "
+             "cannot finish a required path), `wrong-result` (a silently wrong result), else `other` (test "
+             "design, spec wording, internal rules, structure). A finding of the first five classes names the "
+             "actor, the input and the wrong outcome in `summary`, and shows that the state can occur: the code "
+             "path (file:line), existing rows, or an input the spec admits. A state nobody showed can occur (a "
+             "hypothetical legacy row, deadline or timing arithmetic, an unverified claim about another "
+             "component) is `other` until shown.", *ship,
              f"- Return JSON matching `{(Path(__file__).resolve().parent.parent / 'assets/reviewer-result.schema.json')}`; "
              "`report` is a short prose summary, then the row lines; location is the inventory path or plan "
              "section.", ""]
@@ -587,17 +715,27 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
     if errors := schema_errors(payload, json.loads(schema_path("reviewer").read_text())):
         raise ValueError("invalid design review result: " + "; ".join(errors))
     counted, notes = split_findings(payload["findings"], rereview_brief(change))
+    number = round_state(change)["recorded"] + 1
+    deferred = ([f for f in counted if f["severity"] in BLOCKING and not must_not_ship(f)]
+                if number > SHIP_ROUNDS else [])
+    counted = [f for f in counted if f not in deferred]
     verdict = payload["verdict"]
-    if verdict == "FAIL" and notes and not any(f["severity"] in BLOCKING for f in counted):
-        verdict = "PASS"
+    if not any(f["severity"] in BLOCKING for f in counted):
+        if deferred:
+            verdict = ACCEPTED
+        elif verdict == "FAIL" and notes:
+            verdict = "PASS"
     if verdict == "PASS" and any(f["severity"] in BLOCKING for f in counted):
         raise ValueError("design review PASS contradicts open BLOCKER/IMPORTANT findings")
+    obligations = deferred_obligations(deferred, number)
     flat = lambda value: " ".join(value.split())  # noqa: E731
     note_lines = [f"- note ({f['severity']}, outside the changes): {flat(f['location'])} — {flat(f['summary'])}"
                   for f in notes]
+    why = ("only findings outside the re-review scope; see Notes" if not deferred
+           else f"findings of class `other` are apply obligations after round {SHIP_ROUNDS}; see Deferred")
     body = ["", f"**Result:** {verdict}",
-            *([f"**Reviewer verdict:** {payload['verdict']} (only findings outside the re-review scope; see "
-               "Notes)"] if verdict != payload["verdict"] else []),
+            *([f"**Accepted by:** {SHIP_RULE}"] if verdict == ACCEPTED else []),
+            *([f"**Reviewer verdict:** {payload['verdict']} ({why})"] if verdict != payload["verdict"] else []),
             f"**Inventory hash:** {current}",
             f"**Reviewer:** {flat(reviewer)}",
             *([f"**Reviewer agent:** `{agent}`"] if agent else []),
@@ -605,6 +743,8 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
             f"**Result source:** `{source}`",
             f"**Result digest:** {digest(result_path)}", "", "### Findings", "",
             *(finding_lines(counted) or ["- None."]), "",
+            *(["### Deferred to apply (not must-not-ship)", "",
+               *(line.replace("- Design obligation ", "- ", 1) for line in obligations), ""] if obligations else []),
             *(["### Notes outside the re-review scope", "", *note_lines, ""] if note_lines else [])]
     lines = list(plan.lines)
     if DESIGN_REVIEW in plan.sections:
@@ -614,6 +754,7 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         anchor = plan.sections[INVENTORY][1]
         lines[anchor:anchor] = [f"## {DESIGN_REVIEW}", *body]
     plan_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    add_constraints(plan_path, obligations)
     briefed = change / "runs" / BRIEFED
     if briefed.is_dir():
         # The next design-brief diffs against what this round saw: the files as its brief was written,
@@ -621,6 +762,14 @@ def record(change: Path, source: str, reviewer: str, agent: str | None = None,
         _copy_design(briefed, change / "runs" / REVIEWED)
     state = round_state(change)
     state["recorded"] += 1
+    # Per-round counts survive in the archive record (runs/ is removed at archive; 8.1 and 8.2 lost theirs).
+    every = counted + deferred
+    state["rounds"].append({
+        "round": state["recorded"], "verdict": verdict, "reviewer_verdict": payload["verdict"],
+        **{severity: sum(1 for f in counted if f["severity"] == severity) for severity in ("BLOCKER", "IMPORTANT", "MINOR")},
+        "deferred": len(deferred), "notes": len(notes),
+        "classes": {cls: n for cls in (*SHIP_CLASSES, OTHER, "unset")
+                    if (n := sum(1 for f in every if f["severity"] in BLOCKING and f.get("class", "unset") == cls))}})
     save_round_state(change, state)
     # A recorded brief starts no other round (8.2: a chain ran the reviewer on the previous brief after
     # design-brief had refused round 5).

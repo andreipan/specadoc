@@ -43,9 +43,12 @@ reads verdicts, not raw evidence: delegate bulk searches over controller
 artifacts, integration runs, and field-by-field contract comparison to a bounded
 scout or worker, then inspect the cited lines it returns.
 
-Update after a transition. After compaction, read back this record, inspect actual
-controller states and referenced evidence, reconcile unacknowledged/stale events,
-then continue. A note saying "ready" is not compatibility evidence. Avoid replaying
+Update after a transition. After compaction, read `coordination_log.py capsule
+<file>` (mandate, current state, newest decisions and the orchestrator's rules in
+at most 60 lines; a host hook may already have injected it; week 47 sessions
+compacted at 202-274k and lost their role), then read back this record, inspect
+actual controller states and referenced evidence, reconcile unacknowledged/stale
+events, then continue. A note saying "ready" is not compatibility evidence. Avoid replaying
 whole transcripts or copying full logs; keep proof by reference and inspect it
 when needed.
 

@@ -446,8 +446,15 @@ class AcceptStaleInventoryTest(DesignRoundCapTest):
     def test_approve_passes_after_a_valid_accept(self):
         self.fail_rounds(4)
         self.assertEqual(0, self.run_step("design-brief", "demo", "--attempt-decision", "accept: orchestrator D8").returncode)
-        approved = self.run_step("approve", "demo", "--by", "orchestrator", "--source", "mandate D80, decision D8",
-                                 "--bindings", "worker claude/sonnet/medium")
+        approve = ("approve", "demo", "--by", "orchestrator", "--source", "mandate D80, decision D8",
+                   "--bindings", "worker claude/sonnet/medium")
+        # An accepted obligation is met by a named task (run 6.17: deferred items had no owner).
+        refused = self.run_step(*approve)
+        self.assertEqual(2, refused.returncode, refused.stdout)
+        self.assertIn("F1.1 in Global constraints are named by no task", refused.stdout)
+        self.plan.write_text(self.plan.read_text().replace(
+            "- **Implementation:** Return ready", "- **Implementation:** Return ready\n- **Obligations:** F1.1", 1))
+        approved = self.run_step(*approve)
         self.assertEqual(0, approved.returncode, approved.stdout + approved.stderr)
 
 

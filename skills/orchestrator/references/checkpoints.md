@@ -94,7 +94,13 @@ BLOCKER on test design, spec wording or an internal rule is yours as well; when
 it comes back in a new form after a round, choose a simpler check or drop the
 claim with its residual risk recorded instead of ordering the same round again
 (7.1, 8.1, 8.2: 8, 11 and 7 design rounds, and 4 h 15 min waiting for the user on a
-race-test BLOCKER). Name every such round in the final report. Without a mandate the round is the user's. Never write
+race-test BLOCKER). From design round 3 Specadoc itself turns findings of class
+`other` into apply obligations (`R3.1`) and accepts a round with no must-not-ship
+finding left (data, money, access, user path, silently wrong result); a round past
+2 with must-not-ship items open needs `design-brief --verify-by '<method or owner>'`.
+Choose that method under the mandate (a spike test, a simpler check, the user as
+owner of a contract question), never the same review again. Name every such round
+in the final report. Without a mandate the round is the user's. Never write
 "user-approved" without the user's words (6.12-6.15 asked the user for rounds
 the mandate covered and waited up to 14 hours).
 

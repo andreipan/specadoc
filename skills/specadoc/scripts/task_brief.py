@@ -124,6 +124,12 @@ def build_brief(change: Path, task_id: str) -> str:
         "- Order: finish RED, implement to GREEN, then run the formatter/style fixer once over all your changed files, then the Verification commands. Do not alternate fixer and tests file by file.",
         "- Use the exact Verification commands and project configuration in Test context. Verification inputs are read-only dependencies, not additional write scope. Report missing context instead of guessing a default formatter or broad test suite.",
         "- Stop at NEEDS_CONTEXT before required wiring, exports or dependent tests outside Files and Derived files; stop at BLOCKED for a new architecture, compatibility or catalog decision, or when requirements conflict. Never weaken, delete or skip a test or assertion to make a check pass (4.11: a worker removed an assertion); a check you cannot satisfy is a BLOCKED report. Show RED without moving, renaming or stubbing production files (4.10: a worker set one aside); a test that fails against the current code is the RED. Check the exit code of every command in a chain. Disclosing a deviation is not approval to make it.",
+        # AI Dev Live 2026 (coordinator-mode): deviations kept only for the final report are lost when the
+        # worker's own context is compacted.
+        f"- When you depart from this brief (another helper, file, name, order or check), record it at once with "
+        f"`python3 {Path(__file__).with_name('specadoc_step.py').resolve()} deviation {change.name} {task_id} --text "
+        "'<what and why>'`, one entry per departure, before you go on. `report` then needs "
+        "`--deviation '<id>: kept|reverted: <why>'` for every entry; a kept one is a concern for the controller.",
         *(["- The real run of this task is External verification, so nothing executes your queries before it: "
            "check every table, column and stored value the test uses against the schema source in Test context "
            "(migrations or a schema dump). Rows the test commits carry a run-unique marker and are deleted by "
@@ -161,6 +167,14 @@ def build_brief(change: Path, task_id: str) -> str:
     constraints = [line for _, line in spec.body("Constraints")]
     if any(line.strip() for line in constraints):
         lines += ["## Constraints", "", *constraints, ""]
+    # Design-gate obligations this task meets (deferred or accepted findings of the design review).
+    from design_gate import obligation_lines
+    known = obligation_lines(plan)
+    named = [known[item] for item in re.findall(r"[A-Z]\d+(?:\.\d+)+", fields.get("Obligations", ""))
+             if item in known]
+    if named:
+        lines += ["## Design obligations", "",
+                  "Meet each in this task and test it; the code reviewer checks every one.", "", *named, ""]
     return "\n".join(lines).rstrip() + "\n"
 
 

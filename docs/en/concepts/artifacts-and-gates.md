@@ -127,6 +127,14 @@ it. During `apply`, `accept`, `pre-review` and the final gate refuse a new
 non-test file outside the inventory. An unplanned file is a design change: it
 gets a row and a new design review.
 
+After two rounds only must-not-ship defects hold the design: lost or corrupted
+data, money, access (secrets, authentication, another user's data), a broken
+user path and a silently wrong result. From round 3 a finding of class `other`
+(test design, spec wording, internal rules) becomes an obligation for `apply`
+that a task names in `**Obligations:**` and the code reviewer checks. A round
+past the second with must-not-ship items open must verify them another way or
+with another owner (`--verify-by`), not repeat the same review.
+
 After four recorded design rounds, a FAIL needs a decision to go on.
 `continue: <source>` allows one more round. `accept: <source>` turns the open
 IMPORTANT items into obligations for `apply`. A BLOCKER is never accepted.

@@ -39,7 +39,8 @@ Foreman inside them. For one local change, prefer one ordinary controller.
    6.14 idle sleep looked like three stalled reviewer runs.
 5. Reuse the record found in step 1, or create one where `references/state.md`
    says. It tracks relationships and shared decisions, not duplicate local
-   specifications, task lists, or verification logs.
+   specifications, task lists, or verification logs. After every compaction
+   read `coordination_log.py capsule <record>` first (a host hook may inject it).
 6. For a block of roadmap steps, run research before the first controller
    (`references/research.md`): a read-only Specadoc explore per step, every
    question that only the user may answer asked once, the rest decided under

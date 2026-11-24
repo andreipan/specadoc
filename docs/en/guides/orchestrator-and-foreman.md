@@ -379,6 +379,7 @@ through these scripts.
 | `coordination_log.py state <file> --file -` | Replaces the current-state block, at most 1,536 bytes |
 | `coordination_log.py last <file>` | Prints the header of the newest decision |
 | `coordination_log.py get <file> D<n>` | Prints one decision |
+| `coordination_log.py capsule <file>` | Prints the role reminder to read after a compaction, at most 60 lines |
 | `ba_register.py add <file> --title T --step S --type T --status S` | Adds an item with the next free number |
 | `ba_register.py status <file> <n> --status S [--note TEXT]` | Changes the status of an item and keeps the item |
 | `ba_register.py list <file> [--status TEXT]` | Lists the items |

@@ -32,7 +32,7 @@ severities and statuses are fixed English identifiers.
 | decision risk | The task field `low`, `medium` or `high`: the risk of the decisions left to the implementer. `Owner: worker` needs `low`. | [Plan structure](plan-structure.md#task-fields) |
 | derived files | The task field with generated or wiring paths that a task can also change, for example lockfiles. Changes there are listed, not violations. | [Plan structure](plan-structure.md#task-fields) |
 | design gate | The check before plan approval: an independent `reviewer` checks the class inventory. `dispatch` needs a current PASS. | [Artifacts and gates](../concepts/artifacts-and-gates.md#design-gate) |
-| design obligation | An open IMPORTANT item of a FAIL design round that the controller accepts after the round cap. It goes to `## Global constraints` and binds `apply`. | [Artifacts and gates](../concepts/artifacts-and-gates.md#design-gate) |
+| design obligation | A design finding moved into `apply`: an open IMPORTANT item accepted or carried past the round cap (`F1.2`), or a finding of class `other` from round 3 on (`R3.1`). It goes to `## Global constraints`, a task names it in `**Obligations:**`, and the code reviewer checks it. | [Artifacts and gates](../concepts/artifacts-and-gates.md#design-gate) |
 | dispatch | The `specadoc_step.py dispatch` step. It checks a task, writes its baseline and brief, and hands the task to a worker or the controller. | [Roles](../concepts/roles.md#worker) |
 | DONE | A worker status: the task is complete. | [Roles](../concepts/roles.md#worker) |
 | DONE_WITH_CONCERNS | A worker status: the task is complete, but the worker reports concerns. The controller decides on each concern before acceptance. | [Roles](../concepts/roles.md#worker) |
@@ -51,6 +51,7 @@ severities and statuses are fixed English identifiers.
 | management skill | A skill that manages other agents: `foreman` or `orchestrator`. The user starts it explicitly. | [Orchestrator and foreman](../guides/orchestrator-and-foreman.md) |
 | mandate | The authority that the user explicitly grants to an orchestrator, for example to approve ordinary local plans. | [Orchestrator and foreman](../guides/orchestrator-and-foreman.md#the-mandate) |
 | mode | One of the five Specadoc phases: `explore`, `propose`, `apply`, `light` or `archive`. | [Modes](modes.md) |
+| must-not-ship | The finding classes that hold the design after round 2: `data`, `money`, `access`, `user-path`, `wrong-result`. | [Artifacts and gates](../concepts/artifacts-and-gates.md#design-gate) |
 | native dispatch | A role run as a subagent of the controller, on the controller's runtime. | [Roles](../concepts/roles.md#how-a-role-is-resolved) |
 | NEEDS_CONTEXT | A worker status: the worker needs named context. The controller adds it and dispatches again. This is not a failed attempt. | [Roles](../concepts/roles.md#worker) |
 | plan (`plan.md`) | The mutable technical state of a change: tasks, decisions, approvals, evidence and the archive summary. | [Plan structure](plan-structure.md#planmd) |

@@ -455,7 +455,7 @@ and `status` use it. The other steps accept it and ignore it.
 
 | Step | Arguments and flags | Meaning |
 |---|---|---|
-| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>'] [--context-tokens N]` | Validate the plan, then write `runs/design-brief.md` for the design reviewer. Refuse at the context guard (200k by default, `context.dispatch_guard`): hand off and run the round from a fresh session. `--full` asks for a whole review after a redesign. |
+| `design-brief` | `<slug> [--full] [--attempt-decision 'continue: <source>' \| 'accept: <source>'] [--verify-by METHOD] [--context-tokens N]` | Validate the plan, then write `runs/design-brief.md` for the design reviewer. Refuse at the context guard (200k by default, `context.dispatch_guard`): hand off and run the round from a fresh session. `--full` asks for a whole review after a redesign. `--verify-by` names how a round past the second checks the open must-not-ship items differently, or who owns them. |
 | `design-review` | `<slug> (--result-file FILE \| --from-agent ID) [--same-reviewer-reason TEXT]` | Record the design verdict in `## Design review`, bound to the inventory hash. |
 | `design-resolve` | `<slug> --file FILE\|-` | Answer each item of a FAIL design round: `F1.2: resolved: <where>` or `F1.2: rejected: <why>`. |
 | `approve` | `<slug> --by {user,orchestrator} --source TEXT [--bindings TEXT]` | Record the plan approval and its source. Hash `spec.md` and `design.md` into `runs/approval.json`. |
@@ -473,9 +473,27 @@ under `### Notes outside the re-review scope` and it does not fail the round.
 The recorded round removes `runs/design-brief.md`, so a reviewer cannot start on
 it again.
 
+Every BLOCKER and IMPORTANT finding carries `class`: `data`, `money`, `access`,
+`user-path` and `wrong-result` are must-not-ship; `other` is test design, spec
+wording, internal rules or structure. A must-not-ship class needs a state that
+can occur (a code path, existing rows, an input the spec admits); a hypothetical
+state is `other` until shown. From design round 3 a BLOCKER or IMPORTANT
+of class `other` becomes a design obligation `R<round>.<n>` in
+`## Global constraints` and is listed under `### Deferred to apply (not
+must-not-ship)`. When no must-not-ship finding is left, the round is
+`ACCEPTED` by the must-not-ship rule. A finding without `class` is never
+deferred. A round after the second with must-not-ship items open needs
+`--verify-by '<method or owner>'`, recorded in `## Confirmed decisions` as
+`Design round method`; the same method twice is refused. Each round's counts
+go to `runs/design-round.json` and, at archive, to one `Design rounds:` line of
+`record.md`.
+
 `approve` refuses when the design review is not current, a review round is
-pending, or `validate_change.py --phase plan` fails. It also refuses when no
-bindings line is recorded and `--bindings` is not given.
+pending, a design obligation is named by no task's `**Obligations:**` field, or
+`validate_change.py --phase plan` fails. It also refuses when no bindings line
+is recorded and `--bindings` is not given. The worker brief lists the
+obligations its task names; `pre-review` writes `runs/G<n>-obligations.md` for
+the code reviewer, and an unmet obligation is an IMPORTANT finding.
 
 ### Steps of apply: tasks
 
@@ -485,7 +503,8 @@ bindings line is recorded and `--bindings` is not given.
 | `preflight` | `<slug> T<n>` | Check the task without a change to files. It runs no Verification. |
 | `dispatch` | `<slug> T<n> [--context-tokens N] [--reopen REASON]` | Preflight, then write the task baseline and `runs/T<n>-brief.md`. |
 | `wait` | `<slug> T<n>\|tidy [--timeout S] [--shell-budget S]` | Wait for a new task report of any status, or for the tidy record. Default timeout: 540 seconds. |
-| `report` | `<slug> T<n> --status STATUS --summary TEXT --red TEXT --green TEXT [--mutation TEXT] [--concern TEXT] [--body-file FILE]` | Write the task report and its result JSON from the actual changes. |
+| `report` | `<slug> T<n> --status STATUS --summary TEXT --red TEXT --green TEXT [--mutation TEXT] [--concern TEXT] [--deviation 'ID: kept\|reverted: WHY'] [--body-file FILE]` | Write the task report and its result JSON from the actual changes. A DONE report needs a decision for every recorded deviation; a kept one becomes a concern. |
+| `deviation` | `<slug> T<n> --text TEXT` | The worker records one departure from its brief as it happens, in `runs/T<n>-deviations.md` (id `T<n>.d<k>`, at most 400 characters). The file survives the worker's own compaction; `accept` refuses an entry recorded after the report, a reopen archives the file with the report, and `pre-review` writes the decided entries to `runs/G<n>-deviations.md` for the code reviewer. |
 | `accept` | `<slug> T<n> [--scope-only] [--result-file FILE] [--note TEXT] [--resolved HOW] [--verification-timeout S]` | Check the scope, validate the report, run the Verification commands, check the scope again, record Evidence. |
 | `external-result` | `<slug> T<n> --outcome {PASS,FAIL} --evidence TEXT [--log PATH] [--supersede REASON]` | Record the result of the task's `External verification:`. |
 | `amend` | `<slug> T<n> [--allow PATH] [--derived PATH] [--controller-path PATH] --reason TEXT` | Add a worker path, a derived path or a controller edit to the task scope. |
@@ -699,6 +718,7 @@ python3 <orchestrator-root>/scripts/coordination_log.py decision <log> --by {use
 python3 <orchestrator-root>/scripts/coordination_log.py state <log> --file PATH|-
 python3 <orchestrator-root>/scripts/coordination_log.py last <log>
 python3 <orchestrator-root>/scripts/coordination_log.py get <log> D<n>
+python3 <orchestrator-root>/scripts/coordination_log.py capsule <log> [--status PATH] [--max-lines N]
 ```
 
 | Subcommand | Meaning |
@@ -707,6 +727,7 @@ python3 <orchestrator-root>/scripts/coordination_log.py get <log> D<n>
 | `state` | Replace the block between the current-state markers. |
 | `last` | Print the header of the newest decision. |
 | `get` | Print one decision. |
+| `capsule` | Print the orchestrator's role reminder for after a compaction: the granting mandate (the user's decision that names the mandate, not one taken under it), the current-state block, the current state of `status.md` beside the log, the five newest decision headers and fixed rules; at most `--max-lines` (60) lines and 4096 bytes. |
 
 `--by user` needs `--quote` with the user's own words. A bare "go" or "ok"
 also needs `--confirms`, which names the one proposal it accepted.

@@ -1,4 +1,4 @@
-<!-- source-sha256: 7b99a8dd6d5893099251645267a173fd8596ce331df5668d7b7f36c9624b89c9 -->
+<!-- source-sha256: 9e793b171554002878207d9b825dd1a8e41eb093c38ec7d7a2138a28c887fc6b -->
 # Оркестратор и foreman
 
 [English](../../en/guides/orchestrator-and-foreman.md)
@@ -286,6 +286,7 @@ Question, recommendation, and next action:
 | `coordination_log.py state <file> --file -` | Заменяет блок текущего состояния, не больше 1536 байт |
 | `coordination_log.py last <file>` | Выводит заголовок последнего решения |
 | `coordination_log.py get <file> D<n>` | Выводит одно решение |
+| `coordination_log.py capsule <file>` | Выводит памятку роли для чтения после компакта, не больше 60 строк |
 | `ba_register.py add <file> --title T --step S --type T --status S` | Добавляет пункт со следующим свободным номером |
 | `ba_register.py status <file> <n> --status S [--note TEXT]` | Меняет статус пункта и сохраняет сам пункт |
 | `ba_register.py list <file> [--status TEXT]` | Выводит список пунктов |

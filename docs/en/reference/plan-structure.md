@@ -166,6 +166,7 @@ Other fields in the template:
 | `Open decisions` | Must be `None` before a worker dispatch. |
 | `Controller justification` | Why a task that is ready for a worker stays with the controller. |
 | `Derived files` | Generated or wiring paths that the task can also change. Changes there are listed, not violations. |
+| `Obligations` | Ids of the design obligations in `## Global constraints` that this task meets (`R3.1, F1.2`). `approve` needs every obligation named by a task. |
 | `TDD exception` | An approved exception and its deterministic check. Keep `None` for behavior changes. |
 | `Verification inputs` | Read-only configs, test helpers, tool paths and manifests that Verification uses. Gives no write permission. |
 | `Test context` | Test exemplar, bootstrap helper, test-only environment and one runbook section. |

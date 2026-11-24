@@ -30,6 +30,9 @@ Review in this order:
 - Does observable behavior match the specification?
 - Are errors, boundaries, and state transitions handled correctly?
 - Could the implementation pass tests while violating the requirement?
+- Does every design obligation (`- Design obligation <id>` in Global
+  constraints, or the obligations file named in the brief) hold in the diff?
+  An unmet one is IMPORTANT.
 
 3. Test quality
 - Do tests exercise behavior rather than implementation details?
