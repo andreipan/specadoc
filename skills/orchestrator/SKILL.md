@@ -87,9 +87,11 @@ rationale stays in the coordination record, since every message stays in the
 controller's context for the rest of its session. Relay options
 meant for the user verbatim (`references/checkpoints.md` → Relaying options).
 Route changed requirements through affected local plans and approvals before
-implementation resumes. At a plan checkpoint copy the envelope's `Facts for later
-steps` into the coordination brief under `Known states and platform facts`, one
-line each with file:line; the next controller reads the brief first. Save to
+implementation resumes. At a plan checkpoint add the envelope's `Facts for later
+steps` to the known facts file the coordination brief names, one line each with
+file:line (`references/state.md` → Known facts); every later controller and
+research brief cites it. A brief without that line keeps its `Known states and
+platform facts` section; move such a list between runs, never during one. Save to
 persistent memory only what the coordination record does not hold, and one
 record when the run closes.
 

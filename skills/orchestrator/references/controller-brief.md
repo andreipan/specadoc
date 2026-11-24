@@ -42,6 +42,9 @@ Rules:
   explore evidence, rechecks what it marks `depends on <step>`, asks nothing a
   decision already answered, and returns each new divergence from a source in
   the envelope for the BA register.
+- The brief names the known facts file (`state.md` → Known facts) on its own
+  line. The controller reads it before the spec and the design and returns
+  under `Facts for later steps` only what the file does not hold yet.
 - The plan checkpoint carries the bindings `role_routing.py` resolved; the
   approval message repeats them as `--bindings '<...>'` (4.6: `approve` without
   them was refused once).
@@ -52,6 +55,7 @@ Shape (keep under about 2,000 characters):
 # <step> <slug>: <one-line outcome>
 
 Standing constraints: `<coordination dir>/brief.md` (mandate D<n>, test database D<m>).
+Known facts: `<known facts file>`; read it before the spec and the design.
 Use Specadoc for this change. Start from `specadoc_step.py status <slug>`.
 Research: `<coordination dir>/research/<step>.md` (questions settled in D<n>, D<m>).
 
@@ -71,7 +75,8 @@ The envelope from `.claude/skills/orchestrator/references/controllers.md` at:
 plan approval, locally-ready, review-ready with the external run pending, or a
 blocker. At plan approval it lists under `Facts for later steps` each design
 finding that states a fact about existing data, the platform or the framework
-(one line, file:line), and each decided non-issue. <On a report-push host: write it to `<coordination dir>/<slug>-envelope.md`
+(one line, file:line), and each decided non-issue; it skips what the known
+facts file already holds. <On a report-push host: write it to `<coordination dir>/<slug>-envelope.md`
 and run `<report command> "<that path>"` before ending the turn.>
 ```
 

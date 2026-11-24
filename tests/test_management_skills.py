@@ -119,6 +119,20 @@ class ManagementSkillsTest(unittest.TestCase):
         self.assertIn("try one isolated preview", worker)
         self.assertIn("created only for the evidence", worker)
 
+    def test_known_facts_live_in_one_file_per_work_area(self) -> None:
+        # 6.19: stage briefs cite earlier stages only, so a design round raised
+        # a fact that the stage 8 brief already held.
+        root = SKILLS / "orchestrator"
+        self.assertIn("to the known facts file the coordination brief names", (root / "SKILL.md").read_text())
+        state = (root / "references/state.md").read_text()
+        self.assertIn("## Known facts", state)
+        self.assertIn("one file per work area", state)
+        self.assertIn("never\n  during one", state)
+        brief = (root / "references/controller-brief.md").read_text()
+        self.assertIn("Known facts: `<known facts file>`; read it before the spec and the design.", brief)
+        self.assertIn("it skips what the known\nfacts file already holds", brief)
+        self.assertIn("Known facts: `<path>`", (root / "references/research-brief.md").read_text())
+
     def test_integration_verifier_reports_and_never_fixes(self) -> None:
         text = (SKILLS / "orchestrator/references/roles/integration-verifier.md").read_text()
         self.assertEqual(1, text.count("<!-- specadoc:tooling:begin -->"))

@@ -254,6 +254,15 @@ appends to the existing record.
 The record links to local Specadoc records. It holds no copies of specs,
 plans or verification logs.
 
+All records in the work area share one known facts file, for example
+`orchestration/known-facts.md`. It holds what design reviews and research
+found about existing data, the platform and the framework, and the decided
+non-issues, one line each with file:line. Controller and research briefs name
+it, and a controller reads it before the spec and the design. At a plan
+checkpoint the orchestrator adds the new facts from the controller's envelope.
+A wrong line is fixed in place. A line that the project's rules file now
+states is deleted.
+
 ### Research before a block of steps
 
 For a block of roadmap steps, the orchestrator runs research before the first

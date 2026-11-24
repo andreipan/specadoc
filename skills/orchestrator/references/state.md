@@ -56,3 +56,24 @@ At closure, report local readiness separately from end-to-end acceptance, name
 unverified environments and remaining live controllers, and remove owned timers.
 Archive only on an explicit request under local Specadoc rules. Do not stop
 unrelated processes or discard user changes during cleanup.
+
+## Known facts
+
+Facts that design reviews and research found about existing data, the platform
+or the framework, and the decided non-issues, live in one file per work area,
+for example `orchestration/known-facts.md` beside the record directories: one
+line each with file:line, naming the repository when the work area serves
+several. Every coordination record in the work area cites it on the brief's
+`Known facts:` line and never copies it. Lists kept in each stage's brief hid
+facts from each other: a stage brief cites earlier stages only, so 6.19's first
+design round raised again a framework fact that the stage 8 brief already held.
+
+- At a plan checkpoint add each line of the envelope's `Facts for later steps`
+  that the file does not hold yet.
+- Fix a wrong line in place and cite the evidence: the file holds current
+  knowledge, not history.
+- Delete a line once the project's rules file or code standard states it.
+- List the file in `.git/info/exclude` like the record directories.
+- A record whose brief has no `Known facts:` line keeps its `Known states and
+  platform facts` section. Move such lists into the file between runs, never
+  during one: a running controller has already read its brief.

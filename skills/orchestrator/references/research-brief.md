@@ -10,6 +10,7 @@ about 2,000 characters. The step excerpt and the decisions are cited, never reto
 Standing constraints: `<coordination dir>/brief.md` (mandate D<n>). Step excerpt:
 `<coordination dir>/step-<step>.md`. Decisions already taken: D<n>, D<m> (read each with
 `coordination_log.py get`, never the whole log). BA register: `<path>`.
+Known facts: `<path>`; take them as evidence and report a line the code now contradicts.
 
 ## Task
 Run Specadoc `explore` for this step on the current checkout. Read-only research: write only

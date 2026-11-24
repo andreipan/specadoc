@@ -29,6 +29,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Each design round's counts go to `runs/design-round.json` and, at archive,
   to one `Design rounds:` line in `record.md` (8.1 and 8.2 lost them with
   `runs/`).
+- The orchestrator keeps facts for later steps in one known facts file per work
+  area, named on the coordination brief's `Known facts:` line, instead of in
+  each stage's brief. A stage brief cites earlier stages only, so 6.19's first
+  design round raised again a framework fact that the stage 8 brief already
+  held. Controller and research briefs name the file; a controller reads it
+  before the spec and the design and returns only facts the file lacks. A brief
+  without the line keeps its old section, and lists move between runs, never
+  during one.
 
 ### Added
 
