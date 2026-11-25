@@ -55,6 +55,7 @@ resolved root and its source (`cli`, `env`, `config`, `legacy` or `default`).
 | [`list_changes.py`](#list_changespy) | command | Print the status of all active changes as JSON |
 | [`migrate_archive.py`](#migrate_archivepy) | command | Compact legacy archive folders |
 | [`migrate_root.py`](#migrate_rootpy) | command | Move the artifact root |
+| [`pr_description.py`](#pr_descriptionpy) | command | Pull or merge request description from archive records and the diff |
 | [`review_snapshot.py`](#review_snapshotpy) | command | Content hash of the Review scope, task scope checks |
 | [`role_routing.py`](#role_routingpy) | command | Resolve role bindings |
 | [`run_role.py`](#run_rolepy) | command | Run a role on another runtime's CLI |
@@ -282,6 +283,38 @@ Markdown files becomes `<to>/`. The hashes in archive records stay valid,
 because they describe the source artifacts at archive time.
 
 Exit codes: 0 success, 1 a migration or git error.
+
+## pr_description.py
+
+Writes the description of a pull or merge request from archive records and
+the diff. It only reads; posting the text is the caller's step. See
+[archive](modes.md#archive).
+
+```text
+python3 <skill-root>/scripts/pr_description.py (--range BASE..HEAD | --slug SLUG ...) [--root ROOT] [--output FILE]
+```
+
+| Flag | Meaning |
+|---|---|
+| `--range BASE..HEAD` | The commits of the request. The records are the `<root>/archive/<slug>/record.md` files that the range adds or changes, read at `HEAD`. |
+| `--slug SLUG` | Read this record from the working tree instead. Repeat for more records. |
+| `--root ROOT` | The artifact root. Default: resolved. |
+| `--output FILE` | Write the description to the file. Default: standard output. |
+
+For each record the description gives the goal, the first paragraph of the
+outcome, the verification (the commands, the requirement mapping with the
+requirements that have no recorded result, the test commands, the design and
+review rounds, the final review result), the residual risks and the record
+path. Several records get one heading each.
+
+With `--range` a last block adds facts from the diff: the number of files and
+lines, the migration files (a path with a `migrations/`, `migration/` or
+`migrate/` folder), the lock files, the configuration files (a `config/`,
+`conf/` or `settings/` folder, or `.env.*`) and the rollback note. When there
+is a migration, the note says that a revert does not undo it.
+
+Exit codes: 0 success, 1 the range has no archive record or git failed, 2 bad
+arguments.
 
 ## review_snapshot.py
 

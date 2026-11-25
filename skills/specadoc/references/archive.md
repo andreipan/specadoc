@@ -68,6 +68,13 @@ human-written `migration-summary.md`. Apply only after the user approves the
 dry-run; the migrator creates and verifies a timestamped compressed backup and
 never deletes it automatically.
 
+## Request description
+
+Once the record is committed with the change, `python3
+<skill-root>/scripts/pr_description.py --range <base>..<head>` prints a pull or
+merge request description from it and the diff. The host's version-control
+flow posts it; archive itself never opens a request.
+
 ## Memory handoff (optional)
 
 When the runtime exposes a persistent memory tool, leave a session handoff

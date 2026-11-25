@@ -40,6 +40,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `pr_description.py` writes a pull or merge request description from the
+  archive records in a git range and from the diff: goal, changes,
+  verification, review rounds, residual risks, and migrations, lock files,
+  configuration and a rollback note. A request built from a Specadoc change
+  then carries what the record already holds, instead of an empty description.
+
 - `specadoc_step.py deviation <slug> T<n> --text '<what and why>'`: a worker
   records each departure from its brief as it happens in
   `runs/T<n>-deviations.md`, which survives the worker's own compaction.
