@@ -186,8 +186,9 @@ OBLIGATION = re.compile(r"\s*- Design obligation (?P<id>[A-Z]\d+(?:\.\d+)+) \(")
 ITEM = re.compile(r"  - (?P<id>F\d+\.\d+): (?P<text>.*)")
 RESOLUTION = re.compile(r"    - (?P<kind>resolved|rejected): (?P<text>.*)")
 ENTRY = re.compile(r"\s*(?:[-*]\s*)?(?P<id>F\d+\.\d+)\s*[:=]\s*(?P<kind>resolved|rejected)\s*:\s*(?P<text>.+?)\s*$", re.I)
-# A resolution points at the place a reviewer can check, not at an intention.
-POINTER = re.compile(r"(?:spec|plan|design)\.md|\b[TRA]\d+\b|\S+:\d+")
+# A resolution points at the place a reviewer can check, not at an intention. 6.16-6.21: six of seven
+# refusals were real places (`spec Constraints`, `research.md excerpts`, `runs/hub-producer.md §Bounds`).
+POINTER = re.compile(r"[\w./-]+\.md\b|\b(?i:spec|plan|design|research)\s+§?\s*[A-Z]|\b[TRA]\d+\b|\S+:\d+")
 
 
 def finding_lines(findings: list[dict]) -> list[str]:
@@ -494,22 +495,28 @@ def resolve(change: Path, text: str) -> tuple[list[str], list[str]]:
     lines = list(plan.lines)
     known = {match["id"]: index for index in range(start, end) if (match := ITEM.fullmatch(lines[index].rstrip()))}
     entries: dict[str, str] = {}
+    # Every line is checked before one refusal names them all (6.20: two refusals in a row for two lines).
+    errors: list[str] = []
     for raw in text.splitlines():
         if not raw.strip():
             continue
         match = ENTRY.fullmatch(raw)
         if not match:
-            raise ValueError(f"expected `F<n>.<m>: resolved: <where>` or `F<n>.<m>: rejected: <why>`, one line per "
-                             f"item, {RESOLVE_EXAMPLE}; not: {raw.strip()}")
+            errors.append("expected `F<n>.<m>: resolved: <where>` or `F<n>.<m>: rejected: <why>`, one line per "
+                          f"item; not: {raw.strip()[:80]}")
+            continue
         kind, value = match["kind"].lower(), " ".join(match["text"].split())
         if match["id"] not in known:
-            raise ValueError(f"{match['id']} is not an item of the recorded round; items: {short(list(known))}")
-        if kind == "resolved" and not POINTER.search(value):
-            raise ValueError(f"{match['id']}: name where it is resolved (spec.md, plan.md or design.md section, "
-                             f"a task or requirement id, or file:line), {RESOLVE_EXAMPLE}")
-        if kind == "rejected" and len(value.split()) < 3:
-            raise ValueError(f"{match['id']}: a rejection needs its reason, {RESOLVE_EXAMPLE}")
-        entries[match["id"]] = f"    - {kind}: {value}"
+            errors.append(f"{match['id']} is not an item of the recorded round; items: {short(list(known))}")
+        elif kind == "resolved" and not POINTER.search(value):
+            errors.append(f"{match['id']}: name where it is resolved (a spec.md, plan.md, design.md or research.md "
+                          "section, a task or requirement id, or file:line)")
+        elif kind == "rejected" and len(value.split()) < 3:
+            errors.append(f"{match['id']}: a rejection needs its reason")
+        else:
+            entries[match["id"]] = f"    - {kind}: {value}"
+    if errors:
+        raise ValueError(f"{len(errors)} line(s) refused, nothing recorded: {'; '.join(errors)}; {RESOLVE_EXAMPLE}")
     if not entries:
         raise ValueError("no resolution entries given")
     for identifier in sorted(entries, key=lambda item: known[item], reverse=True):

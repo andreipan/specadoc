@@ -12,6 +12,7 @@ dispatch prompt only needs that path and the run survives a context reset.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -67,6 +68,26 @@ def run_lessons(change: Path) -> list[str]:
         text = text.encode("utf-8")[:LESSONS_LIMIT].decode("utf-8", "ignore").rsplit("\n", 1)[0]
         text += f"\n(truncated at {LESSONS_LIMIT} bytes; keep {RUNS_DIR}/{LESSONS_FILE} short)"
     return text.splitlines()
+
+
+def reopen_lines(change: Path, task_id: str) -> list[str]:
+    """`## Reopen` for a reopened task: the controller's reason and the previous report. 6.16: the reason
+    stayed in the baseline, the worker guessed the fix and the controller corrected it by message."""
+    runs = change / RUNS_DIR
+    try:
+        attempts = json.loads((runs / f"{task_id}-baseline.json").read_text(encoding="utf-8")).get("attempts") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    last = attempts[-1] if attempts and isinstance(attempts[-1], dict) else {}
+    reason = str(last.get("reopen_reason") or "").strip()
+    if not reason:
+        return []
+    lines = [f"## Reopen (attempt {len(attempts) + 1})", "",
+             "The controller reopened this task. Fix what the reason names; the earlier attempt's changes are "
+             "already in the tree.", "", f"- Reason: {reason}"]
+    if last.get("report"):
+        lines.append(f"- Previous report: `{runs / str(last['report'])}`")
+    return lines + [""]
 
 
 def build_brief(change: Path, task_id: str) -> str:
@@ -146,6 +167,7 @@ def build_brief(change: Path, task_id: str) -> str:
         "## Requirements",
         "",
     ]
+    lines[-2:-2] = reopen_lines(change, task_id)
     context = []
     for dependency in ids_in(fields.get("Depends on", ""), "T"):
         block = _block(plan, "Tasks", "T", dependency)

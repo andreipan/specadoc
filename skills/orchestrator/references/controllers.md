@@ -105,10 +105,12 @@ your context, not the controller's; take the controller's size from its envelope
   prepared base controller session with only step-independent context (skills,
   repository rules, tooling notes) and send the brief as the fork's first
   prompt. Without a fork, start fresh from a compact handoff.
-- Start each roadmap step in a fresh orchestrator session from the coordination
-  record, or fork from the point right after the mandate was set. Extract a large
-  source (roadmap, sweep) into the step brief once, with a scout, and do not
-  re-read it whole.
+- At a step boundary choose your own session without a question: below 150k of
+  your context continue here; at or above it, write the coordination record and
+  launch your successor as the host notes say (no launch there: say so in plain
+  text and stop). 6.16-6.21: a step added 50-150k to a 55k start, and asking cost
+  four questions and three manual restarts. Extract a large source (roadmap,
+  sweep) into the step brief once, with a scout, and do not re-read it whole.
 
 Prefer completion events. With a supported durable timer, keep at most one future
 coordination tick for the whole orchestration; inspect only controllers that need
@@ -171,6 +173,10 @@ local plan and accepted evidence, and record the new identifier. After compactio
 read back the coordination record and current local checkpoints; revalidate
 dependencies before continuing. Persist quota/rate-limit blockers without retry
 storms, silent provider changes, or letting dependent work proceed on guesses.
+When one names its reset time inside the mandate, do not ask: record the
+decision, arm the host's one-shot timer for the reset plus a minute, and run the
+blocked gate once when it fires; a second failure is a plain-text blocker (6.19
+waited 24 minutes after a known reset).
 A turn that failed on authentication (an expired or time-limited login) is not
 retried: no retry succeeds until the user signs in again. Record it, dispatch
 nothing new, and give the user the exact sign-in step; after it, retry the failed
